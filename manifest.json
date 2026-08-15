@@ -1,5 +1,5 @@
 {
-  "name": "MEA ID Tracker",
+  "name": "MEA",
   "short_name": "MEA App",
   "description": "Management Engineering Association — NFC-based asset ID tracker",
   "start_url": "./index.html",

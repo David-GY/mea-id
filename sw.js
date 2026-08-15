@@ -2,10 +2,13 @@
 // Caches the app shell so it installs and opens instantly.
 // NFC scanning and Google Sheets requests still require a live connection.
 
-const CACHE_NAME = 'mea-tracker-v1';
+const CACHE_NAME = 'mea-app-v2';
 const APP_SHELL = [
   './',
   './index.html',
+  './id-tracker.html',
+  './inventory.css',
+  './inventory.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'

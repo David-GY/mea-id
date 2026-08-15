@@ -1,1571 +1,171 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>MEA ID Tracker</title>
-
-<!-- PWA -->
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0a3535">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MEA Tracker">
-<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-<link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<style>
-*, *::before, *::after {
-  box-sizing: border-box; margin: 0; padding: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-:root {
-  --teal-deep:   #0a3535;
-  --teal-dark:   #0d4444;
-  --teal-mid:    #1a6b6b;
-  --teal-bright: #2a9d9d;
-  --teal-light:  #4dc4c4;
-  --teal-pale:   #e0f5f5;
-  --teal-glow:   rgba(45,180,180,0.18);
-  --white:       #ffffff;
-  --off-white:   #f0fafa;
-  --text-dim:    rgba(255,255,255,0.55);
-  --text-faint:  rgba(255,255,255,0.3);
-  --border-dark: rgba(255,255,255,0.1);
-  --border-mid:  rgba(255,255,255,0.15);
-  --surface:     rgba(255,255,255,0.07);
-  --surface-hi:  rgba(255,255,255,0.11);
-  --success:     #2dd4a0;
-  --danger:      #ff6b6b;
-  --warn:        #ffd166;
-  --sans: 'Inter', sans-serif;
-}
-
-body {
-  font-family: var(--sans);
-  background: var(--teal-deep);
-  color: var(--white);
-  min-height: 100vh;
-  overscroll-behavior: none;
-}
-
-/* ── Global gradient bg ── */
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background:
-    radial-gradient(ellipse at 80% 10%, #2a9d8820 0%, transparent 55%),
-    radial-gradient(ellipse at 10% 90%, #0a353580 0%, transparent 60%),
-    linear-gradient(145deg, #0d5050 0%, #0a3535 50%, #081e2e 100%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* ── Page system ── */
-.page { display: none; flex-direction: column; min-height: 100vh; position: relative; z-index: 1; }
-.page.active { display: flex; }
-
-/* ══════════════════════════════
-   HEADER
-══════════════════════════════ */
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
-  background: rgba(10,53,53,0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-dark);
-  position: sticky; top: 0; z-index: 100;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-.brand-logo {
-  width: 38px; height: 38px;
-  background: var(--white);
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 19px;
-  flex-shrink: 0;
-  padding: 4px;
-  overflow: hidden;
-}
-
-.brand-name {
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  color: var(--white);
-}
-
-.brand-sub {
-  font-size: 10px;
-  color: var(--teal-light);
-  font-weight: 500;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  margin-top: 1px;
-}
-
-.header-right { display: flex; gap: 8px; align-items: center; }
-
-.icon-btn {
-  width: 36px; height: 36px;
-  border-radius: 9px;
-  border: 1px solid var(--border-mid);
-  background: var(--surface);
-  color: var(--white);
-  font-size: 18px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s;
-}
-.icon-btn:active { background: var(--surface-hi); }
-
-/* dropdown */
-.dd-wrap { position: relative; }
-.dd-menu {
-  display: none;
-  position: absolute; top: 44px; right: 0;
-  background: #0d4444;
-  border: 1px solid var(--border-mid);
-  border-radius: 14px;
-  min-width: 175px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.45);
-  overflow: hidden;
-  z-index: 300;
-  animation: ddrop 0.15s ease;
-}
-@keyframes ddrop { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
-.dd-menu.open { display: block; }
-
-.dd-item {
-  display: flex; align-items: center; gap: 11px;
-  padding: 13px 16px;
-  font-size: 13px; font-weight: 600;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border-dark);
-  transition: background 0.1s;
-  color: var(--white);
-}
-.dd-item:last-child { border-bottom: none; }
-.dd-item:active { background: var(--surface-hi); }
-.dd-icon { font-size: 15px; }
-
-/* back header */
-.header-back-row {
-  display: flex; align-items: center; gap: 10px;
-  cursor: pointer;
-}
-.back-arrow {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border-mid);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.header-back-row:active { opacity: 0.7; }
-.page-title { font-size: 15px; font-weight: 700; }
-
-/* ══════════════════════════════
-   TAB BAR
-══════════════════════════════ */
-.tab-bar {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  background: rgba(10,40,40,0.6);
-  border-bottom: 1px solid var(--border-dark);
-}
-
-.tab-btn {
-  padding: 11px 4px 9px;
-  border: none; background: transparent;
-  color: var(--text-dim);
-  font-family: var(--sans);
-  font-size: 11px; font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  cursor: pointer;
-  position: relative;
-  transition: color 0.2s;
-}
-.tab-btn span { display: block; font-size: 9px; font-weight: 500; margin-top: 2px; opacity: 0.7; letter-spacing: 0.3px; }
-.tab-btn.active { color: var(--teal-light); }
-.tab-btn.active::after {
-  content: '';
-  position: absolute; bottom: -1px; left: 0; right: 0;
-  height: 2px;
-  background: var(--teal-light);
-}
-
-/* ══════════════════════════════
-   SCAN ZONE
-══════════════════════════════ */
-.scan-zone {
-  flex: 1;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 28px;
-  padding: 36px 24px 24px;
-}
-
-/* big circular scan button */
-.scan-wrap {
-  position: relative;
-  width: 190px; height: 190px;
-  display: flex; align-items: center; justify-content: center;
-}
-
-/* animated outer rings */
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1.5px solid var(--teal-bright);
-  opacity: 0;
-}
-.ring-1 { width: 190px; height: 190px; }
-.ring-2 { width: 160px; height: 160px; }
-.ring-3 { width: 130px; height: 130px; }
-
-.scan-wrap.active .ring-1 { animation: ripple 2s ease-out infinite 0s; }
-.scan-wrap.active .ring-2 { animation: ripple 2s ease-out infinite 0.4s; }
-.scan-wrap.active .ring-3 { animation: ripple 2s ease-out infinite 0.8s; }
-
-@keyframes ripple {
-  0%   { transform: scale(0.85); opacity: 0.6; }
-  100% { transform: scale(1.2);  opacity: 0; }
-}
-
-.scan-circle {
-  width: 140px; height: 140px;
-  border-radius: 50%;
-  border: 2.5px solid var(--teal-bright);
-  background: var(--surface);
-  cursor: pointer;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 6px;
-  position: relative; z-index: 1;
-  transition: all 0.25s;
-  box-shadow: 0 0 40px rgba(42,157,157,0.15), inset 0 1px 0 rgba(255,255,255,0.08);
-}
-.scan-circle:active { transform: scale(0.95); }
-
-.scan-circle.active {
-  border-color: var(--teal-light);
-  background: rgba(42,157,157,0.12);
-  box-shadow: 0 0 60px rgba(77,196,196,0.3);
-}
-
-.scan-circle.detected {
-  border-color: var(--success);
-  background: rgba(45,212,160,0.1);
-  box-shadow: 0 0 60px rgba(45,212,160,0.3);
-}
-
-.scan-circle.error-state {
-  border-color: var(--danger);
-  background: rgba(255,107,107,0.08);
-}
-
-.scan-icon { font-size: 42px; transition: all 0.2s; }
-.scan-txt {
-  font-size: 10px; font-weight: 800;
-  letter-spacing: 2px; text-transform: uppercase;
-  color: var(--teal-light);
-  transition: color 0.2s;
-}
-.scan-circle.active .scan-txt  { color: var(--teal-light); }
-.scan-circle.detected .scan-txt { color: var(--success); }
-.scan-circle.error-state .scan-txt { color: var(--danger); }
-
-/* status text */
-.status-block { text-align: center; }
-.status-title {
-  font-size: 22px; font-weight: 800;
-  letter-spacing: -0.3px;
-  color: var(--white);
-}
-.status-sub {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-top: 4px;
-  font-weight: 500;
-}
-
-/* last scanned pill */
-.last-pill {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border-mid);
-  border-radius: 100px;
-  padding: 7px 16px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.last-pill strong {
-  color: var(--white);
-  font-size: 14px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Manual entry ── */
-.manual-entry {
-  width: 100%;
-  max-width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.manual-entry-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  text-align: center;
-}
-.manual-entry-row {
-  display: flex;
-  gap: 8px;
-}
-.manual-input {
-  flex: 1;
-  background: var(--surface);
-  border: 1.5px solid var(--border-mid);
-  border-radius: 12px;
-  padding: 13px 16px;
-  font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--white);
-  outline: none;
-  text-align: center;
-  letter-spacing: 0.5px;
-  transition: border-color 0.15s, background 0.15s;
-}
-.manual-input::placeholder {
-  color: var(--text-faint);
-  font-weight: 500;
-  letter-spacing: 0.3px;
-}
-.manual-input:focus {
-  border-color: var(--teal-bright);
-  background: rgba(255,255,255,0.1);
-}
-.manual-submit {
-  width: 52px;
-  border-radius: 12px;
-  border: none;
-  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
-  color: var(--white);
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.15s;
-}
-.manual-submit:active { transform: scale(0.93); opacity: 0.85; }
-
-.divider-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 320px;
-  margin: 2px 0;
-}
-.divider-line { flex: 1; height: 1px; background: var(--border-dark); }
-.divider-text {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--text-faint);
-  text-transform: uppercase;
-}
-
-/* ══════════════════════════════
-   LOG
-══════════════════════════════ */
-.log-section {
-  padding: 0 16px 32px;
-}
-
-.log-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
-}
-.log-label {
-  font-size: 10px; font-weight: 700;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--text-dim);
-}
-.ghost-btn {
-  font-size: 11px; font-weight: 600;
-  color: var(--text-dim);
-  background: none; border: none;
-  cursor: pointer; font-family: var(--sans);
-  padding: 3px 6px; border-radius: 4px;
-}
-.ghost-btn:active { background: var(--surface); }
-
-.log-scroll {
-  display: flex; flex-direction: column; gap: 6px;
-  max-height: 230px; overflow-y: auto;
-}
-
-.log-row {
-  display: grid;
-  grid-template-columns: 36px 1fr auto;
-  align-items: center; gap: 10px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border-dark);
-  border-radius: 11px;
-  animation: row-in 0.22s ease;
-}
-@keyframes row-in { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
-
-.log-row.ok   { border-left: 3px solid var(--success); }
-.log-row.fail { border-left: 3px solid var(--danger); }
-.log-row.skip { border-left: 3px solid var(--text-faint); }
-
-.log-ic {
-  width: 30px; height: 30px;
-  border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px;
-  flex-shrink: 0;
-}
-.log-row.ok   .log-ic { background: rgba(45,212,160,0.15); }
-.log-row.fail .log-ic { background: rgba(255,107,107,0.12); }
-.log-row.skip .log-ic { background: var(--surface); }
-
-.log-id   { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.log-when { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
-
-.log-chip {
-  font-size: 9px; font-weight: 800;
-  letter-spacing: 0.6px; text-transform: uppercase;
-  padding: 3px 8px; border-radius: 5px;
-  white-space: nowrap;
-}
-.chip-inv  { background: rgba(77,196,196,0.2); color: var(--teal-light); }
-.chip-proj { background: rgba(255,209,102,0.15); color: var(--warn); }
-.chip-dep  { background: rgba(45,212,160,0.15); color: var(--success); }
-
-.log-empty {
-  text-align: center; padding: 24px;
-  color: var(--text-faint); font-size: 12px;
-  border: 1px dashed var(--border-dark);
-  border-radius: 11px;
-}
-
-/* ══════════════════════════════
-   SAVED MODAL
-══════════════════════════════ */
-.overlay {
-  display: none; position: fixed; inset: 0;
-  background: rgba(0,20,20,0.7);
-  z-index: 200; align-items: flex-end; justify-content: center;
-}
-.overlay.open { display: flex; }
-
-.modal {
-  background: #0d4040;
-  border-radius: 20px 20px 0 0;
-  border: 1px solid var(--border-mid);
-  border-bottom: none;
-  width: 100%; max-width: 520px; max-height: 80vh;
-  display: flex; flex-direction: column;
-  animation: slideup 0.28s cubic-bezier(0.34,1.1,0.64,1);
-}
-@keyframes slideup { from { transform:translateY(100%); } to { transform:translateY(0); } }
-
-.modal-head {
-  padding: 18px 18px 14px;
-  border-bottom: 1px solid var(--border-dark);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.modal-title { font-size: 15px; font-weight: 700; }
-.close-btn {
-  width: 28px; height: 28px;
-  border-radius: 50%; border: 1px solid var(--border-mid);
-  background: var(--surface); color: var(--white);
-  font-size: 13px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
-
-.modal-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border-dark);
-  background: rgba(10,30,30,0.4);
-}
-.modal-tab {
-  flex: 1; padding: 10px 4px;
-  text-align: center;
-  font-size: 10px; font-weight: 800;
-  letter-spacing: 0.8px; text-transform: uppercase;
-  cursor: pointer; color: var(--text-dim);
-  border: none; background: transparent;
-  border-bottom: 2px solid transparent;
-  font-family: var(--sans);
-  transition: all 0.15s;
-}
-.modal-tab.active { color: var(--teal-light); border-bottom-color: var(--teal-light); }
-
-.modal-body { flex:1; overflow-y: auto; padding: 12px 14px 16px; }
-
-.saved-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border-dark);
-  border-radius: 9px; margin-bottom: 6px;
-}
-.saved-id-text { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.saved-time { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
-.del-btn {
-  font-size: 13px; color: var(--text-faint);
-  background: none; border: none; cursor: pointer;
-  padding: 5px 7px; border-radius: 5px;
-  transition: all 0.15s;
-}
-.del-btn:active { color: var(--danger); background: rgba(255,107,107,0.1); }
-
-.modal-empty { text-align: center; padding: 36px 16px; color: var(--text-dim); font-size: 13px; }
-
-.modal-foot {
-  padding: 12px 14px;
-  border-top: 1px solid var(--border-dark);
-  display: flex; gap: 8px;
-}
-
-/* ══════════════════════════════
-   SETTINGS / HELP PAGES
-══════════════════════════════ */
-.page-body {
-  flex: 1; padding: 18px 16px 36px;
-  display: flex; flex-direction: column; gap: 14px;
-  overflow-y: auto;
-}
-
-.s-card {
-  background: var(--surface);
-  border: 1px solid var(--border-dark);
-  border-radius: 14px; overflow: hidden;
-}
-
-.s-head {
-  font-size: 10px; font-weight: 700;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--text-dim);
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid var(--border-dark);
-  background: rgba(0,0,0,0.1);
-}
-
-.s-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--border-dark);
-}
-.s-row:last-child { border-bottom: none; }
-
-.s-row.col-dir { flex-direction: column; align-items: stretch; gap: 8px; }
-
-.s-label { flex: 1; font-size: 13px; font-weight: 600; color: var(--white); }
-.s-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-weight: 400; }
-
-.tab-chip {
-  font-size: 10px; font-weight: 800;
-  padding: 3px 9px; border-radius: 5px;
-  letter-spacing: 0.5px;
-}
-.tc-inv  { background: rgba(77,196,196,0.2); color: var(--teal-light); }
-.tc-proj { background: rgba(255,209,102,0.15); color: var(--warn); }
-.tc-dep  { background: rgba(45,212,160,0.15); color: var(--success); }
-
-.s-input {
-  background: rgba(0,0,0,0.25);
-  border: 1px solid var(--border-mid);
-  border-radius: 8px; padding: 9px 12px;
-  font-family: var(--sans); font-size: 13px; font-weight: 700;
-  color: var(--white); outline: none;
-  text-transform: uppercase; text-align: center;
-  width: 56px; transition: border-color 0.15s;
-}
-.s-input:focus { border-color: var(--teal-light); }
-.s-input.url-input {
-  width: 100%; text-align: left; text-transform: none;
-  font-weight: 400; font-size: 12px; padding: 11px 14px;
-  border-radius: 10px; line-height: 1.4;
-}
-
-/* result box */
-.result-box {
-  display: none; padding: 12px 14px;
-  border-radius: 10px; border: 1px solid;
-  font-size: 12px; line-height: 1.7;
-  white-space: pre-wrap; word-break: break-all;
-  font-weight: 500;
-}
-
-/* buttons */
-.btn {
-  width: 100%; padding: 14px;
-  border-radius: 12px; border: none;
-  font-family: var(--sans); font-size: 14px; font-weight: 700;
-  cursor: pointer; transition: all 0.15s; letter-spacing: 0.2px;
-}
-.btn:active { transform: scale(0.98); opacity: 0.85; }
-.btn-teal {
-  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
-  color: var(--white);
-}
-.btn-outline {
-  background: transparent;
-  border: 1.5px solid var(--border-mid);
-  color: var(--white);
-}
-.btn-sm { width: auto; padding: 9px 16px; font-size: 12px; border-radius: 9px; }
-.btn-danger-soft {
-  background: rgba(255,107,107,0.12);
-  border: 1px solid rgba(255,107,107,0.3);
-  color: var(--danger);
-}
-
-/* ── Help page ── */
-.step-card {
-  background: var(--surface);
-  border: 1px solid var(--border-dark);
-  border-radius: 14px; overflow: hidden;
-}
-.step-head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px; border-bottom: 1px solid var(--border-dark);
-}
-.step-num {
-  width: 26px; height: 26px;
-  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
-  border-radius: 50%; font-size: 12px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--white); flex-shrink: 0;
-}
-.step-title { font-size: 13px; font-weight: 700; }
-.step-body {
-  padding: 14px 16px; font-size: 13px;
-  color: rgba(255,255,255,0.75); line-height: 1.75;
-}
-.step-body strong { color: var(--white); }
-
-.code-block {
-  background: rgba(0,0,0,0.45);
-  border-radius: 10px; padding: 14px 16px;
-  margin-top: 12px; position: relative;
-  overflow-x: auto;
-  border: 1px solid var(--border-dark);
-}
-.code-text {
-  font-family: 'Courier New', monospace; font-size: 11px;
-  color: #88ddcc; line-height: 1.9;
-  white-space: pre; display: block;
-}
-.copy-btn {
-  position: absolute; top: 10px; right: 10px;
-  background: rgba(77,196,196,0.2);
-  border: 1px solid rgba(77,196,196,0.35);
-  color: var(--teal-light);
-  font-size: 10px; font-weight: 700;
-  padding: 4px 10px; border-radius: 6px;
-  cursor: pointer; font-family: var(--sans); letter-spacing: 0.5px;
-}
-.copy-btn:active { background: rgba(77,196,196,0.35); }
-
-.alert {
-  border-radius: 9px; padding: 11px 14px;
-  font-size: 12px; line-height: 1.65; margin-top: 10px;
-  border-left: 3px solid;
-}
-.alert-warn {
-  background: rgba(255,209,102,0.08);
-  border-color: var(--warn); color: rgba(255,230,150,0.9);
-}
-.alert-info {
-  background: rgba(77,196,196,0.08);
-  border-color: var(--teal-light); color: rgba(150,230,230,0.9);
-}
-
-/* ── Toast ── */
-#toast {
-  position: fixed; bottom: 24px; left: 50%;
-  transform: translateX(-50%) translateY(90px);
-  padding: 11px 22px; border-radius: 100px;
-  font-size: 13px; font-weight: 700;
-  z-index: 999; white-space: nowrap;
-  pointer-events: none; transition: transform 0.3s cubic-bezier(0.34,1.4,0.64,1);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-}
-#toast.show { transform: translateX(-50%) translateY(0); }
-#toast.ok   { background: var(--success); color: #012a1a; }
-#toast.fail { background: var(--danger);  color: #2a0000; }
-#toast.info { background: var(--teal-bright); color: var(--teal-deep); }
-#toast.skip { background: rgba(255,255,255,0.15); color: var(--white); border: 1px solid var(--border-mid); }
-
-/* ── NFC unsupported inline notice ── */
-.nfc-unavailable {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px dashed var(--border-mid);
-  border-radius: 14px;
-  max-width: 300px;
-  text-align: center;
-}
-.nfc-unavailable.show { display: flex; }
-.nfc-unavailable .nu-icon { font-size: 30px; }
-.nfc-unavailable .nu-title { font-size: 13px; font-weight: 700; color: var(--text-dim); }
-.nfc-unavailable .nu-sub { font-size: 11px; color: var(--text-faint); line-height: 1.5; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEA</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="inventory.css">
 </head>
 <body>
+  <div id="app">
 
-<!-- ══════════════════════════════════
-     MAIN PAGE
-══════════════════════════════════ -->
-<div class="page active" id="page-main">
-
-  <div class="header">
-    <div class="brand">
-      <div class="brand-logo"><img src="icons/icon-96.png" alt="MEA" style="width:100%;height:100%;object-fit:contain;border-radius:10px;"></div>
-      <div>
-        <div class="brand-name">MEA ID Tracker</div>
-        <div class="brand-sub">Management Engineering Association</div>
+    <!-- ===================== Header ===================== -->
+    <header class="mea-header" id="app-header">
+      <div class="mea-logo-chip" id="logo-home-btn" title="Home">MEA</div>
+      <div class="mea-header-titles">
+        <h1>MEA ID Tracker</h1>
+        <p>Management Engineering Association</p>
       </div>
-    </div>
-    <div class="header-right">
-      <div class="dd-wrap">
-        <div class="icon-btn" id="menuBtn" onclick="toggleDD()">⋯</div>
-        <div class="dd-menu" id="ddMenu">
-          <div class="dd-item" id="installMenuItem" style="display:none" onclick="triggerInstall(); closeDD()">
-            <span class="dd-icon">⬇️</span> Install App
+      <div class="mea-header-actions">
+        <button class="icon-btn" id="cart-icon-btn" title="Cart">
+          🛒<span class="cart-badge" id="cart-badge" style="display:none;">0</span>
+        </button>
+        <button class="icon-btn" id="contact-icon-btn" title="Contact">📞</button>
+      </div>
+    </header>
+
+    <!-- ===================== Tabs (scan view) ===================== -->
+    <nav class="mea-tabs" id="app-tabs">
+      <div class="mea-tab active" data-title="Inventory" data-sub="Select a tab then tap the button">
+        <span class="tab-main">INVENTORY</span>
+        <span class="tab-sub">STORAGE</span>
+      </div>
+      <div class="mea-tab" data-title="With Project" data-sub="Items currently in use">
+        <span class="tab-main">W/PROJ</span>
+        <span class="tab-sub">IN USE</span>
+      </div>
+      <div class="mea-tab" data-title="Deployed" data-sub="Items out in the field">
+        <span class="tab-main">DEPLOYED</span>
+        <span class="tab-sub">FIELD</span>
+      </div>
+    </nav>
+
+    <!-- ===================== View: Home (page 1 layout) ===================== -->
+    <section class="view active" id="view-home">
+      <div class="home-header">
+        <h1 class="home-title">MEA BRAND</h1>
+        <button class="icon-btn" id="home-menu-btn" title="Menu">⋯</button>
+      </div>
+
+      <div class="id-input-label" style="text-align:left;">INPUT ID NUMBER</div>
+      <div class="id-input-row">
+        <input type="text" inputmode="numeric" id="home-id-input" placeholder="e.g. 212345" />
+      </div>
+
+      <div class="home-nav-list">
+        <div class="home-nav-card" id="home-nav-inventory">
+          <div class="home-nav-icon">📦</div>
+          <div class="home-nav-text">
+            <div class="home-nav-title">INVENTORY</div>
+            <div class="home-nav-sub">Browse items & request supplies</div>
           </div>
-          <div class="dd-item" onclick="openSaved(); closeDD()">
-            <span class="dd-icon">💾</span> Saved IDs
+          <div class="home-nav-chevron">›</div>
+        </div>
+        <div class="home-nav-card" id="home-nav-idtracker">
+          <div class="home-nav-icon">📡</div>
+          <div class="home-nav-text">
+            <div class="home-nav-title">ID Tracker</div>
+            <div class="home-nav-sub">Scan & verify a member ID</div>
           </div>
-          <div class="dd-item" onclick="goTo('page-settings'); closeDD()">
-            <span class="dd-icon">⚙️</span> Settings
-          </div>
-          <div class="dd-item" onclick="goTo('page-help'); closeDD()">
-            <span class="dd-icon">📖</span> Help & Setup
-          </div>
+          <div class="home-nav-chevron">›</div>
         </div>
       </div>
-    </div>
-  </div>
 
+      <p class="home-footnote">Entering an ID number here carries it into whichever section you open.</p>
+    </section>
 
-  <!-- Tab bar -->
-  <div class="tab-bar">
-    <button class="tab-btn active" id="tab-INVENTORY" onclick="setTab('INVENTORY')">
-      Inventory<span>Storage</span>
-    </button>
-    <button class="tab-btn" id="tab-W/Proj" onclick="setTab('W/Proj')">
-      W/Proj<span>In Use</span>
-    </button>
-    <button class="tab-btn" id="tab-DEPLOYED" onclick="setTab('DEPLOYED')">
-      Deployed<span>Field</span>
-    </button>
-  </div>
-
-  <!-- Scan zone -->
-  <div class="scan-zone">
-
-    <div class="manual-entry">
-      <div class="manual-entry-label">Type ID Number</div>
-      <div class="manual-entry-row">
-        <input type="text" class="manual-input" id="manualInput" placeholder="e.g. 212345"
-          inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false"
-          onkeydown="if(event.key==='Enter') submitManual()">
-        <button class="manual-submit" onclick="submitManual()">→</button>
+    <!-- ===================== View: Scan / ID Tracker ===================== -->
+    <section class="view" id="view-scan">
+      <div class="id-input-label">TYPE ID NUMBER</div>
+      <div class="id-input-row">
+        <input type="text" inputmode="numeric" id="id-number-input" placeholder="e.g. 212345" />
+        <button id="id-go-btn">→</button>
       </div>
-    </div>
 
-    <div class="divider-row">
-      <div class="divider-line"></div>
-    </div>
-
-    <div class="scan-wrap" id="scanWrap">
-      <div class="ring ring-1"></div>
-      <div class="ring ring-2"></div>
-      <div class="ring ring-3"></div>
-      <div class="scan-circle" id="scanCircle" onclick="toggleScan()">
-        <div class="scan-icon" id="scanIcon">📡</div>
-        <div class="scan-txt"  id="scanTxt">Tap to Scan</div>
-      </div>
-    </div>
-
-    <div class="nfc-unavailable" id="nfcUnavailable">
-      <div class="nu-icon">📵</div>
-      <div class="nu-title">NFC not available on this device</div>
-      <div class="nu-sub">Web NFC requires Chrome on Android.<br>Use the field above to enter IDs manually.</div>
-    </div>
-
-    <div class="status-block">
-      <div class="status-title" id="statusTitle">INVENTORY</div>
-      <div class="status-sub"   id="statusSub">Select a tab then tap the button</div>
-    </div>
-
-    <div class="last-pill" id="lastPill" style="display:none">
-      Last: <strong id="lastId">—</strong>
-    </div>
-  </div>
-
-  <!-- Log -->
-  <div class="log-section">
-    <div class="log-header">
-      <div class="log-label">Scan Log</div>
-      <button class="ghost-btn" onclick="clearLog()">Clear</button>
-    </div>
-    <div class="log-scroll" id="logScroll">
-      <div class="log-empty">No scans yet this session</div>
-    </div>
-  </div>
-
-  <!-- NFC Debug Panel -->
-  <div id="nfcDebug" style="display:none; margin:0 16px 24px; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:14px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--teal-light);">NFC Debug</div>
-      <button onclick="document.getElementById('nfcDebug').style.display='none'" style="background:none;border:none;color:var(--text-dim);font-size:12px;cursor:pointer;">✕ close</button>
-    </div>
-    <pre id="nfcDebugText" style="font-family:'Courier New',monospace;font-size:11px;color:#88ddcc;line-height:1.7;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
-  </div>
-
-</div><!-- /page-main -->
-
-<!-- ══════════════════════════════════
-     SAVED IDs MODAL
-══════════════════════════════════ -->
-<div class="overlay" id="savedOverlay" onclick="closeSaved()">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-head">
-      <div class="modal-title">💾 Saved IDs</div>
-      <button class="close-btn" onclick="closeSaved()">✕</button>
-    </div>
-    <div class="modal-tabs">
-      <button class="modal-tab active" onclick="switchSavedTab('INVENTORY')">Inventory</button>
-      <button class="modal-tab"        onclick="switchSavedTab('W/Proj')">W/Proj</button>
-      <button class="modal-tab"        onclick="switchSavedTab('DEPLOYED')">Deployed</button>
-    </div>
-    <div class="modal-body" id="savedBody"></div>
-    <div class="modal-foot">
-      <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export CSV</button>
-      <button class="btn btn-danger-soft btn-sm" style="flex:1" onclick="clearSavedTab()">Clear Tab</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════
-     SETTINGS PAGE
-══════════════════════════════════ -->
-<div class="page" id="page-settings">
-
-  <div class="header">
-    <div class="header-back-row" onclick="goTo('page-main')">
-      <div class="back-arrow">←</div>
-      <div class="page-title">Settings</div>
-    </div>
-  </div>
-
-  <div class="page-body">
-
-    <div class="s-card">
-      <div class="s-head">Apps Script URL</div>
-      <div class="s-row col-dir">
-        <div class="s-label">Web App Endpoint</div>
-        <input class="s-input url-input" type="url" id="s-url"
-          placeholder="https://script.google.com/macros/s/…/exec"
-          spellcheck="false" autocomplete="off">
-      </div>
-    </div>
-
-    <div class="s-card">
-      <div class="s-head">Target Column per Sheet</div>
-      <div class="s-row">
-        <span class="tab-chip tc-inv">INVENTORY</span>
-        <div class="s-label">Column</div>
-        <input class="s-input" type="text" id="s-col-INVENTORY" maxlength="2" value="A">
-      </div>
-      <div class="s-row">
-        <span class="tab-chip tc-proj">W/PROJ</span>
-        <div class="s-label">Column</div>
-        <input class="s-input" type="text" id="s-col-WProj" maxlength="2" value="A">
-      </div>
-      <div class="s-row">
-        <span class="tab-chip tc-dep">DEPLOYED</span>
-        <div class="s-label">Column</div>
-        <input class="s-input" type="text" id="s-col-DEPLOYED" maxlength="2" value="A">
-      </div>
-    </div>
-
-    <div class="s-card">
-      <div class="s-head">Scan Cooldown</div>
-      <div class="s-row">
-        <div class="s-label">
-          Seconds between scans
-          <div class="s-sub">Prevents duplicate writes from one tag</div>
-        </div>
-        <input class="s-input" type="number" id="s-cooldown" min="1" max="30" value="3" style="width:62px">
-      </div>
-    </div>
-
-    <button class="btn btn-outline" id="testBtn" onclick="testConn()">Test Connection</button>
-    <div class="result-box" id="testResult"></div>
-    <button class="btn btn-teal" onclick="saveSettings()">Save Settings</button>
-
-  </div>
-</div>
-
-<!-- ══════════════════════════════════
-     HELP PAGE
-══════════════════════════════════ -->
-<div class="page" id="page-help">
-
-  <div class="header">
-    <div class="header-back-row" onclick="goTo('page-main')">
-      <div class="back-arrow">←</div>
-      <div class="page-title">Help & Setup</div>
-    </div>
-  </div>
-
-  <div class="page-body">
-
-    <div class="step-card">
-      <div class="step-head">
-        <div class="step-num">1</div>
-        <div class="step-title">Open Apps Script in your Google Sheet</div>
-      </div>
-      <div class="step-body">
-        In your Google Sheet go to <strong>Extensions → Apps Script</strong>.
-        Delete any existing code and paste the script from Step 2 (or the script held by the SUS department).
-      </div>
-    </div>
-
-    <div class="step-card">
-      <div class="step-head">
-        <div class="step-num">2</div>
-        <div class="step-title">Paste This Script</div>
-      </div>
-      <div class="step-body">
-        Handles writing the student ID to the selected sheet and
-        <strong>automatically removes it from the other two sheets</strong> if it exists there.
-        <div class="code-block">
-          <button class="copy-btn" onclick="copyScript()">COPY</button>
-          <code class="code-text" id="scriptCode">function doGet(e) {
-  var p      = e && e.parameter ? e.parameter : {};
-  var ss     = SpreadsheetApp.getActiveSpreadsheet();
-  var target = p.sheet;
-  var col    = (p.col || "A").toUpperCase();
-  var colIdx = col.charCodeAt(0) - 64;
-  var data   = p.data ? String(p.data).trim() : "";
-  var all    = ["INVENTORY", "W/Proj", "DEPLOYED"];
-
-  // Get target sheet, fall back to active sheet
-  var sheet  = ss.getSheetByName(target) || ss.getActiveSheet();
-
-  // Remove this ID from the OTHER two sheets
-  all.forEach(function(name) {
-    if (name === target) return;
-    var sh = ss.getSheetByName(name);
-    if (!sh) return;
-    if (sh.getLastRow() < 1) return;
-    var vals = sh.getDataRange().getValues();
-    for (var i = vals.length - 1; i >= 0; i--) {
-      for (var j = 0; j < vals[i].length; j++) {
-        if (String(vals[i][j]).trim() === data) {
-          sh.deleteRow(i + 1);
-        }
-      }
-    }
-  });
-
-  // Remove empty rows from target sheet
-  var maxRow = sheet.getMaxRows();
-  for (var i = maxRow; i >= 1; i--) {
-    var numCols = sheet.getLastColumn() || 1;
-    var row = sheet.getRange(i, 1, 1, numCols).getValues()[0];
-    if (row.every(function(c) { return c === "" || c === null; })) {
-      sheet.deleteRow(i);
-    }
-  }
-
-  // Append the ID to the next available row
-  var lastRow = sheet.getLastRow();
-  sheet.getRange(lastRow + 1, colIdx).setValue(data);
-
-  return respond({ok: true, row: lastRow + 1});
-}
-
-function respond(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) { return doGet(e); }</code>
+      <div class="scan-wrap">
+        <div class="scan-circle" id="scan-circle-btn">
+          <span class="emoji">📡</span>
+          <span class="label">TAP TO SCAN</span>
         </div>
       </div>
-    </div>
 
-    <div class="step-card">
-      <div class="step-head">
-        <div class="step-num">3</div>
-        <div class="step-title">Deploy as Web App</div>
-      </div>
-      <div class="step-body">
-        Click <strong>Deploy → New deployment → Web App</strong><br><br>
-        Required settings:<br>
-        · Execute as: <strong>Me</strong><br>
-        · Who has access: <strong>Anyone</strong><br><br>
-        Authorize when prompted, then <strong>copy the /exec URL</strong> and paste it in Settings.
-        <div class="alert alert-warn">
-          ⚠ Every time you edit the script you must create a <strong>New Version</strong> — edits don't go live automatically.
-        </div>
-      </div>
-    </div>
+      <h2 class="state-title" id="scan-state-title">INVENTORY</h2>
+      <p class="state-sub" id="scan-state-sub">Select a tab then tap the button</p>
 
-    <div class="step-card">
-      <div class="step-head">
-        <div class="step-num">4</div>
-        <div class="step-title">Verify Sheet Tab Names</div>
+      <div class="log-header">
+        <span>SCAN LOG</span>
+        <span class="clear" id="clear-log-btn">Clear</span>
       </div>
-      <div class="step-body">
-        Your Google Sheet tab names must match <strong>exactly</strong> — including capitalisation and punctuation:
-        <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px;">
-          <div style="background:rgba(77,196,196,0.1);border:1px solid rgba(77,196,196,0.2);border-radius:8px;padding:9px 14px;font-family:'Courier New',monospace;font-size:13px;font-weight:700;letter-spacing:1px;">INVENTORY</div>
-          <div style="background:rgba(255,209,102,0.08);border:1px solid rgba(255,209,102,0.2);border-radius:8px;padding:9px 14px;font-family:'Courier New',monospace;font-size:13px;font-weight:700;letter-spacing:1px;">W/Proj</div>
-          <div style="background:rgba(45,212,160,0.08);border:1px solid rgba(45,212,160,0.2);border-radius:8px;padding:9px 14px;font-family:'Courier New',monospace;font-size:13px;font-weight:700;letter-spacing:1px;">DEPLOYED</div>
-        </div>
-        <div class="alert alert-info" style="margin-top:10px">
-          💡 Use <strong>Test Connection</strong> in Settings after deploying to confirm everything works before scanning.
-        </div>
+      <div class="log-box" id="scan-log-box">
+        <div class="log-empty">No scans yet this session</div>
       </div>
-    </div>
+    </section>
 
-    <div class="step-card">
-      <div class="step-head">
-        <div class="step-num">5</div>
-        <div class="step-title">Scan</div>
-      </div>
-      <div class="step-body">
-        NFC tags must contain the <strong>student ID as a plain text record</strong> (string format, e.g. 202112345).
-        Select a destination tab, tap the circle, and hold a tag to the back of your Android device.
-        The ID is logged locally and sent to Google Sheets.
-        <div class="alert alert-warn">
-          📱 Web NFC only works on <strong>Chrome on Android</strong>. It will not work on iOS or desktop.
+    <!-- ===================== View: Catalog ===================== -->
+    <section class="view" id="view-catalog">
+      <div class="catalog-toolbar">
+        <div class="view-toggle">
+          <button class="icon-btn active" id="format-grid-btn" title="Grid view">▦</button>
+          <button class="icon-btn" id="format-list-btn" title="List view">☰</button>
         </div>
+        <div style="font-size:11px;color:var(--mea-text-dim);">Click to add to cart</div>
       </div>
-    </div>
+      <div id="catalog-container" class="item-grid"></div>
+    </section>
+
+    <!-- ===================== View: Cart ===================== -->
+    <section class="view" id="view-cart">
+      <h2 class="state-title" style="text-align:left;font-size:19px;">Your Cart</h2>
+      <div class="item-list" id="cart-list"></div>
+      <button class="btn-primary" id="cart-checkout-btn" onclick="showView('checkout')" disabled>CHECKOUT</button>
+    </section>
+
+    <!-- ===================== View: Checkout ===================== -->
+    <section class="view" id="view-checkout">
+      <span class="field-label">ID Number</span>
+      <div class="field-static" id="checkout-id-display">Not scanned yet</div>
+
+      <span class="field-label">Project</span>
+      <select id="project-select"></select>
+
+      <span class="field-label">Committee</span>
+      <input type="text" class="text-field" id="committee-input" placeholder="Enter committee name" />
+
+      <span class="field-label">Order Summary</span>
+      <table class="summary-table">
+        <thead><tr><th>Product</th><th>Quantity</th></tr></thead>
+        <tbody id="checkout-summary-body"></tbody>
+      </table>
+
+      <button class="btn-primary" id="submit-order-btn">SUBMIT ORDER</button>
+      <button class="btn-secondary" onclick="showView('cart')">Back to Cart</button>
+    </section>
 
   </div>
-</div>
 
-<div id="toast"></div>
+  <!-- ===================== Bottom Nav ===================== -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <div class="bottom-nav-inner">
+      <div class="nav-btn" data-view="catalog"><span class="nav-emoji">📦</span>Catalog</div>
+      <div class="nav-btn" data-view="cart"><span class="nav-emoji">🛒</span>Cart</div>
+      <div class="nav-btn" data-view="checkout"><span class="nav-emoji">✅</span>Checkout</div>
+    </div>
+  </nav>
 
-<script>
-// ────────────────────────────────────────────
-// Constants
-// ────────────────────────────────────────────
-const TABS   = ['INVENTORY','W/Proj','DEPLOYED'];
-const CHIPS  = { 'INVENTORY':'chip-inv','W/Proj':'chip-proj','DEPLOYED':'chip-dep' };
-const LABELS = { 'INVENTORY':'INVENTORY','W/Proj':'W/PROJ','DEPLOYED':'DEPLOYED' };
+  <!-- ===================== Toast ===================== -->
+  <div class="toast" id="toast"></div>
 
-// ────────────────────────────────────────────
-// State
-// ────────────────────────────────────────────
-let cfg = {
-  url: '',
-  cols: { 'INVENTORY':'A','W/Proj':'A','DEPLOYED':'A' },
-  cooldown: 3
-};
-let activeTab     = 'INVENTORY';
-let isScanning    = false;
-let nfcReader     = null;
-let lastScanMs    = 0;
-let savedTab      = 'INVENTORY';
-let saved         = { 'INVENTORY':[],'W/Proj':[],'DEPLOYED':[] };
+  <!-- ===================== Contact Modal ===================== -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal-sheet">
+      <h3>Contact MEA</h3>
+      <p>Reach the Management Engineering Association for questions about inventory access or ID registration.</p>
+      <button class="btn-primary" onclick="window.top.location.href='tel:+10000000000'">CALL</button>
+      <button class="btn-secondary" id="modal-close-btn">Close</button>
+    </div>
+  </div>
 
-// ────────────────────────────────────────────
-// Boot
-// ────────────────────────────────────────────
-(function boot() {
-  try {
-    const c = localStorage.getItem('mea_cfg2');
-    if (c) cfg = Object.assign(cfg, JSON.parse(c));
-    const s = localStorage.getItem('mea_saved2');
-    if (s) saved = Object.assign(saved, JSON.parse(s));
-  } catch(e) {}
-
-  if (!('NDEFReader' in window)) {
-    document.getElementById('scanWrap').style.display = 'none';
-    document.getElementById('nfcUnavailable').classList.add('show');
-    document.getElementById('statusTitle').textContent = LABELS[activeTab];
-    document.getElementById('statusSub').textContent = 'Type an ID above to log it';
-  }
-
-  // Register service worker for installability + offline app shell
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(err => {
-        console.log('Service worker registration failed:', err);
-      });
-    });
-  }
-})();
-
-// ────────────────────────────────────────────
-// PWA Install Prompt
-// ────────────────────────────────────────────
-let deferredInstallPrompt = null;
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-  const item = document.getElementById('installMenuItem');
-  if (item) item.style.display = 'flex';
-});
-
-async function triggerInstall() {
-  if (!deferredInstallPrompt) {
-    toast('App may already be installed', 'info');
-    return;
-  }
-  deferredInstallPrompt.prompt();
-  const choice = await deferredInstallPrompt.userChoice;
-  if (choice.outcome === 'accepted') {
-    toast('Installing MEA Tracker…', 'ok');
-  }
-  deferredInstallPrompt = null;
-  document.getElementById('installMenuItem').style.display = 'none';
-}
-
-window.addEventListener('appinstalled', () => {
-  toast('MEA Tracker installed!', 'ok');
-  const item = document.getElementById('installMenuItem');
-  if (item) item.style.display = 'none';
-});
-
-// ────────────────────────────────────────────
-// Navigation
-// ────────────────────────────────────────────
-function goTo(id) {
-  if (isScanning) stopScan();
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  if (id === 'page-settings') fillSettings();
-  window.scrollTo(0,0);
-}
-
-function toggleDD() { document.getElementById('ddMenu').classList.toggle('open'); }
-function closeDD()  { document.getElementById('ddMenu').classList.remove('open'); }
-document.addEventListener('click', e => {
-  if (!document.getElementById('menuBtn').contains(e.target) &&
-      !document.getElementById('ddMenu').contains(e.target)) closeDD();
-});
-
-// ────────────────────────────────────────────
-// Tab
-// ────────────────────────────────────────────
-function setTab(tab) {
-  if (isScanning) stopScan();
-  activeTab = tab;
-  TABS.forEach(t => document.getElementById('tab-'+t).classList.remove('active'));
-  document.getElementById('tab-'+tab).classList.add('active');
-  document.getElementById('statusTitle').textContent = LABELS[tab];
-  document.getElementById('statusSub').textContent = 'Tap the button to start scanning';
-}
-
-// ────────────────────────────────────────────
-// NFC
-// ────────────────────────────────────────────
-async function toggleScan() {
-  if (!cfg.url) { toast('Add your Script URL in Settings first','info'); return; }
-  if (!('NDEFReader' in window)) { toast('NFC not supported on this device','fail'); return; }
-  if (isScanning) { stopScan(); return; }
-  await startScan();
-}
-
-async function startScan() {
-  try {
-    nfcReader = new NDEFReader();
-    await nfcReader.scan();
-    isScanning = true;
-    lastScanMs = 0;
-
-    nfcReader.onreadingerror = () => toast('Tag read error','fail');
-    nfcReader.onreading = ({ message, serialNumber }) => {
-      const now = Date.now();
-      if (now - lastScanMs < cfg.cooldown * 1000) {
-        toast('Cooldown — please wait','skip');
-        return;
-      }
-      lastScanMs = now;
-      handleRead(message, serialNumber);
-    };
-
-    setScanUI('active', '🔄', 'Scanning…');
-    document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
-    toast('Listening for NFC tags…','info');
-  } catch(err) {
-    toast('NFC error: ' + err.message, 'fail');
-  }
-}
-
-function stopScan() {
-  isScanning = false;
-  nfcReader  = null;
-  setScanUI('', '📡', 'Tap to Scan');
-  document.getElementById('statusTitle').textContent = LABELS[activeTab];
-  document.getElementById('statusSub').textContent = 'Tap the button to start scanning';
-}
-
-async function handleRead(message, serialNumber) {
-  let raw = '';
-
-  // Dump full tag info to screen for debugging
-  const dump = [];
-  dump.push('Serial: ' + (serialNumber || 'none'));
-  dump.push('Records: ' + message.records.length);
-
-  for (let i = 0; i < message.records.length; i++) {
-    const rec = message.records[i];
-    dump.push('--- Record ' + i + ' ---');
-    dump.push('type: ' + rec.recordType);
-    dump.push('mediaType: ' + (rec.mediaType || 'n/a'));
-    dump.push('encoding: ' + (rec.encoding || 'n/a'));
-    dump.push('lang: ' + (rec.lang || 'n/a'));
-    dump.push('id: ' + (rec.id || 'n/a'));
-
-    if (rec.data) {
-      // Try reading as text directly
-      try {
-        const t1 = new TextDecoder('utf-8', {fatal:false}).decode(rec.data);
-        dump.push('utf8: [' + t1 + ']');
-        if (t1.trim() && !raw) raw = t1.trim();
-      } catch(ex) { dump.push('utf8 err: ' + ex.message); }
-
-      // Show raw bytes (first 20)
-      try {
-        const arr = new Uint8Array(rec.data.buffer, rec.data.byteOffset, Math.min(rec.data.byteLength, 20));
-        dump.push('bytes: ' + Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join(' '));
-      } catch(ex) { dump.push('bytes err: ' + ex.message); }
-    } else {
-      dump.push('data: null');
-    }
-  }
-
-  console.log('NFC DEBUG:\n' + dump.join('\n'));
-
-  // Always show debug panel
-  document.getElementById('nfcDebug').style.display = 'block';
-  document.getElementById('nfcDebugText').textContent = dump.join('\n');
-
-  // If we got something, use it
-  if (raw) {
-    setScanUI('detected','✓', 'Detected!');
-    document.getElementById('statusTitle').textContent = raw;
-    document.getElementById('statusSub').textContent = '→ Sending to ' + LABELS[activeTab] + '…';
-    document.getElementById('lastPill').style.display = 'inline-flex';
-    document.getElementById('lastId').textContent = raw;
-
-    setTimeout(() => {
-      if (!isScanning) return;
-      setScanUI('active','🔄','Scanning…');
-      document.getElementById('statusTitle').textContent = LABELS[activeTab];
-      document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
-    }, 2200);
-
-    await sendToSheets(raw);
-  } else {
-    setScanUI('error-state', '✕', 'No Data');
-    document.getElementById('statusTitle').textContent = 'Nothing decoded';
-    document.getElementById('statusSub').textContent = 'See debug panel below';
-    toast('No data — see debug panel','fail');
-    setTimeout(() => {
-      setScanUI('active','🔄','Scanning…');
-      document.getElementById('statusTitle').textContent = LABELS[activeTab];
-      document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
-    }, 3000);
-  }
-}
-
-// ────────────────────────────────────────────
-// Sheets
-// ────────────────────────────────────────────
-async function sendToSheets(data) {
-  const tab = activeTab;
-  const col = cfg.cols[tab] || 'A';
-  try {
-    const params = new URLSearchParams({ action: 'tracker', sheet: tab, col: col, data: data });
-    const url = cfg.url + '?' + params.toString();
-
-    // Fire and treat any reachable response as success
-    fetch(url).catch(() => {});
-
-    // Immediately log as success — if script is reachable it will write
-    addLog(data, 'ok', tab, '');
-    saveScan(tab, data);
-    toast(data + ' → ' + LABELS[tab], 'ok');
-  } catch(err) {
-    addLog(data, 'fail', tab, err.message);
-    toast('Error: ' + err.message, 'fail');
-  }
-}
-
-// ────────────────────────────────────────────
-// Manual ID entry (works on any device — iOS, PC, etc.)
-// ────────────────────────────────────────────
-async function submitManual() {
-  const input = document.getElementById('manualInput');
-  const raw = input.value.trim();
-
-  if (!cfg.url) { toast('Add your Script URL in Settings first', 'info'); return; }
-  if (!raw) { toast('Enter an ID number first', 'info'); input.focus(); return; }
-
-  input.value = '';
-  input.blur();
-
-  document.getElementById('lastPill').style.display = 'inline-flex';
-  document.getElementById('lastId').textContent = raw;
-
-  await sendToSheets(raw);
-}
-
-// ────────────────────────────────────────────
-// Scan UI helper
-// ────────────────────────────────────────────
-function setScanUI(state, icon, label) {
-  const circle = document.getElementById('scanCircle');
-  const wrap   = document.getElementById('scanWrap');
-  circle.className = 'scan-circle' + (state ? ' ' + state : '');
-  wrap.className   = 'scan-wrap'   + (state === 'active' ? ' active' : '');
-  document.getElementById('scanIcon').textContent = icon;
-  document.getElementById('scanTxt').textContent  = label;
-}
-
-// ────────────────────────────────────────────
-// Session Log
-// ────────────────────────────────────────────
-function addLog(data, type, tab, meta) {
-  const scroll = document.getElementById('logScroll');
-  const empty  = scroll.querySelector('.log-empty');
-  if (empty) empty.remove();
-
-  const ic   = type === 'ok' ? '✓' : type === 'fail' ? '✕' : '–';
-  const chip = CHIPS[tab] || '';
-  const lbl  = LABELS[tab] || tab;
-  const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const metaHtml = meta ? '<div class="log-when" style="color:var(--danger)">' + esc(meta) + '</div>' : '';
-
-  const el = document.createElement('div');
-  el.className = 'log-row ' + type;
-  el.innerHTML =
-    '<div class="log-ic">' + ic + '</div>' +
-    '<div><div class="log-id">' + esc(data) + '</div><div class="log-when">' + time + '</div>' + metaHtml + '</div>' +
-    '<div class="log-chip ' + chip + '">' + lbl + '</div>';
-  scroll.prepend(el);
-
-  while (scroll.children.length > 35) scroll.removeChild(scroll.lastChild);
-}
-
-function clearLog() {
-  document.getElementById('logScroll').innerHTML = '<div class="log-empty">No scans yet this session</div>';
-}
-
-// ────────────────────────────────────────────
-// Saved IDs (localStorage)
-// ────────────────────────────────────────────
-function saveScan(tab, id) {
-  if (!saved[tab]) saved[tab] = [];
-  saved[tab].unshift({ id, time: new Date().toLocaleString() });
-  if (saved[tab].length > 500) saved[tab].pop();
-  try { localStorage.setItem('mea_saved2', JSON.stringify(saved)); } catch(e){}
-}
-
-function openSaved()  {
-  switchSavedTab('INVENTORY');
-  document.getElementById('savedOverlay').classList.add('open');
-}
-function closeSaved() { document.getElementById('savedOverlay').classList.remove('open'); }
-
-function switchSavedTab(tab) {
-  savedTab = tab;
-  document.querySelectorAll('.modal-tab').forEach((t,i) => {
-    t.classList.toggle('active', TABS[i] === tab);
-  });
-  renderSaved();
-}
-
-function renderSaved() {
-  const body = document.getElementById('savedBody');
-  const list = saved[savedTab] || [];
-  if (!list.length) {
-    body.innerHTML = '<div class="modal-empty">No saved IDs for ' + LABELS[savedTab] + '</div>';
-    return;
-  }
-  body.innerHTML = list.map((item, i) =>
-    '<div class="saved-row">' +
-      '<div><div class="saved-id-text">' + esc(item.id) + '</div>' +
-      '<div class="saved-time">' + esc(item.time) + '</div></div>' +
-      '<button class="del-btn" onclick="delSaved(' + i + ')">✕</button>' +
-    '</div>'
-  ).join('');
-}
-
-function delSaved(i) {
-  saved[savedTab].splice(i, 1);
-  try { localStorage.setItem('mea_saved2', JSON.stringify(saved)); } catch(e) {}
-  renderSaved();
-}
-
-function clearSavedTab() {
-  if (!confirm('Clear all saved IDs for ' + LABELS[savedTab] + '?')) return;
-  saved[savedTab] = [];
-  try { localStorage.setItem('mea_saved2', JSON.stringify(saved)); } catch(e) {}
-  renderSaved();
-}
-
-function exportCSV() {
-  const list = saved[savedTab] || [];
-  if (!list.length) { toast('Nothing to export','info'); return; }
-  const csv  = 'ID,Time\n' + list.map(r => '"'+r.id+'","'+r.time+'"').join('\n');
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = 'MEA_' + savedTab.replace('/','_') + '_' + Date.now() + '.csv';
-  a.click();
-}
-
-// ────────────────────────────────────────────
-// Settings
-// ────────────────────────────────────────────
-function fillSettings() {
-  document.getElementById('s-url').value          = cfg.url || '';
-  document.getElementById('s-col-INVENTORY').value = cfg.cols['INVENTORY'] || 'A';
-  document.getElementById('s-col-WProj').value     = cfg.cols['W/Proj']    || 'A';
-  document.getElementById('s-col-DEPLOYED').value  = cfg.cols['DEPLOYED']  || 'A';
-  document.getElementById('s-cooldown').value      = cfg.cooldown || 3;
-  document.getElementById('testResult').style.display = 'none';
-}
-
-function saveSettings() {
-  cfg.url              = document.getElementById('s-url').value.trim();
-  cfg.cols['INVENTORY']= (document.getElementById('s-col-INVENTORY').value||'A').toUpperCase();
-  cfg.cols['W/Proj']   = (document.getElementById('s-col-WProj').value||'A').toUpperCase();
-  cfg.cols['DEPLOYED'] = (document.getElementById('s-col-DEPLOYED').value||'A').toUpperCase();
-  cfg.cooldown         = parseInt(document.getElementById('s-cooldown').value)||3;
-  try { localStorage.setItem('mea_cfg2', JSON.stringify(cfg)); } catch(e) {}
-  toast('Settings saved','ok');
-  setTimeout(() => goTo('page-main'), 500);
-}
-
-async function testConn() {
-  const url = document.getElementById('s-url').value.trim();
-  if (!url) { toast('Enter a URL first','info'); return; }
-  const btn = document.getElementById('testBtn');
-  const box = document.getElementById('testResult');
-  btn.textContent = 'Testing…';
-  btn.disabled    = true;
-  box.style.display = 'none';
-
-  try {
-    const res  = await fetch(url + '?action=tracker&sheet=INVENTORY&col=A&data=000000');
-    const text = await res.text();
-    btn.textContent = 'Test Connection';
-    btn.disabled    = false;
-    box.style.display = 'block';
-
-    let parsed = null;
-    try { parsed = JSON.parse(text); } catch(ex){}
-
-    if (parsed && parsed.ok === true) {
-      box.style.background = 'rgba(45,212,160,0.1)';
-      box.style.borderColor = 'var(--success)';
-      box.style.color = 'var(--success)';
-      box.textContent = '✓ Connected! Script is working correctly.\n(Test ID "000000" was written to INVENTORY — you can delete it.)';
-      toast('Connection successful!','ok');
-    } else if (parsed && parsed.ok === false) {
-      box.style.background = 'rgba(255,107,107,0.08)';
-      box.style.borderColor = 'var(--danger)';
-      box.style.color = 'var(--danger)';
-      box.textContent = '✕ Script error: ' + (parsed.error || JSON.stringify(parsed));
-    } else if (text.includes('<html') || text.includes('<!DOCTYPE')) {
-      box.style.background = 'rgba(255,209,102,0.08)';
-      box.style.borderColor = 'var(--warn)';
-      box.style.color = 'var(--warn)';
-      box.textContent = '⚠ Received an HTML page instead of JSON.\n\nFix: In Apps Script → Deploy → Manage deployments → Edit → set "Who has access" to Anyone → deploy as a New Version.';
-    } else {
-      box.style.background = 'rgba(255,209,102,0.08)';
-      box.style.borderColor = 'var(--warn)';
-      box.style.color = 'var(--warn)';
-      box.textContent = '⚠ Unexpected response:\n' + text.substring(0, 400);
-    }
-  } catch(err) {
-    btn.textContent = 'Test Connection';
-    btn.disabled    = false;
-    box.style.display = 'block';
-    box.style.background  = 'rgba(255,107,107,0.08)';
-    box.style.borderColor = 'var(--danger)';
-    box.style.color       = 'var(--danger)';
-    box.textContent = '✕ Network error: ' + err.message;
-    toast('Failed: ' + err.message,'fail');
-  }
-}
-
-// ────────────────────────────────────────────
-// Help
-// ────────────────────────────────────────────
-function copyScript() {
-  const code = document.getElementById('scriptCode').textContent;
-  navigator.clipboard.writeText(code.trim())
-    .then(() => toast('Script copied!','ok'))
-    .catch(() => toast('Copy failed — select manually','fail'));
-}
-
-// ────────────────────────────────────────────
-// Toast
-// ────────────────────────────────────────────
-let _tt;
-function toast(msg, type) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'show ' + type;
-  clearTimeout(_tt);
-  _tt = setTimeout(() => { t.className = ''; }, 2800);
-}
-
-function esc(s) {
-  return String(s)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;');
-}
-</script>
+  <script src="inventory.js"></script>
 </body>
 </html>
