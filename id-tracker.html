@@ -754,13 +754,14 @@ body::before {
 
   <div class="header">
     <div class="brand">
-      <div class="brand-logo"><img src="icons/icon-96.png" alt="MEA" style="width:100%;height:100%;object-fit:contain;border-radius:10px;"></div>
+      <a href="index.html" class="brand-logo" title="Back to Home" style="text-decoration:none;"><img src="icons/icon-96.png" alt="MEA" style="width:100%;height:100%;object-fit:contain;border-radius:10px;"></a>
       <div>
         <div class="brand-name">MEA ID Tracker</div>
         <div class="brand-sub">Management Engineering Association</div>
       </div>
     </div>
     <div class="header-right">
+      <a href="index.html" class="icon-btn" title="Back to Home" style="text-decoration:none;font-size:15px;">🏠</a>
       <div class="dd-wrap">
         <div class="icon-btn" id="menuBtn" onclick="toggleDD()">⋯</div>
         <div class="dd-menu" id="ddMenu">
@@ -1129,6 +1130,15 @@ let saved         = { 'INVENTORY':[],'W/Proj':[],'DEPLOYED':[] };
     document.getElementById('statusTitle').textContent = LABELS[activeTab];
     document.getElementById('statusSub').textContent = 'Type an ID above to log it';
   }
+
+  // Pre-fill manual entry if an ID was carried over from the Home page
+  try {
+    const urlId = new URLSearchParams(window.location.search).get('id');
+    if (urlId) {
+      const input = document.getElementById('manualInput');
+      if (input) input.value = urlId;
+    }
+  } catch(e) {}
 
   // Register service worker for installability + offline app shell
   if ('serviceWorker' in navigator) {

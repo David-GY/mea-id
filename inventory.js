@@ -42,7 +42,7 @@
   }
 
   const state = {
-    view: 'scan',            // scan | catalog | cart | checkout
+    view: 'home',             // home | catalog | cart | checkout
     catalogFormat: 'grid',   // grid | list
     inventory: [],
     cart: {},                // { itemId: { item, qty } }
@@ -57,15 +57,12 @@
     bindNav();
     bindHome();
     bindHeaderActions();
-    bindIdInput();
-    bindScanCircle();
     bindCatalogToggle();
     bindCheckoutForm();
     bindModal();
 
     loadInventory();
     loadProjectOptions();
-    renderScanLog();
     updateCartBadge();
     showView('home');
   });
@@ -75,13 +72,6 @@
   function bindNav() {
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', () => showView(btn.dataset.view));
-    });
-    document.querySelectorAll('.mea-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.mea-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        setStateTitle(tab.dataset.title, tab.dataset.sub);
-      });
     });
   }
 
@@ -93,15 +83,11 @@
     const navBtn = document.querySelector('.nav-btn[data-view="' + view + '"]');
     if (navBtn) navBtn.classList.add('active');
 
-    // The homepage (page-1 layout) has its own minimal header — hide the
-    // shared app chrome so it isn't duplicated. Other views share the
-    // header + bottom nav; the tabs and cart/contact icons only show where
-    // they're actually relevant.
+    // The homepage has its own hero header — hide the shared app chrome so
+    // it isn't duplicated. Other views share the standard header + bottom nav.
     const isHome = view === 'home';
-    const inInventoryFlow = view === 'catalog' || view === 'cart' || view === 'checkout';
     document.getElementById('app-header').style.display = isHome ? 'none' : 'flex';
-    document.getElementById('app-tabs').style.display = view === 'scan' ? 'flex' : 'none';
-    document.getElementById('bottom-nav').style.display = inInventoryFlow ? 'flex' : 'none';
+    document.getElementById('bottom-nav').style.display = 'flex';
     document.getElementById('cart-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
     document.getElementById('contact-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
 
@@ -124,7 +110,11 @@
     document.getElementById('home-nav-idtracker').addEventListener('click', () => {
       // The tracker stays in its original, self-contained document so its
       // NFC, settings, saved IDs, and Google Sheets behavior are untouched.
-      window.location.href = 'id-tracker.html';
+      const idValue = document.getElementById('home-id-input').value.trim();
+      captureHomeId();
+      window.location.href = idValue
+        ? 'id-tracker.html?id=' + encodeURIComponent(idValue)
+        : 'id-tracker.html';
     });
     document.getElementById('home-menu-btn').addEventListener('click', () => toggleModal(true));
 
@@ -144,99 +134,11 @@
     google.script.run
       .withSuccessHandler(result => {
         state.lastId = result;
-        addLogEntry(idValue, result.found ? 'found' : 'not-found');
       })
       .withFailureHandler(() => {})
       .lookupIdNumber(idValue, 'HOME');
 
     return idValue;
-  }
-
-  /* ---------------- ID input / scanning ---------------- */
-
-  function bindIdInput() {
-    const input = document.getElementById('id-number-input');
-    const goBtn = document.getElementById('id-go-btn');
-    goBtn.addEventListener('click', () => handleIdSubmit(input.value));
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') handleIdSubmit(input.value);
-    });
-
-    document.getElementById('clear-log-btn').addEventListener('click', () => {
-      state.scanLog = [];
-      renderScanLog();
-    });
-  }
-
-  function bindScanCircle() {
-    document.getElementById('scan-circle-btn').addEventListener('click', () => {
-      // Simulated scan — in production this hooks into a barcode/QR reader.
-      const simulated = String(100000 + Math.floor(Math.random() * 899999));
-      document.getElementById('id-number-input').value = simulated;
-      handleIdSubmit(simulated);
-    });
-  }
-
-  function handleIdSubmit(rawValue) {
-    const idNumber = String(rawValue || '').trim();
-    if (!idNumber) {
-      showToast('Enter an ID number first', true);
-      return;
-    }
-    setStateTitle('Checking…', 'Looking up ID ' + idNumber);
-
-    google.script.run
-      .withSuccessHandler(result => onIdLookupSuccess(idNumber, result))
-      .withFailureHandler(err => onIdLookupError(idNumber, err))
-      .lookupIdNumber(idNumber, 'INVENTORY');
-  }
-
-  function onIdLookupSuccess(idNumber, result) {
-    state.lastId = result;
-    addLogEntry(idNumber, result.found ? 'found' : 'not-found');
-
-    if (result.found) {
-      setStateTitle('Welcome', result.name ? result.name : 'ID ' + idNumber + ' verified');
-      showToast('ID ' + idNumber + ' verified');
-    } else {
-      setStateTitle('Not Found', 'ID ' + idNumber + ' is not registered');
-      showToast('ID not recognized', true);
-    }
-  }
-
-  function onIdLookupError(idNumber, err) {
-    addLogEntry(idNumber, 'not-found');
-    setStateTitle('Error', err.message || 'Could not verify ID');
-    showToast(err.message || 'Lookup failed', true);
-  }
-
-  function addLogEntry(idNumber, status) {
-    state.scanLog.unshift({
-      idNumber: idNumber,
-      status: status,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
-    state.scanLog = state.scanLog.slice(0, 20);
-    renderScanLog();
-  }
-
-  function renderScanLog() {
-    const box = document.getElementById('scan-log-box');
-    if (!state.scanLog.length) {
-      box.innerHTML = '<div class="log-empty">No scans yet this session</div>';
-      return;
-    }
-    box.innerHTML = state.scanLog.map(entry => `
-      <div class="log-item">
-        <span>${escapeHtml(entry.idNumber)} · ${entry.time}</span>
-        <span class="log-status ${entry.status}">${entry.status === 'found' ? 'FOUND' : 'NOT FOUND'}</span>
-      </div>
-    `).join('');
-  }
-
-  function setStateTitle(title, sub) {
-    document.getElementById('scan-state-title').textContent = title;
-    document.getElementById('scan-state-sub').textContent = sub || 'Select a tab then tap the button';
   }
 
   /* ---------------- Inventory / catalog ---------------- */

@@ -1,18 +1,29 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MEA</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="inventory.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MEA</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a3535">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MEA">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="inventory.css">
 </head>
 <body>
   <div id="app">
 
     <!-- ===================== Header ===================== -->
     <header class="mea-header" id="app-header">
-      <div class="mea-logo-chip" id="logo-home-btn" title="Home">MEA</div>
+      <div class="mea-logo-chip" id="logo-home-btn" title="Home">
+        <img src="icons/icon-96.png" alt="MEA">
+      </div>
       <div class="mea-header-titles">
         <h1>MEA Inventory</h1>
         <p>Management Engineering Association</p>
@@ -25,26 +36,20 @@
       </div>
     </header>
 
-    <!-- ===================== Tabs (scan view) ===================== -->
-    <nav class="mea-tabs" id="app-tabs">
-      <div class="mea-tab active" data-title="Inventory" data-sub="Select a tab then tap the button">
-        <span class="tab-main">INVENTORY</span>
-        <span class="tab-sub">STORAGE</span>
-      </div>
-      <div class="mea-tab" data-title="With Project" data-sub="Items currently in use">
-        <span class="tab-main">W/PROJ</span>
-        <span class="tab-sub">IN USE</span>
-      </div>
-      <div class="mea-tab" data-title="Deployed" data-sub="Items out in the field">
-        <span class="tab-main">DEPLOYED</span>
-        <span class="tab-sub">FIELD</span>
-      </div>
-    </nav>
-
-    <!-- ===================== View: Home (page 1 layout) ===================== -->
+    <!-- ===================== View: Home ===================== -->
     <section class="view active" id="view-home">
+
+      <div class="home-hero">
+        <div class="home-hero-logo">
+          <img src="brand/mea-logo-teal.png" alt="MEA">
+        </div>
+        <div>
+          <div class="home-hero-title">Management Engineering<br>Association</div>
+          <div class="home-hero-sub" style="margin-top:6px">MEA Portal</div>
+        </div>
+      </div>
+
       <div class="home-header">
-        <h1 class="home-title">Management Engineering Association</h1>
         <button class="icon-btn" id="home-menu-btn" title="Menu">⋯</button>
       </div>
 
@@ -75,33 +80,6 @@
       <p class="home-footnote">Entering an ID number here carries it into whichever section you open.</p>
     </section>
 
-    <!-- ===================== View: Scan / ID Tracker ===================== -->
-    <section class="view" id="view-scan">
-      <div class="id-input-label">TYPE ID NUMBER</div>
-      <div class="id-input-row">
-        <input type="text" inputmode="numeric" id="id-number-input" placeholder="e.g. 212345" />
-        <button id="id-go-btn">→</button>
-      </div>
-
-      <div class="scan-wrap">
-        <div class="scan-circle" id="scan-circle-btn">
-          <span class="emoji">📡</span>
-          <span class="label">TAP TO SCAN</span>
-        </div>
-      </div>
-
-      <h2 class="state-title" id="scan-state-title">INVENTORY</h2>
-      <p class="state-sub" id="scan-state-sub">Select a tab then tap the button</p>
-
-      <div class="log-header">
-        <span>SCAN LOG</span>
-        <span class="clear" id="clear-log-btn">Clear</span>
-      </div>
-      <div class="log-box" id="scan-log-box">
-        <div class="log-empty">No scans yet this session</div>
-      </div>
-    </section>
-
     <!-- ===================== View: Catalog ===================== -->
     <section class="view" id="view-catalog">
       <div class="catalog-toolbar">
@@ -109,7 +87,7 @@
           <button class="icon-btn active" id="format-grid-btn" title="Grid view">▦</button>
           <button class="icon-btn" id="format-list-btn" title="List view">☰</button>
         </div>
-        <div style="font-size:11px;color:var(--mea-text-dim);">Click to add to cart</div>
+        <div style="font-size:11px;color:var(--text-dim);">Click to add to cart</div>
       </div>
       <div id="catalog-container" class="item-grid"></div>
     </section>
@@ -147,6 +125,7 @@
   <!-- ===================== Bottom Nav ===================== -->
   <nav class="bottom-nav" id="bottom-nav">
     <div class="bottom-nav-inner">
+      <div class="nav-btn" data-view="home"><span class="nav-emoji">🏠</span>Home</div>
       <div class="nav-btn" data-view="catalog"><span class="nav-emoji">📦</span>Catalog</div>
       <div class="nav-btn" data-view="cart"><span class="nav-emoji">🛒</span>Cart</div>
       <div class="nav-btn" data-view="checkout"><span class="nav-emoji">✅</span>Checkout</div>
