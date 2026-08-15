@@ -167,28 +167,29 @@ body::before {
 /* ── Home ── */
 .home-hero {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 14px;
-  padding: 28px 0 8px;
-  text-align: center;
+  padding: 24px 0 8px;
+  text-align: left;
 }
 .home-hero-logo {
-  width: 96px; height: 96px;
-  border-radius: 22px;
+  width: 72px; height: 72px;
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  flex-shrink: 0;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.3);
 }
 .home-hero-logo img { width: 100%; height: 100%; object-fit: cover; }
 
 .home-hero-title {
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: 0.1px;
   line-height: 1.3;
 }
 .home-hero-sub {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;

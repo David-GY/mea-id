@@ -65,6 +65,10 @@
     loadProjectOptions();
     updateCartBadge();
     showView('home');
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
   });
 
   /* ---------------- Navigation ---------------- */
@@ -87,7 +91,7 @@
     // it isn't duplicated. Other views share the standard header + bottom nav.
     const isHome = view === 'home';
     document.getElementById('app-header').style.display = isHome ? 'none' : 'flex';
-    document.getElementById('bottom-nav').style.display = 'flex';
+    document.getElementById('bottom-nav').style.display = isHome ? 'none' : 'flex';
     document.getElementById('cart-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
     document.getElementById('contact-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
 
@@ -116,7 +120,7 @@
         ? 'id-tracker.html?id=' + encodeURIComponent(idValue)
         : 'id-tracker.html';
     });
-    document.getElementById('home-menu-btn').addEventListener('click', () => toggleModal(true));
+    document.getElementById('home-menu-btn').addEventListener('click', () => triggerInstall());
 
     const logoBtn = document.getElementById('logo-home-btn');
     if (logoBtn) logoBtn.addEventListener('click', () => showView('home'));
@@ -369,6 +373,32 @@
 
   function toggleModal(show) {
     document.getElementById('modal-backdrop').classList.toggle('show', show);
+  }
+
+  /* ---------------- Install App (PWA) ---------------- */
+
+  let deferredInstallPrompt = null;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+  });
+
+  window.addEventListener('appinstalled', () => {
+    showToast('MEA App installed!');
+  });
+
+  async function triggerInstall() {
+    if (!deferredInstallPrompt) {
+      showToast('App may already be installed, or your browser doesn\'t support installing yet');
+      return;
+    }
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice;
+    if (choice.outcome === 'accepted') {
+      showToast('Installing MEA App…');
+    }
+    deferredInstallPrompt = null;
   }
 
   /* ---------------- Toast ---------------- */
