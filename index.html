@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>MEA ID Tracker</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a3535">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MEA Tracker">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after {
@@ -80,11 +91,13 @@ body::before {
 
 .brand-logo {
   width: 38px; height: 38px;
-  background: linear-gradient(135deg, var(--teal-bright), var(--teal-light));
+  background: var(--white);
   border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-size: 19px;
   flex-shrink: 0;
+  padding: 4px;
+  overflow: hidden;
 }
 
 .brand-name {
@@ -663,7 +676,7 @@ body::before {
 
   <div class="header">
     <div class="brand">
-      <div class="brand-logo">📡</div>
+      <div class="brand-logo"><img src="icons/icon-96.png" alt="MEA" style="width:100%;height:100%;object-fit:contain;border-radius:10px;"></div>
       <div>
         <div class="brand-name">MEA ID Tracker</div>
         <div class="brand-sub">Management Engineering Association</div>
@@ -673,6 +686,9 @@ body::before {
       <div class="dd-wrap">
         <div class="icon-btn" id="menuBtn" onclick="toggleDD()">⋯</div>
         <div class="dd-menu" id="ddMenu">
+          <div class="dd-item" id="installMenuItem" style="display:none" onclick="triggerInstall(); closeDD()">
+            <span class="dd-icon">⬇️</span> Install App
+          </div>
           <div class="dd-item" onclick="openSaved(); closeDD()">
             <span class="dd-icon">💾</span> Saved IDs
           </div>
@@ -686,6 +702,7 @@ body::before {
       </div>
     </div>
   </div>
+
 
   <!-- Tab bar -->
   <div class="tab-bar">
@@ -1010,7 +1027,48 @@ let saved         = { 'INVENTORY':[],'W/Proj':[],'DEPLOYED':[] };
   if (!('NDEFReader' in window)) {
     document.getElementById('nfc-wall').classList.add('show');
   }
+
+  // Register service worker for installability + offline app shell
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.log('Service worker registration failed:', err);
+      });
+    });
+  }
 })();
+
+// ────────────────────────────────────────────
+// PWA Install Prompt
+// ────────────────────────────────────────────
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const item = document.getElementById('installMenuItem');
+  if (item) item.style.display = 'flex';
+});
+
+async function triggerInstall() {
+  if (!deferredInstallPrompt) {
+    toast('App may already be installed', 'info');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  if (choice.outcome === 'accepted') {
+    toast('Installing MEA Tracker…', 'ok');
+  }
+  deferredInstallPrompt = null;
+  document.getElementById('installMenuItem').style.display = 'none';
+}
+
+window.addEventListener('appinstalled', () => {
+  toast('MEA Tracker installed!', 'ok');
+  const item = document.getElementById('installMenuItem');
+  if (item) item.style.display = 'none';
+});
 
 // ────────────────────────────────────────────
 // Navigation
