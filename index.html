@@ -321,6 +321,83 @@ body::before {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Manual entry ── */
+.manual-entry {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.manual-entry-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: center;
+}
+.manual-entry-row {
+  display: flex;
+  gap: 8px;
+}
+.manual-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1.5px solid var(--border-mid);
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--white);
+  outline: none;
+  text-align: center;
+  letter-spacing: 0.5px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.manual-input::placeholder {
+  color: var(--text-faint);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+.manual-input:focus {
+  border-color: var(--teal-bright);
+  background: rgba(255,255,255,0.1);
+}
+.manual-submit {
+  width: 52px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
+  color: var(--white);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.manual-submit:active { transform: scale(0.93); opacity: 0.85; }
+
+.divider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+  margin: 2px 0;
+}
+.divider-line { flex: 1; height: 1px; background: var(--border-dark); }
+.divider-text {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
 /* ══════════════════════════════
    LOG
 ══════════════════════════════ */
@@ -649,25 +726,26 @@ body::before {
 #toast.info { background: var(--teal-bright); color: var(--teal-deep); }
 #toast.skip { background: rgba(255,255,255,0.15); color: var(--white); border: 1px solid var(--border-mid); }
 
-/* ── NFC unsupported ── */
-#nfc-wall {
-  display: none; position: fixed; inset: 0;
-  background: var(--teal-deep); z-index: 500;
-  flex-direction: column; align-items: center; justify-content: center;
-  gap: 16px; text-align: center; padding: 32px;
+/* ── NFC unsupported inline notice ── */
+.nfc-unavailable {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px dashed var(--border-mid);
+  border-radius: 14px;
+  max-width: 300px;
+  text-align: center;
 }
-#nfc-wall.show { display: flex; }
-#nfc-wall h2 { font-size: 22px; font-weight: 800; color: var(--teal-light); }
-#nfc-wall p  { font-size: 13px; color: var(--text-dim); line-height: 1.7; max-width: 280px; }
+.nfc-unavailable.show { display: flex; }
+.nfc-unavailable .nu-icon { font-size: 30px; }
+.nfc-unavailable .nu-title { font-size: 13px; font-weight: 700; color: var(--text-dim); }
+.nfc-unavailable .nu-sub { font-size: 11px; color: var(--text-faint); line-height: 1.5; }
 </style>
 </head>
 <body>
-
-<div id="nfc-wall">
-  <div style="font-size:56px">📵</div>
-  <h2>NFC Not Available</h2>
-  <p>Web NFC requires <strong style="color:var(--white)">Chrome on Android</strong>.<br>iOS and desktop browsers are not supported.</p>
-</div>
 
 <!-- ══════════════════════════════════
      MAIN PAGE
@@ -719,6 +797,23 @@ body::before {
 
   <!-- Scan zone -->
   <div class="scan-zone">
+
+    <div class="manual-entry">
+      <div class="manual-entry-label">Type ID Number</div>
+      <div class="manual-entry-row">
+        <input type="text" class="manual-input" id="manualInput" placeholder="e.g. 202112345"
+          inputmode="text" autocomplete="off" spellcheck="false"
+          onkeydown="if(event.key==='Enter') submitManual()">
+        <button class="manual-submit" onclick="submitManual()">→</button>
+      </div>
+    </div>
+
+    <div class="divider-row">
+      <div class="divider-line"></div>
+      <div class="divider-text">or scan nfc</div>
+      <div class="divider-line"></div>
+    </div>
+
     <div class="scan-wrap" id="scanWrap">
       <div class="ring ring-1"></div>
       <div class="ring ring-2"></div>
@@ -727,6 +822,12 @@ body::before {
         <div class="scan-icon" id="scanIcon">📡</div>
         <div class="scan-txt"  id="scanTxt">Tap to Scan</div>
       </div>
+    </div>
+
+    <div class="nfc-unavailable" id="nfcUnavailable">
+      <div class="nu-icon">📵</div>
+      <div class="nu-title">NFC not available on this device</div>
+      <div class="nu-sub">Web NFC requires Chrome on Android.<br>Use the field above to enter IDs manually.</div>
     </div>
 
     <div class="status-block">
@@ -1025,7 +1126,10 @@ let saved         = { 'INVENTORY':[],'W/Proj':[],'DEPLOYED':[] };
   } catch(e) {}
 
   if (!('NDEFReader' in window)) {
-    document.getElementById('nfc-wall').classList.add('show');
+    document.getElementById('scanWrap').style.display = 'none';
+    document.getElementById('nfcUnavailable').classList.add('show');
+    document.getElementById('statusTitle').textContent = LABELS[activeTab];
+    document.getElementById('statusSub').textContent = 'Type an ID above to log it';
   }
 
   // Register service worker for installability + offline app shell
@@ -1235,6 +1339,25 @@ async function sendToSheets(data) {
     addLog(data, 'fail', tab, err.message);
     toast('Error: ' + err.message, 'fail');
   }
+}
+
+// ────────────────────────────────────────────
+// Manual ID entry (works on any device — iOS, PC, etc.)
+// ────────────────────────────────────────────
+async function submitManual() {
+  const input = document.getElementById('manualInput');
+  const raw = input.value.trim();
+
+  if (!cfg.url) { toast('Add your Script URL in Settings first', 'info'); return; }
+  if (!raw) { toast('Enter an ID number first', 'info'); input.focus(); return; }
+
+  input.value = '';
+  input.blur();
+
+  document.getElementById('lastPill').style.display = 'inline-flex';
+  document.getElementById('lastId').textContent = raw;
+
+  await sendToSheets(raw);
 }
 
 // ────────────────────────────────────────────
