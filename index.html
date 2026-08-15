@@ -802,7 +802,7 @@ body::before {
       <div class="manual-entry-label">Type ID Number</div>
       <div class="manual-entry-row">
         <input type="text" class="manual-input" id="manualInput" placeholder="e.g. 212345"
-          inputmode="text" autocomplete="off" spellcheck="false"
+          inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false"
           onkeydown="if(event.key==='Enter') submitManual()">
         <button class="manual-submit" onclick="submitManual()">→</button>
       </div>
