@@ -58,7 +58,7 @@ body::before {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 0 0 100px;
+  padding: 0 0 0px;
 }
 
 /* ── Header ── */
@@ -76,7 +76,7 @@ body::before {
 
 .mea-logo-chip {
   width: 38px; height: 38px;
-  border-radius: 10px;
+  border-radius: 0px;
   background: var(--white);
   overflow: hidden;
   display: flex; align-items: center; justify-content: center;
