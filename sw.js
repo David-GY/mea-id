@@ -1,8 +1,9 @@
-// MEA ID Tracker — Service Worker
-// Caches the app shell so it installs and opens instantly.
-// NFC scanning and Google Sheets requests still require a live connection.
+// MEA App — Service Worker
+// Network-first for the app shell so deployments show up immediately.
+// Cache is only used as an offline fallback, never as the primary source.
+// NFC scanning and Google Sheets requests always go live, never cached.
 
-const CACHE_NAME = 'mea-app-v2';
+const CACHE_NAME = 'mea-app-v3'; // bump this string on any future SW change to force a clean cache
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,7 +19,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
-  self.skipWaiting();
+  self.skipWaiting(); // activate the new SW immediately, don't wait for old tabs to close
 });
 
 self.addEventListener('activate', (event) => {
@@ -29,28 +30,35 @@ self.addEventListener('activate', (event) => {
       )
     )
   );
-  self.clients.claim();
+  self.clients.claim(); // take control of already-open tabs right away
 });
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Never cache Google Apps Script requests — always go live
+  // Never touch Google Apps Script requests — always go live, never cached
   if (url.hostname.includes('script.google.com')) {
     return;
   }
 
-  // App shell: cache-first, falls back to network
+  // Only handle our own same-origin GET requests
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Network-first: always try to fetch the latest version. Only fall back
+  // to the cached copy if the network request fails (e.g. offline). This is
+  // what makes new deployments show up right away instead of being stuck
+  // behind a stale cache.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
-        // Cache successful same-origin GET responses
-        if (event.request.method === 'GET' && response.ok && url.origin === self.location.origin) {
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
