@@ -3,23 +3,61 @@
      ================================================================== */
 
   // GitHub Pages does not provide Apps Script's google.script.run object. This
-  // small local adapter keeps the inventory usable there while preserving the
-  // same call shape for Apps Script deployments.
+  // small local adapter keeps the app usable there while preserving the same
+  // call shape for Apps Script deployments. getInventory specifically now
+  // fetches LIVE data from the Apps Script backend (action=inventory) when a
+  // Script URL is configured, matching how the ID Tracker and Access gate
+  // already talk to the same backend — falling back to demo data only when
+  // no URL is set yet or the request fails, so the app never breaks.
   if (!window.google || !window.google.script || !window.google.script.run) {
     const demoInventory = [
-      ['ITM-100', 'Safety Vest', 'Safety', 5],
-      ['ITM-101', 'Hard Hat', 'Safety', 6],
-      ['ITM-102', 'Wire Spool', 'Electrical', 7],
-      ['ITM-103', 'Multimeter', 'Electrical', 8],
-      ['ITM-104', 'Toolbox', 'Tools', 9],
-      ['ITM-105', 'Extension Cord', 'Electrical', 10],
-      ['ITM-106', 'Work Gloves', 'Safety', 11],
-      ['ITM-107', 'Clipboard', 'General', 12],
-      ['ITM-108', 'Flashlight', 'General', 13]
-    ].map(([id, title, category, qtyAvailable]) => ({ id, title, category, qtyAvailable }));
+      { id: 'ITM-100', title: 'Safety Vest', category: 'Safety', qtyAvailable: 5, qtyDisplay: '5' },
+      { id: 'ITM-101', title: 'Hard Hat', category: 'Safety', qtyAvailable: 6, qtyDisplay: '6' },
+      { id: 'ITM-102', title: 'Wire Spool', category: 'Electrical', qtyAvailable: 7, qtyDisplay: '7' },
+      { id: 'ITM-103', title: 'Multimeter', category: 'Electrical', qtyAvailable: 8, qtyDisplay: '8' },
+      { id: 'ITM-104', title: 'Toolbox', category: 'Tools', qtyAvailable: 9, qtyDisplay: '9' },
+      { id: 'ITM-105', title: 'Extension Cord', category: 'Electrical', qtyAvailable: 10, qtyDisplay: '10' },
+      { id: 'ITM-106', title: 'Work Gloves', category: 'Safety', qtyAvailable: 11, qtyDisplay: '11' },
+      { id: 'ITM-107', title: 'Clipboard', category: 'General', qtyAvailable: 12, qtyDisplay: '12' },
+      { id: 'ITM-108', title: 'Flashlight', category: 'General', qtyAvailable: 13, qtyDisplay: '13' }
+    ];
+
+    function getMeaInventoryScriptUrl() {
+      try {
+        return (localStorage.getItem('mea_inventory_url') || '').trim();
+      } catch(e) { return ''; }
+    }
+
+    async function fetchLiveInventory() {
+      const url = getMeaInventoryScriptUrl();
+      if (!url) return demoInventory; // not configured yet — safe fallback
+
+      try {
+        const res = await fetch(url + '?action=inventory');
+        const json = await res.json();
+        if (json && json.ok && Array.isArray(json.items)) {
+          return json.items.map((item, i) => {
+            const rawQty = String(item.qty || '').trim();
+            const numericQty = parseInt(rawQty, 10);
+            return {
+              id: 'INV-' + i,
+              title: item.title || 'Untitled',
+              category: item.category || 'Miscellaneous',
+              location: item.location || '',
+              notes: item.notes || '',
+              qtyDisplay: rawQty || '—',
+              qtyAvailable: !isNaN(numericQty) ? numericQty : null // null = uncapped (e.g. "*", "2 packs")
+            };
+          });
+        }
+        return demoInventory;
+      } catch(e) {
+        return demoInventory;
+      }
+    }
 
     const localMethods = {
-      getInventory: () => demoInventory,
+      getInventory: () => fetchLiveInventory(),
       getProjectOptions: () => ['General Operations', 'Field Deployment', 'Workshop Build', 'Community Outreach'],
       lookupIdNumber: (idNumber) => ({
         found: /^\\d{4,8}$/.test(String(idNumber).trim()),
@@ -106,7 +144,8 @@
 
   /* ---------------- Home (page 1 layout) ---------------- */
 
-  const TRACKER_CFG_KEY = 'mea_cfg2'; // same localStorage key the ID Tracker reads
+  const TRACKER_CFG_KEY = 'mea_cfg2';           // same localStorage key the ID Tracker reads
+  const INVENTORY_URL_KEY = 'mea_inventory_url'; // separate key — different spreadsheet, different script
 
   function getTrackerScriptUrl() {
     try {
@@ -127,6 +166,16 @@
     if (!cfg.cols) cfg.cols = { INVENTORY: 'A', 'W/Proj': 'A', DEPLOYED: 'A' };
     if (!cfg.cooldown) cfg.cooldown = 3;
     localStorage.setItem(TRACKER_CFG_KEY, JSON.stringify(cfg));
+  }
+
+  function getInventoryScriptUrl() {
+    try {
+      return (localStorage.getItem(INVENTORY_URL_KEY) || '').trim();
+    } catch(e) { return ''; }
+  }
+
+  function saveInventoryScriptUrl(url) {
+    localStorage.setItem(INVENTORY_URL_KEY, url);
   }
 
   function updateIdTrackerCardState() {
@@ -183,18 +232,23 @@
       panel.style.display = isOpen ? 'none' : 'block';
       if (!isOpen) {
         document.getElementById('home-script-url').value = getTrackerScriptUrl();
+        document.getElementById('home-inventory-url').value = getInventoryScriptUrl();
       }
     });
 
     document.getElementById('save-script-url-btn').addEventListener('click', () => {
-      const url = document.getElementById('home-script-url').value.trim();
+      const trackerUrl = document.getElementById('home-script-url').value.trim();
+      const inventoryUrl = document.getElementById('home-inventory-url').value.trim();
       const status = document.getElementById('setupStatus');
-      if (!url) {
-        status.textContent = 'Enter a valid Apps Script URL.';
+
+      if (!trackerUrl && !inventoryUrl) {
+        status.textContent = 'Enter at least one Apps Script URL.';
         status.className = 'setup-status error';
         return;
       }
-      saveTrackerScriptUrl(url);
+      if (trackerUrl) saveTrackerScriptUrl(trackerUrl);
+      if (inventoryUrl) saveInventoryScriptUrl(inventoryUrl);
+
       status.textContent = 'Saved!';
       status.className = 'setup-status ok';
       updateIdTrackerCardState();
@@ -266,7 +320,7 @@
   function renderCatalog() {
     const container = document.getElementById('catalog-container');
     if (!state.inventory.length) {
-      container.innerHTML = '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
+      container.innerHTML = '<div class="empty-state"><span class="emoji">📦</span>Inventory is empty</div>';
       return;
     }
 
@@ -274,19 +328,19 @@
       container.className = 'item-grid';
       container.innerHTML = state.inventory.map(item => `
         <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
+          <div class="item-thumb">📦</div>
           <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="item-qty">${item.qtyAvailable} in stock</div>
+          <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
         </div>
       `).join('');
     } else {
       container.className = 'item-list';
       container.innerHTML = state.inventory.map(item => `
         <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
+          <div class="item-thumb">📦</div>
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-qty">${item.qtyAvailable} in stock</div>
+            <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
           </div>
           ${cartQty(item.id) > 0 ? `<div class="in-cart-badge">${cartQty(item.id)} in cart</div>` : ''}
         </div>
@@ -363,10 +417,10 @@
 
     container.innerHTML = entries.map(({ item, qty }) => `
       <div class="item-row">
-        <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
+        <div class="item-thumb">📦</div>
         <div class="item-info">
           <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="item-qty">${item.qtyAvailable} in stock</div>
+          <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
         </div>
         <div class="qty-stepper">
           <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', -1)">−</button>
