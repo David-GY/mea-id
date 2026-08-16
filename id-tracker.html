@@ -796,7 +796,7 @@ body::before {
   <div class="gate-logo"><img src="icons/icon-192.png" alt="MEA"></div>
   <div>
     <div class="gate-title">MEA ID Tracker</div>
-    <div class="gate-sub">Enter your ID number to access the tracker.</div>
+    <div class="gate-sub" id="gateSub">Enter your ID number to access the tracker.</div>
   </div>
   <div class="gate-form">
     <input type="text" class="gate-input" id="gateInput" placeholder="Enter your ID number"
@@ -805,6 +805,7 @@ body::before {
     <button class="gate-submit" id="gateSubmitBtn" onclick="submitGate()">Verify & Continue</button>
     <div class="gate-error" id="gateError"></div>
     <div class="gate-welcome" id="gateWelcome"></div>
+    <a href="index.html" id="gateHomeBtn" style="display:none;text-align:center;text-decoration:none;box-sizing:border-box;padding:13px;border-radius:12px;background:transparent;border:1.5px solid var(--border-mid);color:var(--white);font-weight:700;font-size:13px;">Go to Home Page</a>
   </div>
 </div>
 
@@ -1257,10 +1258,17 @@ async function submitGate() {
     if (s) saved = Object.assign(saved, JSON.parse(s));
   } catch(e) {}
 
-  // Access gate: only enforced once a Script URL is configured, so first-time
-  // setup (visiting Settings to paste the URL) is never blocked.
+  // Access gate is always enforced. Apps Script URL setup now lives on the
+  // Home page, so if it's missing, we point people back there instead of
+  // letting them straight into the tracker.
   if (!cfg.url) {
-    hideGate();
+    showGate();
+    document.getElementById('gateSub').textContent = 'This app needs to be set up first.';
+    document.getElementById('gateInput').style.display = 'none';
+    document.getElementById('gateSubmitBtn').style.display = 'none';
+    document.getElementById('gateHomeBtn').style.display = 'block';
+    document.getElementById('gateError').textContent = 'Not configured yet — go to the Home page and tap ⚙️ to add the Apps Script URL.';
+    document.getElementById('gateError').classList.add('show');
   } else {
     const cached = getCachedAccess();
     if (cached) {

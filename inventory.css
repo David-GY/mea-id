@@ -198,6 +198,7 @@ body::before {
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
+  gap: 8px;
   margin: -6px 0 4px;
 }
 
@@ -255,6 +256,13 @@ body::before {
 }
 .home-nav-card:active { transform: scale(0.98); background: var(--surface-hi); }
 
+.home-nav-card.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.home-nav-card.disabled .home-nav-chevron { opacity: 0.5; }
+
 .home-nav-icon {
   width: 46px; height: 46px;
   border-radius: 12px;
@@ -276,6 +284,23 @@ body::before {
   line-height: 1.6;
   padding: 0 6px;
 }
+
+/* ── Setup panel (homepage Apps Script URL) ── */
+.setup-panel {
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 18px;
+}
+.setup-status {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 8px;
+  min-height: 14px;
+}
+.setup-status.ok { color: var(--success); }
+.setup-status.error { color: var(--danger); }
 
 /* ── Catalog ── */
 .catalog-toolbar {

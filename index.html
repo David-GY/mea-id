@@ -50,7 +50,18 @@
       </div>
 
       <div class="home-header">
+        <button class="icon-btn" id="home-setup-btn" title="Setup">⚙️</button>
         <button class="icon-btn" id="home-menu-btn" title="Install App">⬇️</button>
+      </div>
+
+      <div class="setup-panel" id="setupPanel" style="display:none;">
+        <div class="id-input-label" style="text-align:left;">APPS SCRIPT URL</div>
+        <div class="id-input-row">
+          <input type="url" id="home-script-url" placeholder="https://script.google.com/macros/s/…/exec"
+            autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
+        </div>
+        <button class="btn-secondary" id="save-script-url-btn" style="margin-top:0;">Save</button>
+        <div class="setup-status" id="setupStatus"></div>
       </div>
 
       <div class="id-input-label" style="text-align:left;">INPUT ID NUMBER</div>
@@ -71,7 +82,7 @@
           <div class="home-nav-icon">📡</div>
           <div class="home-nav-text">
             <div class="home-nav-title">ID Tracker</div>
-            <div class="home-nav-sub">Scan & verify a MEA ID</div>
+            <div class="home-nav-sub" id="idtracker-sub">Enter your ID number above first</div>
           </div>
           <div class="home-nav-chevron">›</div>
         </div>

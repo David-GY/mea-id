@@ -106,24 +106,105 @@
 
   /* ---------------- Home (page 1 layout) ---------------- */
 
+  const TRACKER_CFG_KEY = 'mea_cfg2'; // same localStorage key the ID Tracker reads
+
+  function getTrackerScriptUrl() {
+    try {
+      const raw = localStorage.getItem(TRACKER_CFG_KEY);
+      if (!raw) return '';
+      const parsed = JSON.parse(raw);
+      return (parsed && parsed.url) ? parsed.url.trim() : '';
+    } catch(e) { return ''; }
+  }
+
+  function saveTrackerScriptUrl(url) {
+    let cfg = {};
+    try {
+      const raw = localStorage.getItem(TRACKER_CFG_KEY);
+      if (raw) cfg = JSON.parse(raw) || {};
+    } catch(e) {}
+    cfg.url = url;
+    if (!cfg.cols) cfg.cols = { INVENTORY: 'A', 'W/Proj': 'A', DEPLOYED: 'A' };
+    if (!cfg.cooldown) cfg.cooldown = 3;
+    localStorage.setItem(TRACKER_CFG_KEY, JSON.stringify(cfg));
+  }
+
+  function updateIdTrackerCardState() {
+    const idValue = document.getElementById('home-id-input').value.trim();
+    const scriptUrl = getTrackerScriptUrl();
+    const card = document.getElementById('home-nav-idtracker');
+    const sub = document.getElementById('idtracker-sub');
+
+    const ready = !!idValue && !!scriptUrl;
+    card.classList.toggle('disabled', !ready);
+
+    if (!scriptUrl) {
+      sub.textContent = 'Setup required — tap ⚙️ to add Apps Script URL';
+    } else if (!idValue) {
+      sub.textContent = 'Enter your ID number above first';
+    } else {
+      sub.textContent = 'Scan & verify a MEA ID';
+    }
+  }
+
   function bindHome() {
     document.getElementById('home-nav-inventory').addEventListener('click', () => {
       captureHomeId();
       showView('catalog');
     });
+
     document.getElementById('home-nav-idtracker').addEventListener('click', () => {
+      const idValue = document.getElementById('home-id-input').value.trim();
+      const scriptUrl = getTrackerScriptUrl();
+
+      if (!scriptUrl) {
+        showToast('Add your Apps Script URL first — tap ⚙️', true);
+        return;
+      }
+      if (!idValue) {
+        showToast('Enter your ID number first', true);
+        document.getElementById('home-id-input').focus();
+        return;
+      }
+
       // The tracker stays in its original, self-contained document so its
       // NFC, settings, saved IDs, and Google Sheets behavior are untouched.
-      const idValue = document.getElementById('home-id-input').value.trim();
       captureHomeId();
-      window.location.href = idValue
-        ? 'id-tracker.html?id=' + encodeURIComponent(idValue)
-        : 'id-tracker.html';
+      window.location.href = 'id-tracker.html?id=' + encodeURIComponent(idValue);
     });
+
+    document.getElementById('home-id-input').addEventListener('input', updateIdTrackerCardState);
+
     document.getElementById('home-menu-btn').addEventListener('click', () => triggerInstall());
+
+    document.getElementById('home-setup-btn').addEventListener('click', () => {
+      const panel = document.getElementById('setupPanel');
+      const isOpen = panel.style.display !== 'none';
+      panel.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) {
+        document.getElementById('home-script-url').value = getTrackerScriptUrl();
+      }
+    });
+
+    document.getElementById('save-script-url-btn').addEventListener('click', () => {
+      const url = document.getElementById('home-script-url').value.trim();
+      const status = document.getElementById('setupStatus');
+      if (!url) {
+        status.textContent = 'Enter a valid Apps Script URL.';
+        status.className = 'setup-status error';
+        return;
+      }
+      saveTrackerScriptUrl(url);
+      status.textContent = 'Saved!';
+      status.className = 'setup-status ok';
+      updateIdTrackerCardState();
+      setTimeout(() => { document.getElementById('setupPanel').style.display = 'none'; }, 900);
+    });
 
     const logoBtn = document.getElementById('logo-home-btn');
     if (logoBtn) logoBtn.addEventListener('click', () => showView('home'));
+
+    updateIdTrackerCardState();
   }
 
   /**
