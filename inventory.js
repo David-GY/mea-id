@@ -121,6 +121,8 @@
   /* ---------------- Init ---------------- */
 
   document.addEventListener('DOMContentLoaded', () => {
+    seedDefaultScriptUrls();
+
     bindNav();
     bindHome();
     bindHeaderActions();
@@ -177,6 +179,11 @@
   const TRACKER_CFG_KEY = 'mea_cfg2';           // same localStorage key the ID Tracker reads
   const INVENTORY_URL_KEY = 'mea_inventory_url'; // separate key — different spreadsheet, different script
 
+  // Default Apps Script URLs — pre-fill the Setup panel and unlock the app
+  // automatically on first load. Still fully editable at any time.
+  const DEFAULT_TRACKER_URL = 'https://script.google.com/macros/s/AKfycbzWJgA5ZJBER5Tmcc-F-lE4XnuFvqXigvUly-TffEpqS7djIxdo5kHuvCvS9sJm3R8o/exec';
+  const DEFAULT_INVENTORY_URL = 'https://script.google.com/macros/s/AKfycbw7gPEvtVG_kciag2BSrGEymUL7wTWtGZS8yemKKRTAVv922PyxaArmLOxsUGWyBD-9Ng/exec';
+
   function getTrackerScriptUrl() {
     try {
       const raw = localStorage.getItem(TRACKER_CFG_KEY);
@@ -206,6 +213,18 @@
 
   function saveInventoryScriptUrl(url) {
     localStorage.setItem(INVENTORY_URL_KEY, url);
+  }
+
+  // Seeds both URLs with their defaults the very first time the app runs on
+  // a device, without ever overwriting a URL the person has already saved
+  // (their own edits — including clearing it back to blank — always win).
+  function seedDefaultScriptUrls() {
+    if (localStorage.getItem(TRACKER_CFG_KEY) === null) {
+      saveTrackerScriptUrl(DEFAULT_TRACKER_URL);
+    }
+    if (localStorage.getItem(INVENTORY_URL_KEY) === null) {
+      saveInventoryScriptUrl(DEFAULT_INVENTORY_URL);
+    }
   }
 
   function updateIdTrackerCardState() {

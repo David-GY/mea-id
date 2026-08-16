@@ -964,7 +964,7 @@ body::before {
       <div class="s-row col-dir">
         <div class="s-label">Web App Endpoint</div>
         <input class="s-input url-input" type="url" id="s-url"
-          placeholder="https://script.google.com/macros/s/AKfycbzWJgA5ZJBER5Tmcc-F-lE4XnuFvqXigvUly-TffEpqS7djIxdo5kHuvCvS9sJm3R8o/exec"
+          placeholder="https://script.google.com/macros/s/…/exec"
           spellcheck="false" autocomplete="off">
       </div>
     </div>
@@ -1251,9 +1251,18 @@ async function submitGate() {
 // Boot
 // ────────────────────────────────────────────
 (function boot() {
+  const DEFAULT_TRACKER_URL = 'https://script.google.com/macros/s/AKfycbzWJgA5ZJBER5Tmcc-F-lE4XnuFvqXigvUly-TffEpqS7djIxdo5kHuvCvS9sJm3R8o/exec';
+
   try {
     const c = localStorage.getItem('mea_cfg2');
-    if (c) cfg = Object.assign(cfg, JSON.parse(c));
+    if (c) {
+      cfg = Object.assign(cfg, JSON.parse(c));
+    } else {
+      // First run on this device with no Setup done yet — seed the default
+      // so the tracker still works even if Home was never visited first.
+      cfg.url = DEFAULT_TRACKER_URL;
+      localStorage.setItem('mea_cfg2', JSON.stringify(cfg));
+    }
     const s = localStorage.getItem('mea_saved2');
     if (s) saved = Object.assign(saved, JSON.parse(s));
   } catch(e) {}
