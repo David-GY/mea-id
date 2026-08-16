@@ -30,9 +30,9 @@
       </div>
       <div class="mea-header-actions">
         <button class="icon-btn" id="cart-icon-btn" title="Cart">
-          🛒<span class="cart-badge" id="cart-badge" style="display:none;">0</span>
+          <img class="svg-icon" src="icons/ui/shopping-basket.svg" alt="Cart"><span class="cart-badge" id="cart-badge" style="display:none;">0</span>
         </button>
-        <button class="icon-btn" id="contact-icon-btn" title="Contact">📞</button>
+        <button class="icon-btn" id="contact-icon-btn" title="Contact"><img class="svg-icon" src="icons/ui/contact.svg" alt="Contact"></button>
       </div>
     </header>
 
@@ -71,7 +71,7 @@
 
       <div class="home-nav-list">
         <div class="home-nav-card" id="home-nav-inventory">
-          <div class="home-nav-icon">📦</div>
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">INVENTORY</div>
             <div class="home-nav-sub">Browse items & request supplies</div>
@@ -79,7 +79,7 @@
           <div class="home-nav-chevron">›</div>
         </div>
         <div class="home-nav-card" id="home-nav-idtracker">
-          <div class="home-nav-icon">📡</div>
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/id-badge.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">ID Tracker</div>
             <div class="home-nav-sub" id="idtracker-sub">Enter your ID number above first</div>
@@ -95,8 +95,8 @@
     <section class="view" id="view-catalog">
       <div class="catalog-toolbar">
         <div class="view-toggle">
-          <button class="icon-btn active" id="format-grid-btn" title="Grid view">▦</button>
-          <button class="icon-btn" id="format-list-btn" title="List view">☰</button>
+          <button class="icon-btn active" id="format-grid-btn" title="Grid view"><img class="svg-icon" src="icons/ui/grip-vertical.svg" alt="Menu"></button>
+          <button class="icon-btn" id="format-list-btn" title="List view"><img class="svg-icon" src="icons/ui/align-justify.svg" alt="List view"></button>
         </div>
         <div style="font-size:11px;color:var(--text-dim);">Click to add to cart</div>
       </div>
@@ -137,9 +137,9 @@
   <nav class="bottom-nav" id="bottom-nav">
     <div class="bottom-nav-inner">
       <div class="nav-btn" data-view="home"><span class="nav-emoji">🏠</span>Home</div>
-      <div class="nav-btn" data-view="catalog"><span class="nav-emoji">📦</span>Catalog</div>
-      <div class="nav-btn" data-view="cart"><span class="nav-emoji">🛒</span>Cart</div>
-      <div class="nav-btn" data-view="checkout"><span class="nav-emoji">✅</span>Checkout</div>
+      <div class="nav-btn" data-view="catalog"><img class="nav-svg-icon" src="icons/ui/archive-box.svg" alt="">Catalog</div>
+      <div class="nav-btn" data-view="cart"><img class="nav-svg-icon" src="icons/ui/shopping-basket.svg" alt="">Cart</div>
+      <div class="nav-btn" data-view="checkout"><img class="nav-svg-icon" src="icons/ui/id-badge.svg" alt="">Checkout</div>
     </div>
   </nav>
 
