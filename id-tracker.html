@@ -741,9 +741,72 @@ body::before {
 .nfc-unavailable .nu-icon { font-size: 30px; }
 .nfc-unavailable .nu-title { font-size: 13px; font-weight: 700; color: var(--text-dim); }
 .nfc-unavailable .nu-sub { font-size: 11px; color: var(--text-faint); line-height: 1.5; }
+/* ── Access Gate ── */
+#accessGate {
+  position: fixed; inset: 0; z-index: 1000;
+  background:
+    radial-gradient(ellipse at 80% 10%, #2a9d8820 0%, transparent 55%),
+    radial-gradient(ellipse at 10% 90%, #0a353580 0%, transparent 60%),
+    linear-gradient(145deg, #0d5050 0%, #0a3535 50%, #081e2e 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 32px; text-align: center;
+}
+#accessGate.hidden { display: none; }
+.gate-logo { width: 84px; height: 84px; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 28px rgba(0,0,0,0.35); }
+.gate-logo img { width: 100%; height: 100%; object-fit: cover; }
+.gate-title { font-size: 19px; font-weight: 800; color: var(--white); }
+.gate-sub { font-size: 12.5px; color: var(--text-dim); max-width: 260px; line-height: 1.6; }
+.gate-form { width: 100%; max-width: 280px; display: flex; flex-direction: column; gap: 12px; }
+.gate-input {
+  background: var(--surface); border: 1.5px solid var(--border-mid);
+  border-radius: 12px; padding: 14px 16px; font-family: var(--sans);
+  font-size: 16px; font-weight: 700; color: var(--white); outline: none;
+  text-align: center; letter-spacing: 0.5px; transition: border-color 0.15s;
+}
+.gate-input::placeholder { color: var(--text-faint); font-weight: 500; }
+.gate-input:focus { border-color: var(--teal-bright); }
+.gate-submit {
+  padding: 14px; border: none; border-radius: 12px;
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
+  color: var(--white); font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.gate-submit:active { transform: scale(0.98); opacity: 0.9; }
+.gate-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.gate-error {
+  display: none; font-size: 12.5px; font-weight: 700; color: var(--danger);
+  background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.3);
+  border-radius: 10px; padding: 10px 14px;
+}
+.gate-error.show { display: block; }
+.gate-welcome {
+  display: none; font-size: 12.5px; font-weight: 700; color: var(--success);
+  background: rgba(45,212,160,0.1); border: 1px solid rgba(45,212,160,0.3);
+  border-radius: 10px; padding: 10px 14px;
+}
+.gate-welcome.show { display: block; }
+
 </style>
 </head>
 <body>
+
+<!-- ══════════════════════════════════
+     ACCESS GATE
+══════════════════════════════════ -->
+<div id="accessGate">
+  <div class="gate-logo"><img src="icons/icon-192.png" alt="MEA"></div>
+  <div>
+    <div class="gate-title">MEA ID Tracker</div>
+    <div class="gate-sub">Enter your ID number to access the tracker.</div>
+  </div>
+  <div class="gate-form">
+    <input type="text" class="gate-input" id="gateInput" placeholder="Enter your ID number"
+      inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false"
+      onkeydown="if(event.key==='Enter') submitGate()">
+    <button class="gate-submit" id="gateSubmitBtn" onclick="submitGate()">Verify & Continue</button>
+    <div class="gate-error" id="gateError"></div>
+    <div class="gate-welcome" id="gateWelcome"></div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════
      MAIN PAGE
@@ -1112,6 +1175,78 @@ let savedTab      = 'INVENTORY';
 let saved         = { 'INVENTORY':[],'W/Proj':[],'DEPLOYED':[] };
 
 // ────────────────────────────────────────────
+// Access Gate
+// ────────────────────────────────────────────
+const ACCESS_CACHE_KEY = 'mea_access_cache';
+const ACCESS_CACHE_MS  = 30 * 60 * 1000; // 30 minutes — how "recent" counts as still valid
+
+function getCachedAccess() {
+  try {
+    const raw = localStorage.getItem(ACCESS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !data.id || !data.time) return null;
+    if (Date.now() - data.time > ACCESS_CACHE_MS) return null; // expired
+    return data;
+  } catch(e) { return null; }
+}
+
+function setCachedAccess(id, name) {
+  try {
+    localStorage.setItem(ACCESS_CACHE_KEY, JSON.stringify({ id, name, time: Date.now() }));
+  } catch(e) {}
+}
+
+function showGate() {
+  document.getElementById('accessGate').classList.remove('hidden');
+  setTimeout(() => document.getElementById('gateInput').focus(), 100);
+}
+
+function hideGate() {
+  document.getElementById('accessGate').classList.add('hidden');
+}
+
+async function submitGate() {
+  const input = document.getElementById('gateInput');
+  const btn = document.getElementById('gateSubmitBtn');
+  const errBox = document.getElementById('gateError');
+  const okBox = document.getElementById('gateWelcome');
+  const id = input.value.trim();
+
+  errBox.classList.remove('show');
+  okBox.classList.remove('show');
+
+  if (!id) { errBox.textContent = 'Enter your ID number.'; errBox.classList.add('show'); return; }
+  if (!cfg.url) { errBox.textContent = 'App is not configured yet — Script URL missing.'; errBox.classList.add('show'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+
+  try {
+    const params = new URLSearchParams({ action: 'access', id });
+    const res = await fetch(cfg.url + '?' + params.toString());
+    const json = await res.json();
+
+    if (json.ok && json.allowed) {
+      setCachedAccess(id, json.name || '');
+      okBox.textContent = 'Welcome, ' + (json.name || id) + '!';
+      okBox.classList.add('show');
+      setTimeout(() => { hideGate(); }, 600);
+    } else {
+      errBox.textContent = 'Access Denied — ID not recognized.';
+      errBox.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Verify & Continue';
+    }
+  } catch(err) {
+    errBox.textContent = 'Could not reach the server. Try again.';
+    errBox.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Verify & Continue';
+  }
+}
+
+// ────────────────────────────────────────────
 // Boot
 // ────────────────────────────────────────────
 (function boot() {
@@ -1121,6 +1256,19 @@ let saved         = { 'INVENTORY':[],'W/Proj':[],'DEPLOYED':[] };
     const s = localStorage.getItem('mea_saved2');
     if (s) saved = Object.assign(saved, JSON.parse(s));
   } catch(e) {}
+
+  // Access gate: only enforced once a Script URL is configured, so first-time
+  // setup (visiting Settings to paste the URL) is never blocked.
+  if (!cfg.url) {
+    hideGate();
+  } else {
+    const cached = getCachedAccess();
+    if (cached) {
+      hideGate();
+    } else {
+      showGate();
+    }
+  }
 
   if (!('NDEFReader' in window)) {
     document.getElementById('scanWrap').style.display = 'none';
