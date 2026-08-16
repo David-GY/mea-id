@@ -118,6 +118,18 @@ body::before {
 .icon-btn:active { background: var(--surface-hi); }
 .icon-btn.active { background: rgba(77,196,196,0.2); border-color: var(--teal-light); }
 
+.svg-icon, .nav-svg-icon, .scan-svg-icon, .home-nav-icon .svg-icon, .item-thumb .svg-icon, .empty-state .svg-icon {
+    display: block;
+    object-fit: contain;
+    filter: invert(1);
+  }
+  .svg-icon { width: 19px; height: 19px; }
+  .home-nav-icon .svg-icon { width: 25px; height: 25px; }
+  .scan-svg-icon { width: 48px; height: 48px; }
+  .nav-svg-icon { width: 18px; height: 18px; margin: 0 auto 3px; }
+  .item-thumb .svg-icon { width: 28px; height: 28px; }
+  .empty-state .svg-icon { width: 34px; height: 34px; margin: 0 auto 10px; }
+
 .cart-badge {
   position: absolute; top: -6px; right: -6px;
   background: var(--teal-bright);
