@@ -1258,6 +1258,13 @@ async function submitGate() {
     if (s) saved = Object.assign(saved, JSON.parse(s));
   } catch(e) {}
 
+  // Grab the ID carried over from the Home page (if any) up front, so it can
+  // both prefill manual entry AND auto-run the access check below.
+  let carriedId = '';
+  try {
+    carriedId = new URLSearchParams(window.location.search).get('id') || '';
+  } catch(e) {}
+
   // Access gate is always enforced. Apps Script URL setup now lives on the
   // Home page, so if it's missing, we point people back there instead of
   // letting them straight into the tracker.
@@ -1273,6 +1280,11 @@ async function submitGate() {
     const cached = getCachedAccess();
     if (cached) {
       hideGate();
+    } else if (carriedId) {
+      // Skip retyping — the ID already entered on the Home page verifies automatically.
+      showGate();
+      document.getElementById('gateInput').value = carriedId;
+      submitGate();
     } else {
       showGate();
     }
@@ -1285,12 +1297,11 @@ async function submitGate() {
     document.getElementById('statusSub').textContent = 'Type an ID above to log it';
   }
 
-  // Pre-fill manual entry if an ID was carried over from the Home page
+  // Pre-fill manual entry with the same carried-over ID
   try {
-    const urlId = new URLSearchParams(window.location.search).get('id');
-    if (urlId) {
+    if (carriedId) {
       const input = document.getElementById('manualInput');
-      if (input) input.value = urlId;
+      if (input) input.value = carriedId;
     }
   } catch(e) {}
 
