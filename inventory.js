@@ -266,7 +266,7 @@
   function renderCatalog() {
     const container = document.getElementById('catalog-container');
     if (!state.inventory.length) {
-      container.innerHTML = '<div class="empty-state"><span class="emoji">📦</span>Inventory is empty</div>';
+      container.innerHTML = '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
       return;
     }
 
@@ -274,7 +274,7 @@
       container.className = 'item-grid';
       container.innerHTML = state.inventory.map(item => `
         <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb">📦</div>
+          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${item.qtyAvailable} in stock</div>
         </div>
@@ -283,7 +283,7 @@
       container.className = 'item-list';
       container.innerHTML = state.inventory.map(item => `
         <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb">📦</div>
+          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
             <div class="item-qty">${item.qtyAvailable} in stock</div>
@@ -363,7 +363,7 @@
 
     container.innerHTML = entries.map(({ item, qty }) => `
       <div class="item-row">
-        <div class="item-thumb">📦</div>
+        <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
         <div class="item-info">
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${item.qtyAvailable} in stock</div>
