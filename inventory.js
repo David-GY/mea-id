@@ -164,6 +164,7 @@
 
     if (view === 'cart') renderCart();
     if (view === 'checkout') renderCheckout();
+    if (view === 'catalog') loadInventory();
   }
 
   function bindHeaderActions() {
@@ -325,6 +326,7 @@
       status.textContent = 'Saved!';
       status.className = 'setup-status ok';
       updateIdTrackerCardState();
+      loadInventory(); // refresh right away so Catalog isn't stuck on stale/demo data
       setTimeout(() => { document.getElementById('setupPanel').style.display = 'none'; }, 900);
     });
 
