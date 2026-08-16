@@ -828,16 +828,16 @@ body::before {
         <div class="icon-btn" id="menuBtn" onclick="toggleDD()">⋯</div>
         <div class="dd-menu" id="ddMenu">
           <div class="dd-item" id="installMenuItem" style="display:none" onclick="triggerInstall(); closeDD()">
-            <span class="dd-icon">⬇️</span> Install App
+            <span class="dd-icon"><img class="tracker-svg" src="icons/ui/arrow-down-to-line.svg" alt=""></span> Install App
           </div>
           <div class="dd-item" onclick="openSaved(); closeDD()">
-            <span class="dd-icon">💾</span> Saved IDs
+            <span class="dd-icon"><img class="tracker-svg" src="icons/ui/id-badge.svg" alt=""></span> Saved IDs
           </div>
           <div class="dd-item" onclick="goTo('page-settings'); closeDD()">
-            <span class="dd-icon">⚙️</span> Settings
+            <span class="dd-icon"><img class="tracker-svg" src="icons/ui/cog.svg" alt=""></span> Settings
           </div>
           <div class="dd-item" onclick="goTo('page-help'); closeDD()">
-            <span class="dd-icon">📖</span> Help & Setup
+            <span class="dd-icon"><img class="tracker-svg" src="icons/ui/block-quote.svg" alt=""></span> Help & Setup
           </div>
         </div>
       </div>
@@ -880,13 +880,13 @@ body::before {
       <div class="ring ring-2"></div>
       <div class="ring ring-3"></div>
       <div class="scan-circle" id="scanCircle" onclick="toggleScan()">
-        <div class="scan-icon" id="scanIcon">📡</div>
+        <div class="scan-icon" id="scanIcon"><img class="tracker-svg" src="icons/ui/id-badge.svg" alt="ID scan"></div>
         <div class="scan-txt"  id="scanTxt">Tap to Scan</div>
       </div>
     </div>
 
     <div class="nfc-unavailable" id="nfcUnavailable">
-      <div class="nu-icon">📵</div>
+      <div class="nu-icon"><img class="tracker-svg" src="icons/ui/id-badge.svg" alt="ID"></div>
       <div class="nu-title">NFC not available on this device</div>
       <div class="nu-sub">Web NFC requires Chrome on Android.<br>Use the field above to enter IDs manually.</div>
     </div>
@@ -929,7 +929,7 @@ body::before {
 <div class="overlay" id="savedOverlay" onclick="closeSaved()">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-head">
-      <div class="modal-title">💾 Saved IDs</div>
+      <div class="modal-title"><img class="tracker-svg" src="icons/ui/id-badge.svg" alt=""> Saved IDs</div>
       <button class="close-btn" onclick="closeSaved()">✕</button>
     </div>
     <div class="modal-tabs">
