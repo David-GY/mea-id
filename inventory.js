@@ -29,31 +29,59 @@
     }
 
     async function fetchLiveInventory() {
+      window.__meaInventoryDebugError = null;
       const url = getMeaInventoryScriptUrl();
-      if (!url) return demoInventory; // not configured yet — safe fallback
+      if (!url) {
+        showInventoryDebug('No Inventory Script URL configured yet.\n\nGo to Home → ⚙️ Setup → paste your Inventory Apps Script URL into the "Inventory Script URL" field → Save.');
+        return demoInventory; // not configured yet — safe fallback
+      }
 
+      let res, text;
       try {
-        const res = await fetch(url + '?action=inventory');
-        const json = await res.json();
-        if (json && json.ok && Array.isArray(json.items)) {
-          return json.items.map((item, i) => {
-            const rawQty = String(item.qty || '').trim();
-            const numericQty = parseInt(rawQty, 10);
-            return {
-              id: 'INV-' + i,
-              title: item.title || 'Untitled',
-              category: item.category || 'Miscellaneous',
-              location: item.location || '',
-              notes: item.notes || '',
-              qtyDisplay: rawQty || '—',
-              qtyAvailable: !isNaN(numericQty) ? numericQty : null // null = uncapped (e.g. "*", "2 packs")
-            };
-          });
-        }
-        return demoInventory;
-      } catch(e) {
+        res = await fetch(url + '?action=inventory');
+        text = await res.text();
+      } catch(networkErr) {
+        console.error('[MEA Inventory] Network error reaching script:', networkErr);
+        showInventoryDebug('Network error — could not reach the URL.\n\n' + networkErr.message + '\n\nURL tried:\n' + url);
         return demoInventory;
       }
+
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch(parseErr) {
+        console.error('[MEA Inventory] Response was not valid JSON:', text);
+        showInventoryDebug('Got a response, but it wasn\'t valid JSON (likely an HTML error page from Apps Script).\n\nFirst 400 characters of the response:\n\n' + text.substring(0, 400));
+        return demoInventory;
+      }
+
+      if (json && json.ok && Array.isArray(json.items)) {
+        console.log('[MEA Inventory] Loaded', json.items.length, 'items from the sheet.');
+        window.__meaInventoryDebugError = null;
+        return json.items.map((item, i) => {
+          const rawQty = String(item.qty || '').trim();
+          const numericQty = parseInt(rawQty, 10);
+          return {
+            id: 'INV-' + i,
+            title: item.title || 'Untitled',
+            category: item.category || 'Miscellaneous',
+            location: item.location || '',
+            notes: item.notes || '',
+            qtyDisplay: rawQty || '—',
+            qtyAvailable: !isNaN(numericQty) ? numericQty : null // null = uncapped (e.g. "*", "2 packs")
+          };
+        });
+      }
+
+      // Script responded with valid JSON but ok:false or unexpected shape
+      const errMsg = (json && json.error) ? json.error : 'Unexpected response shape (missing ok/items).';
+      console.error('[MEA Inventory] Script returned an error:', errMsg, json);
+      showInventoryDebug('Script responded but reported an error:\n\n' + errMsg + '\n\nFull response:\n' + JSON.stringify(json, null, 2));
+      return demoInventory;
+    }
+
+    function showInventoryDebug(message) {
+      window.__meaInventoryDebugError = message;
     }
 
     const localMethods = {
@@ -237,6 +265,50 @@
       }
     });
 
+    document.getElementById('test-inventory-url-btn').addEventListener('click', async () => {
+      const url = document.getElementById('home-inventory-url').value.trim();
+      const box = document.getElementById('inventoryTestStatus');
+      const btn = document.getElementById('test-inventory-url-btn');
+
+      if (!url) {
+        box.textContent = '✕ Enter a URL first.';
+        box.className = 'setup-status error';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Testing…';
+      box.textContent = '';
+      box.className = 'setup-status';
+
+      try {
+        const res = await fetch(url + '?action=inventory');
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch(e) {}
+
+        if (json && json.ok && Array.isArray(json.items)) {
+          box.textContent = `✓ Connected! Found ${json.items.length} item(s).\n\nFirst item: ${json.items[0] ? JSON.stringify(json.items[0]) : '(none)'}`;
+          box.className = 'setup-status ok';
+        } else if (json && json.ok === false) {
+          box.textContent = `✕ Script responded with an error:\n${json.error || '(no message)'}`;
+          box.className = 'setup-status error';
+        } else if (text.includes('<html') || text.includes('<!DOCTYPE')) {
+          box.textContent = '✕ Got an HTML page instead of JSON.\n\nMost likely cause: the script isn\'t deployed with "Who has access: Anyone", or it needs a fresh "New version" deployment.';
+          box.className = 'setup-status error';
+        } else {
+          box.textContent = '✕ Unexpected response:\n' + text.substring(0, 300);
+          box.className = 'setup-status error';
+        }
+      } catch(err) {
+        box.textContent = '✕ Network error: ' + err.message;
+        box.className = 'setup-status error';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Test Inventory Connection';
+    });
+
     document.getElementById('save-script-url-btn').addEventListener('click', () => {
       const trackerUrl = document.getElementById('home-script-url').value.trim();
       const inventoryUrl = document.getElementById('home-inventory-url').value.trim();
@@ -320,14 +392,19 @@
 
   function renderCatalog() {
     const container = document.getElementById('catalog-container');
+    const debugMsg = window.__meaInventoryDebugError;
+    const debugHtml = debugMsg
+      ? `<div style="grid-column:1/-1;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:12px;padding:14px;font-size:11px;font-family:monospace;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;">⚠ Inventory fetch failed — showing demo items below.\n\n${escapeHtml(debugMsg)}</div>`
+      : '';
+
     if (!state.inventory.length) {
-      container.innerHTML = '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
+      container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
       return;
     }
 
     if (state.catalogFormat === 'grid') {
       container.className = 'item-grid';
-      container.innerHTML = state.inventory.map(item => `
+      container.innerHTML = debugHtml + state.inventory.map(item => `
         <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
           <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="item-title">${escapeHtml(item.title)}</div>
@@ -336,7 +413,7 @@
       `).join('');
     } else {
       container.className = 'item-list';
-      container.innerHTML = state.inventory.map(item => `
+      container.innerHTML = debugHtml + state.inventory.map(item => `
         <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
           <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="item-info">
