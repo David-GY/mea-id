@@ -86,7 +86,8 @@
     cart: {},                // { itemId: { item, qty } }
     scanLog: [],             // { idNumber, status, time }
     lastId: null,            // last scanned/entered ID result
-    projectOptions: []
+    projectOptions: [],
+    checkoutCase: 'BORROWING' // BORROWING | CONSUMING | RETURNING
   };
 
   /* ---------------- Init ---------------- */
@@ -320,7 +321,7 @@
   function renderCatalog() {
     const container = document.getElementById('catalog-container');
     if (!state.inventory.length) {
-      container.innerHTML = '<div class="empty-state"><span class="emoji">📦</span>Inventory is empty</div>';
+      container.innerHTML = '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
       return;
     }
 
@@ -328,7 +329,7 @@
       container.className = 'item-grid';
       container.innerHTML = state.inventory.map(item => `
         <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb">📦</div>
+          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
         </div>
@@ -337,7 +338,7 @@
       container.className = 'item-list';
       container.innerHTML = state.inventory.map(item => `
         <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb">📦</div>
+          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
             <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
@@ -409,7 +410,7 @@
     const checkoutBtn = document.getElementById('cart-checkout-btn');
 
     if (!entries.length) {
-      container.innerHTML = '<div class="empty-state"><span class="emoji">🛒</span>Your cart is empty</div>';
+      container.innerHTML = '<div class="empty-state"><img class="svg-icon" src="icons/ui/shopping-basket.svg" alt="">Your cart is empty</div>';
       checkoutBtn.disabled = true;
       return;
     }
@@ -417,7 +418,7 @@
 
     container.innerHTML = entries.map(({ item, qty }) => `
       <div class="item-row">
-        <div class="item-thumb">📦</div>
+        <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
         <div class="item-info">
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
@@ -433,6 +434,12 @@
   }
 
   /* ---------------- Checkout view ---------------- */
+
+  const CASE_HINTS = {
+    BORROWING: 'Comment the quantity to be borrowed, project/department, and point person on the quantity column of the item.',
+    CONSUMING: 'Comment the quantity to be consumed, project/department, and point person on the quantity column of the item.',
+    RETURNING: 'Resolve your comment on the quantity column once borrowed materials have been returned.'
+  };
 
   function renderCheckout() {
     document.getElementById('checkout-id-display').textContent =
@@ -455,13 +462,22 @@
 
   function bindCheckoutForm() {
     document.getElementById('submit-order-btn').addEventListener('click', submitOrder);
+
+    document.querySelectorAll('.case-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.case-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.checkoutCase = btn.dataset.case;
+        document.getElementById('case-hint').textContent = CASE_HINTS[state.checkoutCase];
+      });
+    });
   }
 
   function submitOrder() {
     const entries = Object.values(state.cart);
     if (!state.lastId || !state.lastId.idNumber) {
-      showToast('Scan or enter an ID number first', true);
-      showView('scan');
+      showToast('Enter your ID number on the Home page first', true);
+      showView('home');
       return;
     }
     if (!entries.length) {
@@ -469,11 +485,22 @@
       return;
     }
 
+    const committee = document.getElementById('committee-input').value;
+    const project = document.getElementById('project-select').value;
+    const pointPerson = (state.lastId && state.lastId.name) ? state.lastId.name : state.lastId.idNumber;
+
     const payload = {
       idNumber: state.lastId.idNumber,
-      project: document.getElementById('project-select').value,
-      committee: document.getElementById('committee-input').value,
-      items: entries.map(({ item, qty }) => ({ id: item.id, title: item.title, qty: qty }))
+      caseType: state.checkoutCase, // BORROWING | CONSUMING | RETURNING
+      project: project,
+      committee: committee,
+      items: entries.map(({ item, qty }) => ({
+        id: item.id,
+        title: item.title,
+        qty: qty,
+        // Matches the sheet's own comment convention, e.g. "[BORROWING] - 24 ACTS, Renzo Gutierrez"
+        comment: `[${state.checkoutCase}] - ${qty} ${committee || project}, ${pointPerson}`
+      }))
     };
 
     const btn = document.getElementById('submit-order-btn');

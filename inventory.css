@@ -425,6 +425,40 @@ body::before {
   text-transform: uppercase;
   margin-bottom: 6px; display: block;
 }
+
+.case-toggle {
+  display: flex; gap: 6px;
+  background: rgba(0,0,0,0.15);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius-md);
+  padding: 5px;
+  margin-bottom: 8px;
+}
+.case-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.case-btn.active {
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
+  color: var(--white);
+}
+.case-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 18px;
+  padding: 0 2px;
+}
 .field-static {
   background: var(--surface);
   border: 1px solid var(--border-dark);
