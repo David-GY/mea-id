@@ -129,6 +129,42 @@ body::before {
 }
 .icon-btn:active { background: var(--surface-hi); }
 
+/* ── Sync status pill ── */
+.sync-pill {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  margin: 0 16px 10px;
+  border: 1px solid;
+}
+.sync-pill.show { display: inline-flex; }
+.sync-pill.offline { background: rgba(255,209,102,0.1); border-color: var(--warn); color: var(--warn); }
+.sync-pill.syncing { background: rgba(77,196,196,0.1); border-color: var(--teal-light); color: var(--teal-light); }
+.sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sync-dot.pulse { animation: sync-pulse 1.2s ease infinite; }
+@keyframes sync-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── Offline mode banner ── */
+.offline-banner {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,209,102,0.1);
+  border: 1px solid rgba(255,209,102,0.3);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 16px 12px;
+  font-size: 12px;
+  color: var(--warn);
+  line-height: 1.6;
+}
+.offline-banner.show { display: flex; }
+
 /* dropdown */
 .dd-wrap { position: relative; }
 .dd-menu {
@@ -806,6 +842,7 @@ body::before {
     <div class="gate-error" id="gateError"></div>
     <div class="gate-welcome" id="gateWelcome"></div>
     <a href="index.html" id="gateHomeBtn" style="display:none;text-align:center;text-decoration:none;box-sizing:border-box;padding:13px;border-radius:12px;background:transparent;border:1.5px solid var(--border-mid);color:var(--white);font-weight:700;font-size:13px;">Go to Home Page</a>
+    <button id="gateOfflineBtn" onclick="continueOffline()" style="display:none;padding:13px;border-radius:12px;background:transparent;border:1.5px solid var(--warn);color:var(--warn);font-weight:700;font-size:13px;cursor:pointer;">Continue Offline</button>
   </div>
 </div>
 
@@ -856,6 +893,15 @@ body::before {
     <button class="tab-btn" id="tab-DEPLOYED" onclick="setTab('DEPLOYED')">
       Deployed<span>Field</span>
     </button>
+  </div>
+
+  <div class="sync-pill" id="syncPill" onclick="flushQueue()">
+    <div class="sync-dot" id="syncDot"></div>
+    <span id="syncPillText">0 pending</span>
+  </div>
+
+  <div class="offline-banner" id="offlineBanner">
+    📡 You're offline — scans are being saved on this device and will sync automatically once you're back online.
   </div>
 
   <!-- Scan zone -->
@@ -1207,6 +1253,37 @@ function hideGate() {
   document.getElementById('accessGate').classList.add('hidden');
 }
 
+function continueOffline() {
+  // Provisional entry — lets scanning start immediately, verifies for real
+  // the moment the connection comes back (see the 'online' listener below).
+  try { sessionStorage.setItem('mea_offline_provisional', '1'); } catch(e) {}
+  hideGate();
+  toast('Continuing offline — will verify when reconnected', 'info');
+}
+
+window.addEventListener('online', () => {
+  let provisional = false;
+  try { provisional = sessionStorage.getItem('mea_offline_provisional') === '1'; } catch(e) {}
+  if (!provisional) return;
+
+  const idToVerify = document.getElementById('gateInput').value.trim()
+    || new URLSearchParams(window.location.search).get('id') || '';
+  if (!idToVerify || !cfg.url) return;
+
+  fetch(cfg.url + '?' + new URLSearchParams({ action: 'access', id: idToVerify }).toString())
+    .then(res => res.json())
+    .then(json => {
+      try { sessionStorage.removeItem('mea_offline_provisional'); } catch(e) {}
+      if (json.ok && json.allowed) {
+        setCachedAccess(idToVerify, json.name || '');
+        toast('Access verified — welcome, ' + (json.name || idToVerify) + '!', 'ok');
+      } else {
+        toast('Could not verify access — please reopen the app', 'fail');
+      }
+    })
+    .catch(() => {}); // stay quiet — will just retry next reconnect if this blips
+});
+
 async function submitGate() {
   const input = document.getElementById('gateInput');
   const btn = document.getElementById('gateSubmitBtn');
@@ -1289,6 +1366,16 @@ async function submitGate() {
     const cached = getCachedAccess();
     if (cached) {
       hideGate();
+    } else if (!navigator.onLine) {
+      // Can't verify without a connection — offer a provisional offline
+      // entry instead of locking the person out entirely. Verification
+      // runs automatically the moment connectivity returns.
+      showGate();
+      document.getElementById('gateSub').textContent = "You're offline — access can't be verified right now.";
+      document.getElementById('gateError').textContent = 'Connect to the internet to verify, or continue offline and it will verify automatically once you\'re back online.';
+      document.getElementById('gateError').classList.add('show');
+      document.getElementById('gateOfflineBtn').style.display = 'block';
+      if (carriedId) document.getElementById('gateInput').value = carriedId;
     } else if (carriedId) {
       // Skip retyping — the ID already entered on the Home page verifies automatically.
       showGate();
@@ -1322,6 +1409,10 @@ async function submitGate() {
       });
     });
   }
+
+  updateOfflineBanner();
+  updateSyncPill();
+  if (navigator.onLine) flushQueue();
 })();
 
 // ────────────────────────────────────────────
@@ -1503,23 +1594,112 @@ async function handleRead(message, serialNumber) {
 // ────────────────────────────────────────────
 // Sheets
 // ────────────────────────────────────────────
+// ────────────────────────────────────────────
+// Offline Queue — scans made while offline are stored here and
+// automatically retried once the connection comes back.
+// ────────────────────────────────────────────
+const QUEUE_KEY = 'mea_pending_scans';
+
+function getQueue() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function saveQueue(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch(e) {}
+  updateSyncPill();
+}
+
+function enqueueScan(tab, col, data) {
+  const q = getQueue();
+  q.push({ tab, col, data, ts: Date.now() });
+  saveQueue(q);
+}
+
+function updateSyncPill() {
+  const q = getQueue();
+  const pill = document.getElementById('syncPill');
+  const dot = document.getElementById('syncDot');
+  const text = document.getElementById('syncPillText');
+  if (!pill) return;
+
+  if (q.length === 0) {
+    pill.classList.remove('show');
+    return;
+  }
+  pill.classList.add('show');
+  pill.className = 'sync-pill show ' + (navigator.onLine ? 'syncing' : 'offline');
+  dot.className = 'sync-dot' + (navigator.onLine ? ' pulse' : '');
+  text.textContent = q.length + ' pending' + (navigator.onLine ? ' — tap to sync' : ' — waiting for connection');
+}
+
+let isFlushing = false;
+async function flushQueue() {
+  if (isFlushing || !navigator.onLine) return;
+  const q = getQueue();
+  if (!q.length || !cfg.url) return;
+
+  isFlushing = true;
+  updateSyncPill();
+
+  while (true) {
+    const current = getQueue();
+    if (!current.length) break;
+    const item = current[0];
+
+    try {
+      const params = new URLSearchParams({ action: 'tracker', sheet: item.tab, col: item.col, data: item.data });
+      const res = await fetch(cfg.url + '?' + params.toString());
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      // success — remove this item from the front of the queue
+      const remaining = getQueue();
+      remaining.shift();
+      saveQueue(remaining);
+    } catch(err) {
+      // network still unreliable — stop here, keep remaining items queued, try again later
+      break;
+    }
+  }
+
+  isFlushing = false;
+  updateSyncPill();
+}
+
+function updateOfflineBanner() {
+  const banner = document.getElementById('offlineBanner');
+  if (banner) banner.classList.toggle('show', !navigator.onLine);
+}
+
+window.addEventListener('online', () => { updateOfflineBanner(); flushQueue(); });
+window.addEventListener('offline', () => { updateOfflineBanner(); updateSyncPill(); });
+
+// Periodic retry in case the 'online' event doesn't fire reliably (some
+// mobile browsers are inconsistent about this)
+setInterval(() => { if (navigator.onLine) flushQueue(); }, 20000);
+
 async function sendToSheets(data) {
   const tab = activeTab;
   const col = cfg.cols[tab] || 'A';
+
+  // Save locally first no matter what — this never fails
+  addLog(data, 'ok', tab, '');
+  saveScan(tab, data);
+
+  if (!navigator.onLine) {
+    enqueueScan(tab, col, data);
+    toast(data + ' saved offline — will sync later', 'info');
+    return;
+  }
+
   try {
     const params = new URLSearchParams({ action: 'tracker', sheet: tab, col: col, data: data });
-    const url = cfg.url + '?' + params.toString();
-
-    // Fire and treat any reachable response as success
-    fetch(url).catch(() => {});
-
-    // Immediately log as success — if script is reachable it will write
-    addLog(data, 'ok', tab, '');
-    saveScan(tab, data);
+    const res = await fetch(cfg.url + '?' + params.toString());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     toast(data + ' → ' + LABELS[tab], 'ok');
   } catch(err) {
-    addLog(data, 'fail', tab, err.message);
-    toast('Error: ' + err.message, 'fail');
+    // Network blip even though navigator.onLine said we're online — queue it instead of losing it
+    enqueueScan(tab, col, data);
+    toast(data + ' saved offline — will retry', 'info');
   }
 }
 

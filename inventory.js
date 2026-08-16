@@ -28,6 +28,33 @@
       } catch(e) { return ''; }
     }
 
+    const INVENTORY_CACHE_KEY = 'mea_inventory_cache';
+
+    function getCachedInventory() {
+      try {
+        const raw = localStorage.getItem(INVENTORY_CACHE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw); // { items, syncedAt }
+      } catch(e) { return null; }
+    }
+
+    function setCachedInventory(items) {
+      try {
+        localStorage.setItem(INVENTORY_CACHE_KEY, JSON.stringify({ items, syncedAt: Date.now() }));
+      } catch(e) {}
+    }
+
+    function offlineOrCachedFallback(reason) {
+      const cache = getCachedInventory();
+      if (cache && cache.items && cache.items.length) {
+        const ago = Math.round((Date.now() - cache.syncedAt) / 60000);
+        showInventoryDebug('📡 ' + reason + '\n\nShowing your last synced copy from ' + ago + ' minute(s) ago.');
+        return cache.items;
+      }
+      showInventoryDebug(reason + '\n\nNo previously synced copy on this device yet — showing demo items.');
+      return demoInventory;
+    }
+
     async function fetchLiveInventory() {
       window.__meaInventoryDebugError = null;
       const url = getMeaInventoryScriptUrl();
@@ -36,14 +63,17 @@
         return demoInventory; // not configured yet — safe fallback
       }
 
+      if (!navigator.onLine) {
+        return offlineOrCachedFallback("You're offline.");
+      }
+
       let res, text;
       try {
         res = await fetch(url + '?action=inventory');
         text = await res.text();
       } catch(networkErr) {
         console.error('[MEA Inventory] Network error reaching script:', networkErr);
-        showInventoryDebug('Network error — could not reach the URL.\n\n' + networkErr.message + '\n\nURL tried:\n' + url);
-        return demoInventory;
+        return offlineOrCachedFallback('Network error — could not reach the Inventory script.');
       }
 
       let json;
@@ -58,7 +88,7 @@
       if (json && json.ok && Array.isArray(json.items)) {
         console.log('[MEA Inventory] Loaded', json.items.length, 'items from the sheet.');
         window.__meaInventoryDebugError = null;
-        return json.items.map((item, i) => {
+        const mapped = json.items.map((item, i) => {
           const rawQty = String(item.qty || '').trim();
           const numericQty = parseInt(rawQty, 10);
           return {
@@ -71,6 +101,8 @@
             qtyAvailable: !isNaN(numericQty) ? numericQty : null // null = uncapped (e.g. "*", "2 packs")
           };
         });
+        setCachedInventory(mapped); // remember this for the next time we're offline
+        return mapped;
       }
 
       // Script responded with valid JSON but ok:false or unexpected shape
