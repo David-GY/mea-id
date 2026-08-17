@@ -513,7 +513,7 @@
       container.className = 'item-grid';
       container.innerHTML = debugHtml + state.inventory.map(item => `
         <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
+          <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
         </div>
@@ -522,7 +522,7 @@
       container.className = 'item-list';
       container.innerHTML = debugHtml + state.inventory.map(item => `
         <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
+          <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
             <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
@@ -602,7 +602,7 @@
 
     container.innerHTML = entries.map(({ item, qty }) => `
       <div class="item-row">
-        <div class="item-thumb"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
+        <div class="item-thumb">${locationTag(item.location)}</div>
         <div class="item-info">
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
@@ -760,6 +760,30 @@
   }
 
   /* ---------------- Utils ---------------- */
+
+  // A curated set of colors that all sit comfortably on the app's dark teal
+  // background and stay readable with white text — used to give every
+  // distinct storage location its own consistent, recognizable color.
+  const LOCATION_PALETTE = [
+    '#1a6b6b', '#2a5d9d', '#6b4fa0', '#9d3f6b', '#a05a2a',
+    '#5c7a2a', '#2a9d6e', '#4a4a9d', '#9d6b2a', '#2a7d9d',
+    '#7a3f9d', '#3f9d5a'
+  ];
+
+  function locationColor(location) {
+    if (!location) return '#3a4a52'; // neutral slate for unassigned items
+    let hash = 0;
+    for (let i = 0; i < location.length; i++) {
+      hash = (hash * 31 + location.charCodeAt(i)) >>> 0;
+    }
+    return LOCATION_PALETTE[hash % LOCATION_PALETTE.length];
+  }
+
+  function locationTag(location) {
+    const text = location && location.trim() ? location.trim() : 'Unassigned';
+    const color = locationColor(location);
+    return `<div class="loc-tag" style="background:${color}" title="${escapeAttr(text)}">${escapeHtml(text)}</div>`;
+  }
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, m => ({
