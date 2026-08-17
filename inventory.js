@@ -303,7 +303,17 @@
       window.location.href = 'id-tracker.html?id=' + encodeURIComponent(idValue);
     });
 
-    document.getElementById('home-id-input').addEventListener('input', updateIdTrackerCardState);
+    document.getElementById('home-id-input').addEventListener('input', (e) => {
+      try { sessionStorage.setItem('mea_home_id', e.target.value); } catch(err) {}
+      updateIdTrackerCardState();
+    });
+
+    // Restore the ID typed earlier in this session — e.g. after navigating
+    // to id-tracker.html and back, which fully reloads this page.
+    try {
+      const savedId = sessionStorage.getItem('mea_home_id');
+      if (savedId) document.getElementById('home-id-input').value = savedId;
+    } catch(e) {}
 
     document.getElementById('home-menu-btn').addEventListener('click', () => triggerInstall());
 
