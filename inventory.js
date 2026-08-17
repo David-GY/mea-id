@@ -118,7 +118,11 @@
 
     const localMethods = {
       getInventory: () => fetchLiveInventory(),
-      getProjectOptions: () => ['General Operations', 'Field Deployment', 'Workshop Build', 'Community Outreach'],
+      getProjectOptions: () => [
+        'STEPS', 'RWGA', 'ACTS', 'MEAMORE', 'FIESTA', 'PRIME', 'ACSC', 'LEADS',
+        'ABM', 'MEA CARES', 'TEDx', 'CB', 'IMD', 'MCD', 'HR:TD', 'HR:MEM',
+        'YDC', 'EXT', 'FIN', 'SUS'
+      ],
       lookupIdNumber: (idNumber) => ({
         found: /^\\d{4,8}$/.test(String(idNumber).trim()),
         idNumber: String(idNumber).trim(), name: '', committee: '',
