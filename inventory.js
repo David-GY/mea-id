@@ -124,11 +124,51 @@
         idNumber: String(idNumber).trim(), name: '', committee: '',
         status: /^\\d{4,8}$/.test(String(idNumber).trim()) ? 'ACTIVE' : 'UNKNOWN'
       }),
-      submitOrder: (payload) => {
+      submitOrder: async (payload) => {
+        // Always keep a local copy first — if the network call below fails,
+        // the order isn't silently lost.
         const orders = JSON.parse(localStorage.getItem('mea_inventory_orders') || '[]');
         orders.unshift({ ...payload, createdAt: new Date().toISOString() });
         localStorage.setItem('mea_inventory_orders', JSON.stringify(orders));
-        return { success: true, orderId: 'LOCAL-' + Date.now() };
+
+        const url = getMeaInventoryScriptUrl();
+        if (!url) {
+          throw new Error('No Inventory Script URL configured yet — go to Home → ⚙️ Setup.');
+        }
+        if (!navigator.onLine) {
+          throw new Error("You're offline — order saved locally, but not logged to the sheet yet.");
+        }
+
+        let res, text;
+        try {
+          // text/plain avoids a CORS preflight against Apps Script, which
+          // doesn't support OPTIONS requests.
+          res = await fetch(url + '?action=submitOrder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          });
+          text = await res.text();
+        } catch (networkErr) {
+          console.error('[MEA Inventory] Network error submitting order:', networkErr);
+          throw new Error('Network error — could not reach the Inventory script.');
+        }
+
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (parseErr) {
+          console.error('[MEA Inventory] submitOrder response was not valid JSON:', text);
+          throw new Error('Script returned an unexpected response.');
+        }
+
+        if (!json || !json.ok) {
+          const errMsg = (json && json.error) ? json.error : 'Script reported an error.';
+          console.error('[MEA Inventory] submitOrder failed:', errMsg, json);
+          throw new Error(errMsg);
+        }
+
+        return { success: true, orderId: 'ORD-' + Date.now(), logged: json.logged };
       }
     };
     const runner = (success, failure) => new Proxy({}, { get: (_, name) => {
