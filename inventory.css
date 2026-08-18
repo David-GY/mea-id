@@ -506,6 +506,20 @@ select, .text-field {
 select:focus, .text-field:focus { border-color: var(--teal-bright); }
 .text-field::placeholder { color: var(--text-faint); }
 
+/* The dropdown's open option list is browser-native and mostly ignores
+   CSS — background-color/color on <option> is one of the only things
+   Chrome/Edge/Firefox actually respect, so this at least stops it from
+   defaulting to a plain white popup. iOS/Android render their own OS
+   picker instead of this list, so this doesn't affect mobile. */
+select option {
+  background: #0d4444;
+  color: var(--white);
+}
+select option:checked,
+select option:hover {
+  background: var(--teal-mid);
+}
+
 .summary-table {
   width: 100%; border-collapse: collapse;
   border: 1px solid var(--border-dark);
@@ -750,8 +764,6 @@ select:focus, .text-field:focus { border-color: var(--teal-bright); }
   .home-hero-title { font-size: 26px; }
   .home-hero-sub { font-size: 12.5px; }
 
-  .home-header { max-width: 760px; width: 100%; margin: -6px auto 12px; }
-
   .id-input-label { text-align: left; }
   .id-input-row { max-width: 760px; width: 100%; margin: 0 auto 30px; }
   .id-input-row input { padding: 17px 22px; font-size: 17px; text-align: left; }
@@ -760,6 +772,7 @@ select:focus, .text-field:focus { border-color: var(--teal-bright); }
 
   .home-nav-list { flex-direction: row; gap: 20px; max-width: 760px; width: 100%; margin: 8px auto 0; }
   .home-nav-card {
+    flex: 1 1 0;
     flex-direction: column; align-items: flex-start; gap: 16px;
     padding: 26px; border-radius: var(--radius-lg);
     transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
