@@ -191,7 +191,10 @@
     scanLog: [],             // { idNumber, status, time }
     lastId: null,            // last scanned/entered ID result
     projectOptions: [],
-    checkoutCase: 'BORROWING' // BORROWING | CONSUMING | RETURNING
+    checkoutCase: 'BORROWING', // BORROWING | CONSUMING | RETURNING
+    catalogSearch: '',        // free-text search over title/category/location
+    catalogSort: 'name-asc',  // name-asc | name-desc | category-asc | category-desc | qty-desc | qty-asc
+    catalogCategory: 'ALL'    // 'ALL' or an exact category string from the sheet
   };
 
   /* ---------------- Init ---------------- */
@@ -203,6 +206,7 @@
     bindHome();
     bindHeaderActions();
     bindCatalogToggle();
+    bindCatalogControls();
     bindCheckoutForm();
     bindModal();
 
@@ -466,6 +470,14 @@
     google.script.run
       .withSuccessHandler(items => {
         state.inventory = items || [];
+        // If a category the user had selected no longer exists in the
+        // freshly loaded data (e.g. sheet edited), fall back to "All"
+        // rather than silently showing zero results.
+        const categories = getCatalogCategories();
+        if (state.catalogCategory !== 'ALL' && categories.indexOf(state.catalogCategory) === -1) {
+          state.catalogCategory = 'ALL';
+        }
+        renderCategoryChips();
         renderCatalog();
       })
       .withFailureHandler(err => showToast(err.message || 'Could not load inventory', true))
@@ -490,6 +502,114 @@
     document.getElementById('format-list-btn').addEventListener('click', () => setCatalogFormat('list'));
   }
 
+  /* ---------------- Catalog search / sort / category filter ---------------- */
+
+  function bindCatalogControls() {
+    const searchInput = document.getElementById('catalog-search-input');
+    const clearBtn = document.getElementById('catalog-search-clear');
+    const sortSelect = document.getElementById('catalog-sort-select');
+
+    searchInput.addEventListener('input', (e) => {
+      state.catalogSearch = e.target.value;
+      clearBtn.style.display = state.catalogSearch ? 'flex' : 'none';
+      renderCatalog();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      state.catalogSearch = '';
+      searchInput.value = '';
+      clearBtn.style.display = 'none';
+      searchInput.focus();
+      renderCatalog();
+    });
+
+    sortSelect.value = state.catalogSort;
+    sortSelect.addEventListener('change', (e) => {
+      state.catalogSort = e.target.value;
+      renderCatalog();
+    });
+  }
+
+  // Unique categories present in the current inventory (from the sheet's
+  // "category" column), sorted alphabetically. Blank/missing categories are
+  // grouped under "Miscellaneous" (same fallback used when the data is mapped).
+  function getCatalogCategories() {
+    const set = new Set();
+    state.inventory.forEach(item => {
+      set.add((item.category || 'Miscellaneous').trim() || 'Miscellaneous');
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
+  function renderCategoryChips() {
+    const row = document.getElementById('catalog-category-row');
+    const categories = getCatalogCategories();
+
+    if (!categories.length) {
+      row.innerHTML = '';
+      return;
+    }
+
+    const chips = ['ALL', ...categories];
+    row.innerHTML = chips.map(cat => {
+      const label = cat === 'ALL' ? 'All' : cat;
+      const active = state.catalogCategory === cat ? ' active' : '';
+      return `<button type="button" class="category-chip${active}" data-cat="${escapeAttr(cat)}">${escapeHtml(label)}</button>`;
+    }).join('');
+
+    row.querySelectorAll('.category-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.catalogCategory = btn.dataset.cat;
+        row.querySelectorAll('.category-chip').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderCatalog();
+      });
+    });
+  }
+
+  // Applies the current search text, category filter, and sort order to
+  // state.inventory without mutating it — renderCatalog() consumes the result.
+  function getVisibleInventory() {
+    const query = state.catalogSearch.trim().toLowerCase();
+
+    let items = state.inventory.filter(item => {
+      const category = (item.category || 'Miscellaneous').trim() || 'Miscellaneous';
+      if (state.catalogCategory !== 'ALL' && category !== state.catalogCategory) return false;
+      if (!query) return true;
+      const haystack = [item.title, category, item.location, item.notes]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+
+    const qtyOf = item => item.qtyAvailable == null ? -Infinity : item.qtyAvailable;
+
+    items.sort((a, b) => {
+      switch (state.catalogSort) {
+        case 'name-desc':
+          return (b.title || '').localeCompare(a.title || '');
+        case 'category-asc': {
+          const ca = (a.category || 'Miscellaneous').trim() || 'Miscellaneous';
+          const cb = (b.category || 'Miscellaneous').trim() || 'Miscellaneous';
+          return ca.localeCompare(cb) || (a.title || '').localeCompare(b.title || '');
+        }
+        case 'category-desc': {
+          const ca = (a.category || 'Miscellaneous').trim() || 'Miscellaneous';
+          const cb = (b.category || 'Miscellaneous').trim() || 'Miscellaneous';
+          return cb.localeCompare(ca) || (a.title || '').localeCompare(b.title || '');
+        }
+        case 'qty-desc':
+          return qtyOf(b) - qtyOf(a);
+        case 'qty-asc':
+          return qtyOf(a) - qtyOf(b);
+        case 'name-asc':
+        default:
+          return (a.title || '').localeCompare(b.title || '');
+      }
+    });
+
+    return items;
+  }
+
   function setCatalogFormat(format) {
     state.catalogFormat = format;
     document.getElementById('format-grid-btn').classList.toggle('active', format === 'grid');
@@ -499,6 +619,7 @@
 
   function renderCatalog() {
     const container = document.getElementById('catalog-container');
+    const countLabel = document.getElementById('catalog-result-count');
     const debugMsg = window.__meaInventoryDebugError;
     const debugHtml = debugMsg
       ? `<div style="grid-column:1/-1;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:12px;padding:14px;font-size:11px;font-family:monospace;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;">⚠ Inventory fetch failed — showing demo items below.\n\n${escapeHtml(debugMsg)}</div>`
@@ -506,12 +627,28 @@
 
     if (!state.inventory.length) {
       container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
+      if (countLabel) countLabel.textContent = 'Click to add to cart';
+      return;
+    }
+
+    const visible = getVisibleInventory();
+
+    if (countLabel) {
+      const isFiltered = !!state.catalogSearch.trim() || state.catalogCategory !== 'ALL';
+      countLabel.textContent = isFiltered
+        ? `${visible.length} of ${state.inventory.length} item${state.inventory.length === 1 ? '' : 's'}`
+        : 'Click to add to cart';
+    }
+
+    if (!visible.length) {
+      container.className = state.catalogFormat === 'grid' ? 'item-grid' : 'item-list';
+      container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">No items match your search</div>';
       return;
     }
 
     if (state.catalogFormat === 'grid') {
       container.className = 'item-grid';
-      container.innerHTML = debugHtml + state.inventory.map(item => `
+      container.innerHTML = debugHtml + visible.map(item => `
         <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
           <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-title">${escapeHtml(item.title)}</div>
@@ -520,7 +657,7 @@
       `).join('');
     } else {
       container.className = 'item-list';
-      container.innerHTML = debugHtml + state.inventory.map(item => `
+      container.innerHTML = debugHtml + visible.map(item => `
         <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
           <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-info">
