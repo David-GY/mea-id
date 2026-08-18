@@ -119,7 +119,7 @@
     const localMethods = {
       getInventory: () => fetchLiveInventory(),
       getProjectOptions: () => [
-        'STEPS', 'RWGA', 'ACTS', 'MEAMORE', 'FIESTA', 'PRIME', 'ACSC', 'LEADS',
+        'Personal','STEPS', 'RWGA', 'ACTS', 'MEAMORE', 'FIESTA', 'PRIME', 'ACSC', 'LEADS',
         'ABM', 'MEA CARES', 'TEDx', 'CB', 'IMD', 'MCD', 'HR:TD', 'HR:MEM',
         'YDC', 'EXT', 'FIN', 'SUS'
       ],
