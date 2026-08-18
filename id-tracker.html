@@ -1325,6 +1325,40 @@ async function submitGate() {
 }
 
 // ────────────────────────────────────────────
+// MEAns Name Lookup — cached locally so displaying a name on scan
+// never adds network latency, and still works fully offline.
+// ────────────────────────────────────────────
+const MEANS_CACHE_KEY = 'mea_means_cache';
+let meansMap = new Map();
+
+function loadMeansCacheIntoMemory() {
+  try {
+    const raw = localStorage.getItem(MEANS_CACHE_KEY);
+    if (!raw) return;
+    const cache = JSON.parse(raw); // { members: [{id,name}], syncedAt }
+    meansMap = new Map((cache.members || []).map(m => [String(m.id).trim(), m.name]));
+  } catch(e) {}
+}
+
+async function refreshMeansList() {
+  if (!cfg.url || !navigator.onLine) return;
+  try {
+    const res = await fetch(cfg.url + '?' + new URLSearchParams({ action: 'meansList' }).toString());
+    const json = await res.json();
+    if (json.ok && Array.isArray(json.members)) {
+      localStorage.setItem(MEANS_CACHE_KEY, JSON.stringify({ members: json.members, syncedAt: Date.now() }));
+      meansMap = new Map(json.members.map(m => [String(m.id).trim(), m.name]));
+    }
+  } catch(e) {
+    // silent — cached copy (if any) keeps working, will retry next time online
+  }
+}
+
+function lookupMemberName(id) {
+  return meansMap.get(String(id).trim()) || null;
+}
+
+// ────────────────────────────────────────────
 // Boot
 // ────────────────────────────────────────────
 (function boot() {
@@ -1413,7 +1447,13 @@ async function submitGate() {
   updateOfflineBanner();
   updateSyncPill();
   if (navigator.onLine) flushQueue();
+
+  loadMeansCacheIntoMemory(); // instant, from local cache — no network wait
+  if (navigator.onLine) refreshMeansList(); // update in the background
 })();
+
+// Keep the roster fresh whenever connectivity returns
+window.addEventListener('online', () => { refreshMeansList(); });
 
 // ────────────────────────────────────────────
 // PWA Install Prompt
@@ -1564,11 +1604,12 @@ async function handleRead(message, serialNumber) {
 
   // If we got something, use it
   if (raw) {
+    const memberName = lookupMemberName(raw);
     setScanUI('detected','✓', 'Detected!');
-    document.getElementById('statusTitle').textContent = raw;
-    document.getElementById('statusSub').textContent = '→ Sending to ' + LABELS[activeTab] + '…';
+    document.getElementById('statusTitle').textContent = memberName ? memberName : raw;
+    document.getElementById('statusSub').textContent = (memberName ? raw + ' · ' : '') + '→ Sending to ' + LABELS[activeTab] + '…';
     document.getElementById('lastPill').style.display = 'inline-flex';
-    document.getElementById('lastId').textContent = raw;
+    document.getElementById('lastId').textContent = memberName ? memberName + ' (' + raw + ')' : raw;
 
     setTimeout(() => {
       if (!isScanning) return;
@@ -1716,8 +1757,9 @@ async function submitManual() {
   input.value = '';
   input.blur();
 
+  const memberName = lookupMemberName(raw);
   document.getElementById('lastPill').style.display = 'inline-flex';
-  document.getElementById('lastId').textContent = raw;
+  document.getElementById('lastId').textContent = memberName ? memberName + ' (' + raw + ')' : raw;
 
   await sendToSheets(raw);
 }
@@ -1747,12 +1789,14 @@ function addLog(data, type, tab, meta) {
   const lbl  = LABELS[tab] || tab;
   const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const metaHtml = meta ? '<div class="log-when" style="color:var(--danger)">' + esc(meta) + '</div>' : '';
+  const memberName = lookupMemberName(data);
+  const displayText = memberName ? memberName + ' <span style="opacity:0.55;font-weight:500">(' + esc(data) + ')</span>' : esc(data);
 
   const el = document.createElement('div');
   el.className = 'log-row ' + type;
   el.innerHTML =
     '<div class="log-ic">' + ic + '</div>' +
-    '<div><div class="log-id">' + esc(data) + '</div><div class="log-when">' + time + '</div>' + metaHtml + '</div>' +
+    '<div><div class="log-id">' + displayText + '</div><div class="log-when">' + time + '</div>' + metaHtml + '</div>' +
     '<div class="log-chip ' + chip + '">' + lbl + '</div>';
   scroll.prepend(el);
 
