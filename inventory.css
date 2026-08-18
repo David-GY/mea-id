@@ -733,7 +733,7 @@ select:focus, .text-field:focus { border-color: var(--teal-bright); }
   /* Home — a real desktop landing layout, not just an enlarged mobile one.
      Centered as a column within the remaining width next to the sidebar,
      not hugging the left edge. */
-  .view#view-home { display: flex; flex-direction: column; align-items: center; }
+  #view-home.active { display: flex; flex-direction: column; align-items: center; }
 
   .home-header { max-width: 760px; width: 100%; margin: -6px auto 12px; }
 
