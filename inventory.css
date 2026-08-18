@@ -685,3 +685,149 @@ select:focus, .text-field:focus { border-color: var(--teal-bright); }
   }
 }
 
+/* ══════════════════════════════════════════════
+   WIDE DESKTOP LAYOUT (1100px+)
+   A real desktop UI, not a scaled-up phone card:
+   full-bleed background, a left sidebar nav instead
+   of the bottom bar, and a wide content column. The
+   768–1099px tablet tier above (floating phone card)
+   and everything below 768px are untouched.
+   ══════════════════════════════════════════════ */
+@media (min-width: 1100px) {
+  html, body { display: block; padding: 0; }
+
+  /* Drop the floating card look entirely — go full-bleed. */
+  .desktop-frame {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  #app {
+    min-height: 100vh;
+    max-width: 1400px;
+    margin: 0 0 0 248px;
+    padding-bottom: 40px;
+  }
+
+  .mea-header {
+    padding: 20px 40px;
+    position: sticky; top: 0;
+  }
+  .mea-logo-chip { width: 44px; height: 44px; border-radius: 12px; }
+  .mea-header-titles h1 { font-size: 18px; }
+  .mea-header-titles p { font-size: 11px; }
+  .icon-btn { width: 40px; height: 40px; }
+
+  .view { padding: 28px 40px 0; }
+
+  /* Home */
+  .home-hero { padding: 30px 0 16px; gap: 18px; max-width: 640px; }
+  .home-hero-logo { width: 88px; height: 88px; border-radius: 20px; }
+  .home-hero-title { font-size: 22px; }
+  .id-input-row { max-width: 640px; }
+  .id-input-row input { padding: 15px 20px; font-size: 16px; }
+  .id-input-row button { width: 56px; font-size: 19px; }
+  .setup-panel { max-width: 640px; }
+  .home-nav-list { flex-direction: row; gap: 16px; max-width: 640px; }
+  .home-nav-card { padding: 20px; flex-direction: column; align-items: flex-start; gap: 14px; }
+  .home-nav-icon { width: 50px; height: 50px; }
+  .home-nav-chevron { align-self: flex-end; margin-top: -32px; }
+  .home-footnote { text-align: left; max-width: 640px; padding: 0; }
+
+  /* Catalog — real desktop grid that fills the wide column */
+  .catalog-toolbar { max-width: 1320px; }
+  .item-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 16px;
+    max-width: 1320px;
+  }
+  .item-card { padding: 14px; border-radius: var(--radius-lg); }
+  .item-thumb { height: 78px; margin-bottom: 12px; }
+  .item-thumb .svg-icon { width: 34px; height: 34px; }
+  .item-title { font-size: 13.5px; }
+  .item-qty { font-size: 11.5px; }
+  .loc-tag { font-size: 12px; }
+
+  .item-list { max-width: 900px; }
+  .item-row { padding: 14px 16px; gap: 16px; }
+  .item-row .item-thumb { width: 110px; height: 50px; }
+  .item-row .item-info .item-title { font-size: 14.5px; }
+  .qty-btn { width: 36px; height: 36px; font-size: 18px; }
+  .qty-stepper input { width: 46px; padding: 8px 4px; font-size: 14px; }
+
+  /* Cart / checkout — a comfortable reading column, not edge to edge */
+  #view-cart, #view-checkout { max-width: 640px; }
+  .btn-primary, .btn-secondary { max-width: 420px; }
+  .btn-primary { padding: 17px; font-size: 15.5px; border-radius: var(--radius-lg); }
+  .btn-secondary { padding: 14px; font-size: 14px; }
+
+  .field-label { font-size: 11px; margin-bottom: 8px; }
+  .field-static { padding: 16px 20px; font-size: 17px; }
+  select, .text-field { padding: 15px 18px; font-size: 14.5px; }
+  .case-btn { padding: 12px 8px; font-size: 13px; }
+  .case-hint { font-size: 12.5px; }
+  .summary-table th, .summary-table td { padding: 13px 16px; font-size: 14px; }
+
+  /* Sidebar nav — replaces the bottom bar entirely on desktop */
+  .bottom-nav {
+    position: fixed; top: 0; left: 0; bottom: auto; right: auto;
+    width: 248px; height: 100vh;
+    padding: 24px 16px;
+    background: rgba(7,38,38,0.9);
+    border-right: 1px solid var(--border-dark);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    justify-content: flex-start;
+    z-index: 90;
+  }
+  .bottom-nav-inner {
+    max-width: none; width: 100%;
+    flex-direction: column;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    backdrop-filter: none;
+  }
+  .bottom-nav-inner::before {
+    content: 'MEA';
+    display: block;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: var(--teal-light);
+    padding: 8px 12px 18px;
+  }
+  .nav-btn {
+    display: flex; align-items: center; gap: 12px;
+    text-align: left;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .nav-btn .nav-emoji { display: inline-flex; margin-bottom: 0; font-size: 18px; }
+  .nav-svg-icon { width: 19px; height: 19px; margin: 0; }
+
+  /* Toast — recenter within the content column, not the whole viewport */
+  .toast { left: calc(50% + 124px); bottom: 32px; }
+
+  /* Modal — a centered dialog instead of a bottom sheet */
+  .modal-backdrop { align-items: center; }
+  .modal-sheet {
+    max-width: 460px;
+    border-radius: 20px;
+    border-bottom: 1px solid var(--border-mid);
+    padding: 26px 28px;
+  }
+  .contact-row { padding: 14px 18px; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .item-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
+    .nav-btn:hover { background: var(--surface); }
+  }
+}
+

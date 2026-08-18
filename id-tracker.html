@@ -871,6 +871,51 @@ body::before {
   }
 }
 
+/* ══════════════════════════════════════════════
+   WIDE DESKTOP LAYOUT (1100px+)
+   Same idea as inventory.css: the 768px tier above
+   just centers the phone card. This tier gives the
+   ID Tracker a roomier layout for mouse/keyboard use.
+   Nothing below 768px is touched.
+   ══════════════════════════════════════════════ */
+@media (min-width: 1100px) {
+  html, body { display: block; padding: 0; }
+
+  .desktop-frame {
+    width: 100%;
+    max-width: none;
+    min-height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  #page-main, #page-settings, #page-help { min-height: 100vh; }
+
+  .header { padding: 20px 48px; }
+  .brand-logo { width: 42px; height: 42px; }
+  .brand-name { font-size: 17px; }
+  .brand-sub { font-size: 11px; }
+  .icon-btn { width: 40px; height: 40px; font-size: 16px; }
+
+  .tab-bar { padding: 6px 48px; }
+  .tab-btn { padding: 13px 6px 11px; font-size: 12px; max-width: 220px; }
+
+  .scan-zone { padding: 24px 48px; max-width: 720px; margin: 0 auto; }
+  .manual-input { padding: 15px 18px; font-size: 15px; }
+  .manual-submit { width: 52px; height: 52px; }
+  .scan-circle { width: 168px; height: 168px; }
+  .scan-icon { font-size: 48px; }
+  .scan-txt { font-size: 14px; }
+
+  .log-row { padding: 14px 16px; }
+
+  .btn-teal, .btn-outline { padding: 16px; font-size: 14.5px; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .log-row:hover { transform: translateY(-1px); }
+  }
+}
+
 </style>
 </head>
 <body>
