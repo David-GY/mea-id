@@ -808,6 +808,7 @@
         id: item.id,
         title: item.title,
         qty: qty,
+        location: item.location || '',
         // Matches the sheet's own comment convention, e.g. "[BORROWING] - 24 ACTS, Renzo Gutierrez"
         comment: `[${state.checkoutCase}] - ${qty} ${committee || project}, ${pointPerson}`
       }))
