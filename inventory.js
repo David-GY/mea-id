@@ -116,6 +116,99 @@
       window.__meaInventoryDebugError = message;
     }
 
+    const PENDING_ORDERS_KEY = 'mea_pending_orders';
+
+    function getPendingOrders() {
+      try { return JSON.parse(localStorage.getItem(PENDING_ORDERS_KEY) || '[]'); }
+      catch(e) { return []; }
+    }
+
+    function savePendingOrders(list) {
+      try { localStorage.setItem(PENDING_ORDERS_KEY, JSON.stringify(list)); } catch(e) {}
+      updateOrderSyncPill();
+    }
+
+    function enqueuePendingOrder(payload) {
+      const list = getPendingOrders();
+      list.push({ payload, queuedAt: Date.now() });
+      savePendingOrders(list);
+    }
+
+    function updateOrderSyncPill() {
+      const pill = document.getElementById('orderSyncPill');
+      if (!pill) return;
+      const count = getPendingOrders().length;
+      if (count === 0) {
+        pill.classList.remove('show');
+        return;
+      }
+      pill.classList.add('show');
+      pill.className = 'order-sync-pill show ' + (navigator.onLine ? 'syncing' : 'offline');
+      pill.querySelector('.order-sync-text').textContent =
+        count + (count === 1 ? ' order' : ' orders') + ' pending' + (navigator.onLine ? ' — tap to sync' : ' — waiting for connection');
+    }
+
+    // The actual network call — throws on any failure, used by both the
+    // immediate submit path and the retry queue.
+    async function trySubmitOrderToSheet(payload) {
+      const url = getMeaInventoryScriptUrl();
+      if (!url) throw new Error('No Inventory Script URL configured yet — go to Home → ⚙️ Setup.');
+
+      let res, text;
+      try {
+        // text/plain avoids a CORS preflight against Apps Script, which
+        // doesn't support OPTIONS requests.
+        res = await fetch(url + '?action=submitOrder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+        text = await res.text();
+      } catch (networkErr) {
+        throw new Error('Network error — could not reach the Inventory script.');
+      }
+
+      let json;
+      try { json = JSON.parse(text); }
+      catch (parseErr) { throw new Error('Script returned an unexpected response.'); }
+
+      if (!json || !json.ok) {
+        throw new Error((json && json.error) ? json.error : 'Script reported an error.');
+      }
+      return json;
+    }
+
+    let isFlushingOrders = false;
+    async function flushPendingOrders() {
+      if (isFlushingOrders || !navigator.onLine) return;
+      const pending = getPendingOrders();
+      if (!pending.length) return;
+
+      isFlushingOrders = true;
+      updateOrderSyncPill();
+
+      while (true) {
+        const current = getPendingOrders();
+        if (!current.length) break;
+        try {
+          await trySubmitOrderToSheet(current[0].payload);
+          const remaining = getPendingOrders();
+          remaining.shift();
+          savePendingOrders(remaining);
+        } catch(err) {
+          break; // still failing — stop, keep the rest queued, retry later
+        }
+      }
+
+      isFlushingOrders = false;
+      updateOrderSyncPill();
+    }
+
+    window.flushPendingOrders = flushPendingOrders; // exposed for the sync pill's tap handler
+    window.updateOrderSyncPill = updateOrderSyncPill; // exposed so boot can show any queue left over from last session
+    window.addEventListener('online', () => { flushPendingOrders(); });
+    setInterval(() => { if (navigator.onLine) flushPendingOrders(); }, 20000);
+
     const localMethods = {
       getInventory: () => fetchLiveInventory(),
       getProjectOptions: () => [
@@ -129,50 +222,34 @@
         status: /^\\d{4,8}$/.test(String(idNumber).trim()) ? 'ACTIVE' : 'UNKNOWN'
       }),
       submitOrder: async (payload) => {
-        // Always keep a local copy first — if the network call below fails,
-        // the order isn't silently lost.
+        // Always keep a full local history — this never fails, regardless
+        // of network state, so an order is never silently lost.
         const orders = JSON.parse(localStorage.getItem('mea_inventory_orders') || '[]');
         orders.unshift({ ...payload, createdAt: new Date().toISOString() });
         localStorage.setItem('mea_inventory_orders', JSON.stringify(orders));
 
-        const url = getMeaInventoryScriptUrl();
-        if (!url) {
-          throw new Error('No Inventory Script URL configured yet — go to Home → ⚙️ Setup.');
+        // No URL configured yet — nothing to sync to, but don't lose the order.
+        if (!getMeaInventoryScriptUrl()) {
+          enqueuePendingOrder(payload);
+          return { success: true, queued: true, reason: 'not-configured' };
         }
+
+        // Offline — skip straight to the queue, no point trying the network.
         if (!navigator.onLine) {
-          throw new Error("You're offline — order saved locally, but not logged to the sheet yet.");
+          enqueuePendingOrder(payload);
+          return { success: true, queued: true, reason: 'offline' };
         }
 
-        let res, text;
+        // Online — try immediately. If it fails for any reason (network
+        // blip, server error), queue it instead of losing it; the queue
+        // will retry automatically.
         try {
-          // text/plain avoids a CORS preflight against Apps Script, which
-          // doesn't support OPTIONS requests.
-          res = await fetch(url + '?action=submitOrder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(payload)
-          });
-          text = await res.text();
-        } catch (networkErr) {
-          console.error('[MEA Inventory] Network error submitting order:', networkErr);
-          throw new Error('Network error — could not reach the Inventory script.');
+          const json = await trySubmitOrderToSheet(payload);
+          return { success: true, queued: false, orderId: 'ORD-' + Date.now(), logged: json.logged };
+        } catch(err) {
+          enqueuePendingOrder(payload);
+          return { success: true, queued: true, reason: 'error', message: err.message };
         }
-
-        let json;
-        try {
-          json = JSON.parse(text);
-        } catch (parseErr) {
-          console.error('[MEA Inventory] submitOrder response was not valid JSON:', text);
-          throw new Error('Script returned an unexpected response.');
-        }
-
-        if (!json || !json.ok) {
-          const errMsg = (json && json.error) ? json.error : 'Script reported an error.';
-          console.error('[MEA Inventory] submitOrder failed:', errMsg, json);
-          throw new Error(errMsg);
-        }
-
-        return { success: true, orderId: 'ORD-' + Date.now(), logged: json.logged };
       }
     };
     const runner = (success, failure) => new Proxy({}, { get: (_, name) => {
@@ -186,15 +263,14 @@
   const state = {
     view: 'home',             // home | catalog | cart | checkout
     catalogFormat: 'grid',   // grid | list
+    catalogSearch: '',
+    catalogSort: 'default',  // default | name | category | location
     inventory: [],
     cart: {},                // { itemId: { item, qty } }
     scanLog: [],             // { idNumber, status, time }
     lastId: null,            // last scanned/entered ID result
     projectOptions: [],
-    checkoutCase: 'BORROWING', // BORROWING | CONSUMING | RETURNING
-    catalogSearch: '',        // free-text search over title/category/location
-    catalogSort: 'name-asc',  // name-asc | name-desc | category-asc | category-desc | qty-desc | qty-asc
-    catalogCategory: 'ALL'    // 'ALL' or an exact category string from the sheet
+    checkoutCase: 'BORROWING' // BORROWING | CONSUMING | RETURNING
   };
 
   /* ---------------- Init ---------------- */
@@ -206,7 +282,6 @@
     bindHome();
     bindHeaderActions();
     bindCatalogToggle();
-    bindCatalogControls();
     bindCheckoutForm();
     bindModal();
 
@@ -214,6 +289,9 @@
     loadProjectOptions();
     updateCartBadge();
     showView('home');
+
+    if (window.updateOrderSyncPill) window.updateOrderSyncPill();
+    if (navigator.onLine && window.flushPendingOrders) window.flushPendingOrders();
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
@@ -470,14 +548,6 @@
     google.script.run
       .withSuccessHandler(items => {
         state.inventory = items || [];
-        // If a category the user had selected no longer exists in the
-        // freshly loaded data (e.g. sheet edited), fall back to "All"
-        // rather than silently showing zero results.
-        const categories = getCatalogCategories();
-        if (state.catalogCategory !== 'ALL' && categories.indexOf(state.catalogCategory) === -1) {
-          state.catalogCategory = 'ALL';
-        }
-        renderCategoryChips();
         renderCatalog();
       })
       .withFailureHandler(err => showToast(err.message || 'Could not load inventory', true))
@@ -500,114 +570,16 @@
   function bindCatalogToggle() {
     document.getElementById('format-grid-btn').addEventListener('click', () => setCatalogFormat('grid'));
     document.getElementById('format-list-btn').addEventListener('click', () => setCatalogFormat('list'));
-  }
 
-  /* ---------------- Catalog search / sort / category filter ---------------- */
-
-  function bindCatalogControls() {
-    const searchInput = document.getElementById('catalog-search-input');
-    const clearBtn = document.getElementById('catalog-search-clear');
-    const sortSelect = document.getElementById('catalog-sort-select');
-
-    searchInput.addEventListener('input', (e) => {
+    document.getElementById('catalog-search').addEventListener('input', (e) => {
       state.catalogSearch = e.target.value;
-      clearBtn.style.display = state.catalogSearch ? 'flex' : 'none';
       renderCatalog();
     });
 
-    clearBtn.addEventListener('click', () => {
-      state.catalogSearch = '';
-      searchInput.value = '';
-      clearBtn.style.display = 'none';
-      searchInput.focus();
-      renderCatalog();
-    });
-
-    sortSelect.value = state.catalogSort;
-    sortSelect.addEventListener('change', (e) => {
+    document.getElementById('catalog-sort').addEventListener('change', (e) => {
       state.catalogSort = e.target.value;
       renderCatalog();
     });
-  }
-
-  // Unique categories present in the current inventory (from the sheet's
-  // "category" column), sorted alphabetically. Blank/missing categories are
-  // grouped under "Miscellaneous" (same fallback used when the data is mapped).
-  function getCatalogCategories() {
-    const set = new Set();
-    state.inventory.forEach(item => {
-      set.add((item.category || 'Miscellaneous').trim() || 'Miscellaneous');
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }
-
-  function renderCategoryChips() {
-    const row = document.getElementById('catalog-category-row');
-    const categories = getCatalogCategories();
-
-    if (!categories.length) {
-      row.innerHTML = '';
-      return;
-    }
-
-    const chips = ['ALL', ...categories];
-    row.innerHTML = chips.map(cat => {
-      const label = cat === 'ALL' ? 'All' : cat;
-      const active = state.catalogCategory === cat ? ' active' : '';
-      return `<button type="button" class="category-chip${active}" data-cat="${escapeAttr(cat)}">${escapeHtml(label)}</button>`;
-    }).join('');
-
-    row.querySelectorAll('.category-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.catalogCategory = btn.dataset.cat;
-        row.querySelectorAll('.category-chip').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        renderCatalog();
-      });
-    });
-  }
-
-  // Applies the current search text, category filter, and sort order to
-  // state.inventory without mutating it — renderCatalog() consumes the result.
-  function getVisibleInventory() {
-    const query = state.catalogSearch.trim().toLowerCase();
-
-    let items = state.inventory.filter(item => {
-      const category = (item.category || 'Miscellaneous').trim() || 'Miscellaneous';
-      if (state.catalogCategory !== 'ALL' && category !== state.catalogCategory) return false;
-      if (!query) return true;
-      const haystack = [item.title, category, item.location, item.notes]
-        .filter(Boolean).join(' ').toLowerCase();
-      return haystack.includes(query);
-    });
-
-    const qtyOf = item => item.qtyAvailable == null ? -Infinity : item.qtyAvailable;
-
-    items.sort((a, b) => {
-      switch (state.catalogSort) {
-        case 'name-desc':
-          return (b.title || '').localeCompare(a.title || '');
-        case 'category-asc': {
-          const ca = (a.category || 'Miscellaneous').trim() || 'Miscellaneous';
-          const cb = (b.category || 'Miscellaneous').trim() || 'Miscellaneous';
-          return ca.localeCompare(cb) || (a.title || '').localeCompare(b.title || '');
-        }
-        case 'category-desc': {
-          const ca = (a.category || 'Miscellaneous').trim() || 'Miscellaneous';
-          const cb = (b.category || 'Miscellaneous').trim() || 'Miscellaneous';
-          return cb.localeCompare(ca) || (a.title || '').localeCompare(b.title || '');
-        }
-        case 'qty-desc':
-          return qtyOf(b) - qtyOf(a);
-        case 'qty-asc':
-          return qtyOf(a) - qtyOf(b);
-        case 'name-asc':
-        default:
-          return (a.title || '').localeCompare(b.title || '');
-      }
-    });
-
-    return items;
   }
 
   function setCatalogFormat(format) {
@@ -617,9 +589,34 @@
     renderCatalog();
   }
 
+  // Returns state.inventory filtered by the search box (matches title,
+  // category, location, or notes) and sorted per the sort dropdown —
+  // Category uses the sheet's own Category column, per request.
+  function getVisibleInventory() {
+    const q = state.catalogSearch.trim().toLowerCase();
+    let items = state.inventory;
+
+    if (q) {
+      items = items.filter(item => {
+        const haystack = [item.title, item.category, item.location, item.notes]
+          .filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+
+    const sorted = items.slice();
+    if (state.catalogSort === 'name') {
+      sorted.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (state.catalogSort === 'category') {
+      sorted.sort((a, b) => (a.category || '').localeCompare(b.category || '') || a.title.localeCompare(b.title));
+    } else if (state.catalogSort === 'location') {
+      sorted.sort((a, b) => (a.location || '').localeCompare(b.location || '') || a.title.localeCompare(b.title));
+    }
+    return sorted;
+  }
+
   function renderCatalog() {
     const container = document.getElementById('catalog-container');
-    const countLabel = document.getElementById('catalog-result-count');
     const debugMsg = window.__meaInventoryDebugError;
     const debugHtml = debugMsg
       ? `<div style="grid-column:1/-1;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:12px;padding:14px;font-size:11px;font-family:monospace;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;">⚠ Inventory fetch failed — showing demo items below.\n\n${escapeHtml(debugMsg)}</div>`
@@ -627,22 +624,14 @@
 
     if (!state.inventory.length) {
       container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
-      if (countLabel) countLabel.textContent = 'Click to add to cart';
       return;
     }
 
     const visible = getVisibleInventory();
 
-    if (countLabel) {
-      const isFiltered = !!state.catalogSearch.trim() || state.catalogCategory !== 'ALL';
-      countLabel.textContent = isFiltered
-        ? `${visible.length} of ${state.inventory.length} item${state.inventory.length === 1 ? '' : 's'}`
-        : 'Click to add to cart';
-    }
-
     if (!visible.length) {
       container.className = state.catalogFormat === 'grid' ? 'item-grid' : 'item-list';
-      container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">No items match your search</div>';
+      container.innerHTML = debugHtml + '<div class="empty-state" style="grid-column:1/-1;"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">No items match your search</div>';
       return;
     }
 
@@ -662,7 +651,7 @@
           <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
+            <div class="item-qty">${item.notes ? escapeHtml(item.notes) : '<span style="opacity:0.5">No notes</span>'}</div>
           </div>
           ${cartQty(item.id) > 0 ? `<div class="in-cart-badge">${cartQty(item.id)} in cart</div>` : ''}
         </div>
@@ -742,7 +731,7 @@
         <div class="item-thumb">${locationTag(item.location)}</div>
         <div class="item-info">
           <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
+          <div class="item-qty">${item.notes ? escapeHtml(item.notes) : '<span style="opacity:0.5">No notes</span>'}</div>
         </div>
         <div class="qty-stepper">
           <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', -1)">−</button>
@@ -829,8 +818,12 @@
     btn.textContent = 'SUBMITTING…';
 
     google.script.run
-      .withSuccessHandler(() => {
-        showToast('Order submitted');
+      .withSuccessHandler((result) => {
+        if (result && result.queued) {
+          showToast('Saved offline — will sync automatically');
+        } else {
+          showToast('Order submitted');
+        }
         state.cart = {};
         updateCartBadge();
         btn.disabled = false;

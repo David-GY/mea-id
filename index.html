@@ -37,6 +37,11 @@
       </div>
     </header>
 
+    <div class="order-sync-pill" id="orderSyncPill" onclick="window.flushPendingOrders && window.flushPendingOrders()">
+      <div class="order-sync-dot"></div>
+      <span class="order-sync-text">0 pending</span>
+    </div>
+
     <!-- ===================== View: Home ===================== -->
     <section class="view active" id="view-home">
 
@@ -104,30 +109,20 @@
     <!-- ===================== View: Catalog ===================== -->
     <section class="view" id="view-catalog">
       <div class="catalog-search-row">
-        <span class="catalog-search-icon">🔍</span>
-        <input type="search" id="catalog-search-input" class="catalog-search-input" placeholder="Search items…" autocomplete="off" spellcheck="false">
-        <button class="catalog-search-clear" id="catalog-search-clear" style="display:none;" title="Clear search">✕</button>
-      </div>
-
-      <div class="catalog-sort-row">
-        <select id="catalog-sort-select" class="catalog-sort-select" title="Sort by">
-          <option value="name-asc">Name (A–Z)</option>
-          <option value="name-desc">Name (Z–A)</option>
-          <option value="category-asc">Category (A–Z)</option>
-          <option value="category-desc">Category (Z–A)</option>
-          <option value="qty-desc">Quantity (High–Low)</option>
-          <option value="qty-asc">Quantity (Low–High)</option>
+        <input type="text" id="catalog-search" class="catalog-search-input" placeholder="Search items…" autocomplete="off">
+        <select id="catalog-sort" class="catalog-sort-select">
+          <option value="default">Sort: Default</option>
+          <option value="name">Sort: Name (A–Z)</option>
+          <option value="category">Sort: Category</option>
+          <option value="location">Sort: Location</option>
         </select>
       </div>
-
-      <div class="catalog-category-row" id="catalog-category-row"></div>
-
       <div class="catalog-toolbar">
         <div class="view-toggle">
           <button class="icon-btn active" id="format-grid-btn" title="Grid view">▦</button>
           <button class="icon-btn" id="format-list-btn" title="List view">☰</button>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);" id="catalog-result-count">Click to add to cart</div>
+        <div style="font-size:11px;color:var(--text-dim);">Click to add to cart</div>
       </div>
       <div id="catalog-container" class="item-grid"></div>
     </section>
