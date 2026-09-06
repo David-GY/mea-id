@@ -217,9 +217,9 @@
         'YDC', 'EXT', 'FIN', 'SUS'
       ],
       lookupIdNumber: (idNumber) => ({
-        found: /^\\d{4,8}$/.test(String(idNumber).trim()),
-        idNumber: String(idNumber).trim(), name: '', committee: '', role: '',
-        status: /^\\d{4,8}$/.test(String(idNumber).trim()) ? 'ACTIVE' : 'UNKNOWN'
+        found: /^\d{6}$/.test(String(idNumber).trim()),
+        idNumber: String(idNumber).trim(), name: '', level: 'NONE',
+        status: /^\d{6}$/.test(String(idNumber).trim()) ? 'ACTIVE' : 'UNKNOWN'
       }),
       submitOrder: async (payload) => {
         // Always keep a full local history — this never fails, regardless
@@ -294,73 +294,70 @@
   }
 
   /* =========================================================
-     PERMISSION CONFIG
-     Your ID Tracker Apps Script already returns a role/level field for
-     each ID — this is where the app decides who counts as "permitted".
-
-     If your real field is named something other than "role" (e.g.
-     "level" or "permissionLevel"), change PERMISSION_FIELD below.
-     If your role values are different from the list, edit ALLOWED_ROLES
-     (comparison is case-insensitive). Anyone whose role isn't in this
-     list — including blank/unknown — is treated as not permitted.
+     PERMISSION MODEL
+     Matches the real ACCESS sheet: column C ("Level") holds one of
+     Admin / Tracker / Dashboard for people who get elevated access.
+     Anyone not listed in ACCESS can still log in (as long as they're
+     in MAIN) but gets neither ID Tracker nor SUS Dashboard.
+       Admin      → ID Tracker + SUS Dashboard
+       Tracker    → ID Tracker only
+       Dashboard  → SUS Dashboard only
+       (anything else / not listed) → neither
      ========================================================= */
-  const PERMISSION_FIELD = 'role';
-  const ALLOWED_ROLES = [
-    'ADMIN', 'SUS', 'OFFICER', 'STAFF',
-    'SUS SENIOR ASSOCIATE', 'SENIOR ASSOCIATE', 'AVP', 'VP'
-  ];
-
-  function isPermitted(loginResult) {
+  function canOpenTracker(loginResult) {
     if (!loginResult) return false;
-    const raw = loginResult[PERMISSION_FIELD];
-    if (raw === undefined || raw === null || String(raw).trim() === '') return false;
-    const val = String(raw).trim().toUpperCase();
-    return ALLOWED_ROLES.some(r => r.toUpperCase() === val);
+    const level = String(loginResult.level || '').trim().toUpperCase();
+    return level === 'ADMIN' || level === 'TRACKER';
+  }
+  function canOpenDashboard(loginResult) {
+    if (!loginResult) return false;
+    const level = String(loginResult.level || '').trim().toUpperCase();
+    return level === 'ADMIN' || level === 'DASHBOARD';
   }
 
   /**
-   * Looks up an ID number against the ID Tracker Apps Script so login can
-   * show the real name/role and the app can gate ID Tracker / SUS Dashboard.
-   *
-   * ASSUMPTION (please verify against your actual script): it accepts
-   *   GET  <trackerUrl>?action=lookup&id=<idNumber>
-   * and responds with JSON shaped like:
-   *   { ok:true, found:true, name:"...", role:"...", committee:"...", status:"ACTIVE" }
-   * If your script uses a different action name or response shape, this
-   * is the only function you need to edit.
+   * Logs an ID number in against the combined Apps Script.
+   *   GET <trackerUrl>?action=login&id=<6-digit id>
+   * Response: { ok:true, found:true/false, idNumber, name, level }
+   * found:false means the ID isn't a valid 6-digit number in MAIN.
+   * level is "NONE" (or missing) when the ID isn't in ACCESS at all.
    */
   async function fetchIdLookup(idNumber) {
     const url = getTrackerScriptUrl();
     if (!url) {
-      return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: 'NOT_CONFIGURED' };
+      return { found: false, idNumber: String(idNumber).trim(), name: '', level: 'NONE', status: 'NOT_CONFIGURED' };
     }
     let res, text;
     try {
-      res = await fetch(url + '?action=lookup&id=' + encodeURIComponent(idNumber));
+      res = await fetch(url + '?action=login&id=' + encodeURIComponent(idNumber));
       text = await res.text();
     } catch (networkErr) {
       console.error('[MEA Login] Network error during lookup:', networkErr);
-      return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: 'NETWORK_ERROR' };
+      return { found: false, idNumber: String(idNumber).trim(), name: '', level: 'NONE', status: 'NETWORK_ERROR' };
     }
 
     let json;
     try { json = JSON.parse(text); }
     catch (parseErr) {
       console.error('[MEA Login] Lookup response was not valid JSON:', text);
-      return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: 'ERROR' };
+      return { found: false, idNumber: String(idNumber).trim(), name: '', level: 'NONE', status: 'ERROR' };
     }
 
-    if (json && json.ok && json.found) {
+    if (!json || json.ok === false) {
+      console.error('[MEA Login] Script reported an error:', json && json.error, json);
+      return { found: false, idNumber: String(idNumber).trim(), name: '', level: 'NONE', status: 'ERROR' };
+    }
+
+    if (json.found) {
       return {
         found: true,
-        idNumber: String(idNumber).trim(),
+        idNumber: json.idNumber || String(idNumber).trim(),
         name: json.name || '',
-        role: json.role || json.level || json.permissionLevel || json.accessLevel || '',
-        committee: json.committee || '',
-        status: json.status || 'ACTIVE'
+        level: (json.level || 'NONE').toUpperCase(),
+        status: 'ACTIVE'
       };
     }
-    return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: (json && json.status) || 'UNKNOWN' };
+    return { found: false, idNumber: String(idNumber).trim(), name: '', level: 'NONE', status: 'NOT_FOUND' };
   }
 
   function renderIdentity() {
@@ -382,20 +379,18 @@
     const dashSub = document.getElementById('dashboard-sub');
     if (!trackerCard || !dashCard) return;
 
-    const permitted = isPermitted(state.lastId);
-    trackerCard.classList.toggle('disabled', !permitted);
-    dashCard.classList.toggle('disabled', !permitted);
+    const trackerOk = canOpenTracker(state.lastId);
+    const dashOk = canOpenDashboard(state.lastId);
+    trackerCard.classList.toggle('disabled', !trackerOk);
+    dashCard.classList.toggle('disabled', !dashOk);
 
     if (!getTrackerScriptUrl()) {
       trackerSub.textContent = 'Setup required — contact an admin';
       dashSub.textContent = 'Setup required — contact an admin';
-    } else if (!permitted) {
-      trackerSub.textContent = 'Restricted — insufficient permissions';
-      dashSub.textContent = 'Restricted — insufficient permissions';
-    } else {
-      trackerSub.textContent = 'Scan & verify a MEA ID';
-      dashSub.textContent = 'Analytics & reports';
+      return;
     }
+    trackerSub.textContent = trackerOk ? 'Scan & verify a MEA ID' : 'Restricted — Tracker access required';
+    dashSub.textContent = dashOk ? 'Analytics & reports' : 'Restricted — Dashboard access required';
   }
 
   /* ---------------- Init ---------------- */
@@ -558,6 +553,10 @@
         err.textContent = 'Enter your ID number.';
         return;
       }
+      if (!/^\d{6}$/.test(idValue)) {
+        err.textContent = 'Enter a valid 6-digit ID number.';
+        return;
+      }
 
       btn.disabled = true;
       btn.textContent = 'CHECKING…';
@@ -573,6 +572,10 @@
       }
       if (result.status === 'NETWORK_ERROR') {
         err.textContent = 'Could not reach the server. Check your connection.';
+        return;
+      }
+      if (result.status === 'ERROR') {
+        err.textContent = 'Something went wrong. Please try again.';
         return;
       }
       if (!result.found) {
@@ -605,7 +608,7 @@
         showToast('ID Tracker isn\'t set up yet — contact an admin', true);
         return;
       }
-      if (!isPermitted(state.lastId)) {
+      if (!canOpenTracker(state.lastId)) {
         showToast('You don\'t have permission to open ID Tracker', true);
         return;
       }
@@ -615,7 +618,7 @@
     });
 
     document.getElementById('home-nav-dashboard').addEventListener('click', () => {
-      if (!isPermitted(state.lastId)) {
+      if (!canOpenDashboard(state.lastId)) {
         showToast('You don\'t have permission to open SUS Dashboard', true);
         return;
       }
