@@ -634,50 +634,6 @@
   function bindSettings() {
     document.getElementById('settings-install-btn').addEventListener('click', () => triggerInstall());
 
-    document.getElementById('settings-test-inventory-btn').addEventListener('click', async () => {
-      const url = document.getElementById('settings-inventory-url').value.trim();
-      const box = document.getElementById('settingsInventoryTestStatus');
-      const btn = document.getElementById('settings-test-inventory-btn');
-
-      if (!url) {
-        box.textContent = '✕ Enter a URL first.';
-        box.className = 'setup-status error';
-        return;
-      }
-
-      btn.disabled = true;
-      btn.textContent = 'Testing…';
-      box.textContent = '';
-      box.className = 'setup-status';
-
-      try {
-        const res = await fetch(url + '?action=inventory');
-        const text = await res.text();
-        let json = null;
-        try { json = JSON.parse(text); } catch(e) {}
-
-        if (json && json.ok && Array.isArray(json.items)) {
-          box.textContent = `✓ Connected! Found ${json.items.length} item(s).\n\nFirst item: ${json.items[0] ? JSON.stringify(json.items[0]) : '(none)'}`;
-          box.className = 'setup-status ok';
-        } else if (json && json.ok === false) {
-          box.textContent = `✕ Script responded with an error:\n${json.error || '(no message)'}`;
-          box.className = 'setup-status error';
-        } else if (text.includes('<html') || text.includes('<!DOCTYPE')) {
-          box.textContent = '✕ Got an HTML page instead of JSON.\n\nMost likely cause: the script isn\'t deployed with "Who has access: Anyone", or it needs a fresh "New version" deployment.';
-          box.className = 'setup-status error';
-        } else {
-          box.textContent = '✕ Unexpected response:\n' + text.substring(0, 300);
-          box.className = 'setup-status error';
-        }
-      } catch(err) {
-        box.textContent = '✕ Network error: ' + err.message;
-        box.className = 'setup-status error';
-      }
-
-      btn.disabled = false;
-      btn.textContent = 'Test Inventory Connection';
-    });
-
     document.getElementById('settings-save-btn').addEventListener('click', () => {
       const trackerUrl = document.getElementById('settings-script-url').value.trim();
       const inventoryUrl = document.getElementById('settings-inventory-url').value.trim();
