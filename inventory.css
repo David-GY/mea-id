@@ -736,6 +736,25 @@ select option:hover {
 }
 .contact-btn:active { background: rgba(42,157,157,0.25); transform: scale(0.97); }
 
+.contact-btn-group {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.contact-icon-btn {
+  width: 34px; height: 34px;
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--teal-bright);
+  border-radius: 50%;
+  background: rgba(42,157,157,0.12);
+  cursor: pointer;
+  padding: 0;
+}
+.contact-icon-btn .svg-icon { width: 17px; height: 17px; }
+.contact-icon-btn:active { background: rgba(42,157,157,0.25); transform: scale(0.94); }
+
 /* ══════════════════════════════════════════════
    DESKTOP LAYOUT
    Everything below only applies at 768px+ — mobile
@@ -782,6 +801,7 @@ select option:hover {
     .btn-primary:hover:not(:disabled) { filter: brightness(1.08); cursor: pointer; }
     .btn-secondary:hover { background: var(--surface); cursor: pointer; }
     .contact-btn:hover { background: rgba(42,157,157,0.2); cursor: pointer; }
+    .contact-icon-btn:hover { background: rgba(42,157,157,0.2); cursor: pointer; }
     .case-btn:hover:not(.active) { background: rgba(255,255,255,0.05); cursor: pointer; }
     .modal-tab:hover { color: var(--teal-light); cursor: pointer; }
     a { cursor: pointer; }
