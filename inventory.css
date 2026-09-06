@@ -174,44 +174,79 @@ body::before {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Home ── */
-.home-hero {
+/* ── Top brand bar (Home / Settings / Help) ── */
+.top-brand {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 14px;
-  padding: 24px 0 8px;
-  text-align: left;
+  justify-content: space-between;
+  padding: 24px 20px 0;
 }
-.home-hero-logo {
-  width: 72px; height: 72px;
-  border-radius: 18px;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.3);
-}
-.home-hero-logo img { width: 100%; height: 100%; object-fit: cover; }
-
-.home-hero-title {
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: 0.1px;
-  line-height: 1.3;
-}
-.home-hero-sub {
-  font-size: 10px;
-  font-weight: 600;
+.top-brand-mea { height: 34px; width: auto; }
+.top-brand-sus {
+  font-size: 20px;
+  font-weight: 900;
   letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--teal-light);
+  color: var(--white);
 }
 
-.home-header {
+/* ── Identity block (Home / Settings / Help) ── */
+.identity-block {
+  padding: 22px 20px 4px;
+}
+.identity-id {
+  font-size: 15px;
+  color: rgba(255,255,255,0.65);
+  font-weight: 500;
+}
+.identity-name {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--white);
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+.logout-row {
+  text-align: center;
+  margin-top: 18px;
+}
+.logout-row a {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── Login screen ── */
+#view-login { padding-top: 0; }
+.login-wrap {
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: -6px 0 4px;
+  flex-direction: column;
+  align-items: center;
+  padding: 22vh 24px 0;
+  text-align: center;
+}
+.login-logo img { width: 240px; max-width: 70%; height: auto; }
+.login-enter-btn { width: 100%; max-width: 320px; }
+.login-error {
+  min-height: 16px;
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+/* ── Help / Contact page ── */
+.help-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--white);
+  padding: 8px 20px 2px;
+}
+.help-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 0 20px 18px;
 }
 
 .id-input-label {
@@ -255,7 +290,7 @@ body::before {
 }
 .id-input-row button:active { transform: scale(0.94); }
 
-.home-nav-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.home-nav-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding: 0 20px; }
 
 .home-nav-card {
   display: flex; align-items: center; gap: 14px;
@@ -941,4 +976,3 @@ select option:hover {
     .nav-btn:hover { background: var(--surface); }
   }
 }
-

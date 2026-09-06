@@ -42,54 +42,39 @@
       <span class="order-sync-text">0 pending</span>
     </div>
 
-    <!-- ===================== View: Home ===================== -->
-    <section class="view active" id="view-home">
-
-      <div class="home-hero">
-        <div class="home-hero-logo">
+    <!-- ===================== View: Login ===================== -->
+    <section class="view active" id="view-login">
+      <div class="login-wrap">
+        <div class="login-logo">
           <img src="icons/icon-192.png" alt="MEA">
         </div>
-        <div>
-          <div class="home-hero-title">Management Engineering<br>Association</div>
-          <div class="home-hero-sub" style="margin-top:6px">MEA Portal</div>
+        <div class="id-input-label" style="margin-top:38px;">INPUT ID NUMBER</div>
+        <div class="id-input-row" style="max-width:320px;width:100%;">
+          <input type="text" inputmode="numeric" id="login-id-input" placeholder="e.g. 212345"
+            style="text-align:center;flex:1 1 100%;" autocomplete="off" spellcheck="false" />
         </div>
+        <button class="btn-primary login-enter-btn" id="login-enter-btn">ENTER</button>
+        <div class="login-error" id="login-error"></div>
       </div>
+    </section>
 
-      <div class="home-header">
-        <button class="icon-btn" id="home-setup-btn" title="Setup"><img class="svg-icon" src="icons/ui/cog.svg" alt="Setup"></button>
-        <button class="icon-btn" id="home-menu-btn" title="Install App"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt="Install"></button>
+    <!-- ===================== View: Home ===================== -->
+    <section class="view" id="view-home">
+      <div class="top-brand">
+        <img class="top-brand-mea" src="icons/icon-96.png" alt="MEA">
+        <div class="top-brand-sus">SUS</div>
       </div>
-
-      <div class="setup-panel" id="setupPanel" style="display:none;">
-        <div class="id-input-label" style="text-align:left;">ID TRACKER SCRIPT URL</div>
-        <div class="id-input-row">
-          <input type="url" id="home-script-url" placeholder="https://script.google.com/macros/s/…/exec"
-            autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
-        </div>
-
-        <div class="id-input-label" style="text-align:left;margin-top:14px;">INVENTORY SCRIPT URL</div>
-        <div class="id-input-row">
-          <input type="url" id="home-inventory-url" placeholder="https://script.google.com/macros/s/…/exec"
-            autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
-        </div>
-        <button class="btn-secondary" id="test-inventory-url-btn" style="margin-top:8px;">Test Inventory Connection</button>
-        <div class="setup-status" id="inventoryTestStatus" style="white-space:pre-wrap;font-family:monospace;font-size:10px;"></div>
-
-        <button class="btn-secondary" id="save-script-url-btn" style="margin-top:14px;">Save</button>
-        <div class="setup-status" id="setupStatus"></div>
-      </div>
-
-      <div class="id-input-label" style="text-align:left;">INPUT ID NUMBER</div>
-      <div class="id-input-row">
-        <input type="text" inputmode="numeric" id="home-id-input" placeholder="e.g. 212345" />
+      <div class="identity-block">
+        <div class="identity-id" id="home-identity-id">—</div>
+        <div class="identity-name" id="home-identity-name">—</div>
       </div>
 
       <div class="home-nav-list">
         <div class="home-nav-card" id="home-nav-inventory">
-          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="Inventory"></div>
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="SUSCART"></div>
           <div class="home-nav-text">
-            <div class="home-nav-title">INVENTORY</div>
-            <div class="home-nav-sub">Browse items & request supplies</div>
+            <div class="home-nav-title">SUSCART</div>
+            <div class="home-nav-sub">Browse items &amp; request supplies</div>
           </div>
           <div class="home-nav-chevron">›</div>
         </div>
@@ -97,13 +82,107 @@
           <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/id-badge.svg" alt="ID Tracker"></div>
           <div class="home-nav-text">
             <div class="home-nav-title">ID Tracker</div>
-            <div class="home-nav-sub" id="idtracker-sub">Enter your ID number above first</div>
+            <div class="home-nav-sub" id="idtracker-sub">Scan &amp; verify a MEA ID</div>
+          </div>
+          <div class="home-nav-chevron">›</div>
+        </div>
+        <div class="home-nav-card" id="home-nav-dashboard">
+          <div class="home-nav-icon"><span class="nav-emoji" style="font-size:20px;">📊</span></div>
+          <div class="home-nav-text">
+            <div class="home-nav-title">SUS Dashboard</div>
+            <div class="home-nav-sub" id="dashboard-sub">Analytics &amp; reports</div>
+          </div>
+          <div class="home-nav-chevron">›</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== View: Settings ===================== -->
+    <section class="view" id="view-settings">
+      <div class="top-brand">
+        <img class="top-brand-mea" src="icons/icon-96.png" alt="MEA">
+        <div class="top-brand-sus">SUS</div>
+      </div>
+      <div class="identity-block">
+        <div class="identity-id" id="settings-identity-id">—</div>
+        <div class="identity-name" id="settings-identity-name">—</div>
+      </div>
+
+      <div class="id-input-label" style="text-align:left;margin-top:6px;">ID TRACKER SCRIPT URL</div>
+      <div class="id-input-row">
+        <input type="url" id="settings-script-url" placeholder="https://script.google.com/macros/s/…/exec"
+          autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
+      </div>
+
+      <div class="id-input-label" style="text-align:left;">INVENTORY SCRIPT URL</div>
+      <div class="id-input-row">
+        <input type="url" id="settings-inventory-url" placeholder="https://script.google.com/macros/s/…/exec"
+          autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
+      </div>
+      <button class="btn-secondary" id="settings-test-inventory-btn">Test Inventory Connection</button>
+      <div class="setup-status" id="settingsInventoryTestStatus" style="white-space:pre-wrap;font-family:monospace;font-size:10px;"></div>
+
+      <button class="btn-secondary" id="settings-save-btn" style="margin-top:14px;">Save</button>
+      <div class="setup-status" id="settingsStatus"></div>
+
+      <div class="home-nav-list" style="margin-top:22px;">
+        <div class="home-nav-card" id="settings-install-btn">
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt="Install"></div>
+          <div class="home-nav-text">
+            <div class="home-nav-title">Download MEA App</div>
+            <div class="home-nav-sub">Install to your home screen</div>
           </div>
           <div class="home-nav-chevron">›</div>
         </div>
       </div>
 
-      <p class="home-footnote">Entering an ID number here carries it into whichever section you open.</p>
+      <div class="logout-row"><a id="logout-link">Log out</a></div>
+    </section>
+
+    <!-- ===================== View: Help ===================== -->
+    <section class="view" id="view-help">
+      <div class="top-brand">
+        <img class="top-brand-mea" src="icons/icon-96.png" alt="MEA">
+        <div class="top-brand-sus">SUS</div>
+      </div>
+      <div class="identity-block">
+        <div class="identity-id" id="help-identity-id">—</div>
+        <div class="identity-name" id="help-identity-name">—</div>
+      </div>
+
+      <div class="help-title">Contact</div>
+      <div class="help-sub">For concerns, contact SUS below.</div>
+
+      <div class="contact-list" style="padding:0 20px;">
+        <div class="contact-row">
+          <div class="contact-info">
+            <div class="contact-name">David Yu</div>
+            <div class="contact-role">SUS Senior Associate</div>
+          </div>
+          <button class="contact-btn" onclick="window.open('https://fb.com/davidcurtisyu', '_blank')">Message</button>
+        </div>
+        <div class="contact-row">
+          <div class="contact-info">
+            <div class="contact-name">Kendrick Jin</div>
+            <div class="contact-role">SUS Senior Associate</div>
+          </div>
+          <button class="contact-btn" onclick="window.open('https://www.fb.com/ken.jin/', '_blank')">Message</button>
+        </div>
+        <div class="contact-row">
+          <div class="contact-info">
+            <div class="contact-name">Riesha Chan</div>
+            <div class="contact-role">SUS AVP</div>
+          </div>
+          <button class="contact-btn" onclick="window.open('https://www.facebook.com/rieeschann', '_blank')">Message</button>
+        </div>
+        <div class="contact-row">
+          <div class="contact-info">
+            <div class="contact-name">Hazel Burce</div>
+            <div class="contact-role">VP SUS</div>
+          </div>
+          <button class="contact-btn" onclick="window.open('https://www.facebook.com/hazelburce25', '_blank')">Message</button>
+        </div>
+      </div>
     </section>
 
     <!-- ===================== View: Catalog ===================== -->
@@ -165,13 +244,22 @@
 
   </div>
 
-  <!-- ===================== Bottom Nav ===================== -->
+  <!-- ===================== Bottom Nav (Catalog / Cart / Checkout) ===================== -->
   <nav class="bottom-nav" id="bottom-nav">
     <div class="bottom-nav-inner">
       <div class="nav-btn" data-view="home"><span class="nav-emoji">🏠</span>Home</div>
       <div class="nav-btn" data-view="catalog"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/archive-box.svg" alt=""></span>Catalog</div>
       <div class="nav-btn" data-view="cart"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/shopping-basket.svg" alt=""></span>Cart</div>
       <div class="nav-btn" data-view="checkout"><span class="nav-emoji">✅</span>Checkout</div>
+    </div>
+  </nav>
+
+  <!-- ===================== Bottom Nav (Home / Settings / Help) ===================== -->
+  <nav class="bottom-nav" id="bottom-nav-main">
+    <div class="bottom-nav-inner">
+      <div class="nav-btn" data-mainview="home"><span class="nav-emoji">🏠</span>Home</div>
+      <div class="nav-btn" data-mainview="settings"><span class="nav-emoji">⚙️</span>Settings</div>
+      <div class="nav-btn" data-mainview="help"><span class="nav-emoji">📞</span>Help</div>
     </div>
   </nav>
 

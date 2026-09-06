@@ -218,7 +218,7 @@
       ],
       lookupIdNumber: (idNumber) => ({
         found: /^\\d{4,8}$/.test(String(idNumber).trim()),
-        idNumber: String(idNumber).trim(), name: '', committee: '',
+        idNumber: String(idNumber).trim(), name: '', committee: '', role: '',
         status: /^\\d{4,8}$/.test(String(idNumber).trim()) ? 'ACTIVE' : 'UNKNOWN'
       }),
       submitOrder: async (payload) => {
@@ -261,17 +261,142 @@
   }
 
   const state = {
-    view: 'home',             // home | catalog | cart | checkout
+    view: 'login',           // login | home | settings | help | catalog | cart | checkout
     catalogFormat: 'grid',   // grid | list
     catalogSearch: '',
     catalogSort: 'default',  // default | name | category | location
     inventory: [],
     cart: {},                // { itemId: { item, qty } }
     scanLog: [],             // { idNumber, status, time }
-    lastId: null,            // last scanned/entered ID result
+    lastId: null,            // logged-in ID lookup result: { idNumber, name, role, committee, status }
     projectOptions: [],
     checkoutCase: 'BORROWING' // BORROWING | CONSUMING | RETURNING
   };
+
+  /* =========================================================
+     LOGIN PERSISTENCE
+     The logged-in ID stays on the device across reloads/relaunches
+     until the person taps "Log out" in Settings.
+     ========================================================= */
+  const LOGIN_KEY = 'mea_login_v1';
+
+  function getSavedLogin() {
+    try {
+      const raw = localStorage.getItem(LOGIN_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+  function saveLogin(result) {
+    try { localStorage.setItem(LOGIN_KEY, JSON.stringify(result)); } catch(e) {}
+  }
+  function clearLogin() {
+    try { localStorage.removeItem(LOGIN_KEY); } catch(e) {}
+  }
+
+  /* =========================================================
+     PERMISSION CONFIG
+     Your ID Tracker Apps Script already returns a role/level field for
+     each ID — this is where the app decides who counts as "permitted".
+
+     If your real field is named something other than "role" (e.g.
+     "level" or "permissionLevel"), change PERMISSION_FIELD below.
+     If your role values are different from the list, edit ALLOWED_ROLES
+     (comparison is case-insensitive). Anyone whose role isn't in this
+     list — including blank/unknown — is treated as not permitted.
+     ========================================================= */
+  const PERMISSION_FIELD = 'role';
+  const ALLOWED_ROLES = [
+    'ADMIN', 'SUS', 'OFFICER', 'STAFF',
+    'SUS SENIOR ASSOCIATE', 'SENIOR ASSOCIATE', 'AVP', 'VP'
+  ];
+
+  function isPermitted(loginResult) {
+    if (!loginResult) return false;
+    const raw = loginResult[PERMISSION_FIELD];
+    if (raw === undefined || raw === null || String(raw).trim() === '') return false;
+    const val = String(raw).trim().toUpperCase();
+    return ALLOWED_ROLES.some(r => r.toUpperCase() === val);
+  }
+
+  /**
+   * Looks up an ID number against the ID Tracker Apps Script so login can
+   * show the real name/role and the app can gate ID Tracker / SUS Dashboard.
+   *
+   * ASSUMPTION (please verify against your actual script): it accepts
+   *   GET  <trackerUrl>?action=lookup&id=<idNumber>
+   * and responds with JSON shaped like:
+   *   { ok:true, found:true, name:"...", role:"...", committee:"...", status:"ACTIVE" }
+   * If your script uses a different action name or response shape, this
+   * is the only function you need to edit.
+   */
+  async function fetchIdLookup(idNumber) {
+    const url = getTrackerScriptUrl();
+    if (!url) {
+      return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: 'NOT_CONFIGURED' };
+    }
+    let res, text;
+    try {
+      res = await fetch(url + '?action=lookup&id=' + encodeURIComponent(idNumber));
+      text = await res.text();
+    } catch (networkErr) {
+      console.error('[MEA Login] Network error during lookup:', networkErr);
+      return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: 'NETWORK_ERROR' };
+    }
+
+    let json;
+    try { json = JSON.parse(text); }
+    catch (parseErr) {
+      console.error('[MEA Login] Lookup response was not valid JSON:', text);
+      return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: 'ERROR' };
+    }
+
+    if (json && json.ok && json.found) {
+      return {
+        found: true,
+        idNumber: String(idNumber).trim(),
+        name: json.name || '',
+        role: json.role || json.level || json.permissionLevel || json.accessLevel || '',
+        committee: json.committee || '',
+        status: json.status || 'ACTIVE'
+      };
+    }
+    return { found: false, idNumber: String(idNumber).trim(), name: '', role: '', committee: '', status: (json && json.status) || 'UNKNOWN' };
+  }
+
+  function renderIdentity() {
+    const r = state.lastId;
+    const idText = r ? r.idNumber : '—';
+    const nameText = (r && r.name) ? r.name : (r ? 'Unknown Member' : '—');
+    ['home', 'settings', 'help'].forEach(v => {
+      const idEl = document.getElementById(v + '-identity-id');
+      const nameEl = document.getElementById(v + '-identity-name');
+      if (idEl) idEl.textContent = idText;
+      if (nameEl) nameEl.textContent = nameText;
+    });
+  }
+
+  function updateHomeCardStates() {
+    const trackerCard = document.getElementById('home-nav-idtracker');
+    const trackerSub = document.getElementById('idtracker-sub');
+    const dashCard = document.getElementById('home-nav-dashboard');
+    const dashSub = document.getElementById('dashboard-sub');
+    if (!trackerCard || !dashCard) return;
+
+    const permitted = isPermitted(state.lastId);
+    trackerCard.classList.toggle('disabled', !permitted);
+    dashCard.classList.toggle('disabled', !permitted);
+
+    if (!getTrackerScriptUrl()) {
+      trackerSub.textContent = 'Setup required — contact an admin';
+      dashSub.textContent = 'Setup required — contact an admin';
+    } else if (!permitted) {
+      trackerSub.textContent = 'Restricted — insufficient permissions';
+      dashSub.textContent = 'Restricted — insufficient permissions';
+    } else {
+      trackerSub.textContent = 'Scan & verify a MEA ID';
+      dashSub.textContent = 'Analytics & reports';
+    }
+  }
 
   /* ---------------- Init ---------------- */
 
@@ -279,7 +404,10 @@
     seedDefaultScriptUrls();
 
     bindNav();
+    bindMainNav();
+    bindLogin();
     bindHome();
+    bindSettings();
     bindHeaderActions();
     bindCatalogToggle();
     bindCheckoutForm();
@@ -288,7 +416,16 @@
     loadInventory();
     loadProjectOptions();
     updateCartBadge();
-    showView('home');
+
+    const saved = getSavedLogin();
+    if (saved && saved.idNumber) {
+      state.lastId = saved;
+      renderIdentity();
+      updateHomeCardStates();
+      showView('home');
+    } else {
+      showView('login');
+    }
 
     if (window.updateOrderSyncPill) window.updateOrderSyncPill();
     if (navigator.onLine && window.flushPendingOrders) window.flushPendingOrders();
@@ -301,27 +438,48 @@
   /* ---------------- Navigation ---------------- */
 
   function bindNav() {
-    document.querySelectorAll('.nav-btn').forEach(btn => {
+    document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
       btn.addEventListener('click', () => showView(btn.dataset.view));
     });
   }
+
+  function bindMainNav() {
+    document.querySelectorAll('#bottom-nav-main .nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => showView(btn.dataset.mainview));
+    });
+  }
+
+  // Views that use the SUS/MEA identity header + the Home/Settings/Help
+  // bottom nav instead of the standard app header + Catalog/Cart/Checkout nav.
+  const MAIN_VIEWS = ['home', 'settings', 'help'];
 
   function showView(view) {
     state.view = view;
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('view-' + view).classList.add('active');
-    const navBtn = document.querySelector('.nav-btn[data-view="' + view + '"]');
+
+    const navBtn = document.querySelector('.nav-btn[data-view="' + view + '"]') ||
+                   document.querySelector('.nav-btn[data-mainview="' + view + '"]');
     if (navBtn) navBtn.classList.add('active');
 
-    // The homepage has its own hero header — hide the shared app chrome so
-    // it isn't duplicated. Other views share the standard header + bottom nav.
-    const isHome = view === 'home';
-    document.getElementById('app-header').style.display = isHome ? 'none' : 'flex';
-    document.getElementById('bottom-nav').style.display = isHome ? 'none' : 'flex';
+    const isMain = MAIN_VIEWS.includes(view);
+    const isLogin = view === 'login';
+
+    // Login/Home/Settings/Help all use their own top brand block — hide the
+    // shared app chrome so it isn't duplicated. Catalog/Cart/Checkout share
+    // the standard header + bottom nav.
+    document.getElementById('app-header').style.display = (isMain || isLogin) ? 'none' : 'flex';
+    document.getElementById('bottom-nav').style.display = (isMain || isLogin) ? 'none' : 'flex';
+    document.getElementById('bottom-nav-main').style.display = isMain ? 'flex' : 'none';
     document.getElementById('cart-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
     document.getElementById('contact-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
 
+    if (view === 'settings') {
+      document.getElementById('settings-script-url').value = getTrackerScriptUrl();
+      document.getElementById('settings-inventory-url').value = getInventoryScriptUrl();
+    }
+    if (view === 'home') updateHomeCardStates();
     if (view === 'cart') renderCart();
     if (view === 'checkout') renderCheckout();
     if (view === 'catalog') loadInventory();
@@ -385,78 +543,98 @@
     }
   }
 
-  function updateIdTrackerCardState() {
-    const idValue = document.getElementById('home-id-input').value.trim();
-    const scriptUrl = getTrackerScriptUrl();
-    const card = document.getElementById('home-nav-idtracker');
-    const sub = document.getElementById('idtracker-sub');
+  /* ---------------- Login ---------------- */
 
-    const ready = !!idValue && !!scriptUrl;
-    card.classList.toggle('disabled', !ready);
+  function bindLogin() {
+    const input = document.getElementById('login-id-input');
+    const btn = document.getElementById('login-enter-btn');
+    const err = document.getElementById('login-error');
 
-    if (!scriptUrl) {
-      sub.textContent = 'Setup required — tap ⚙️ to add Apps Script URL';
-    } else if (!idValue) {
-      sub.textContent = 'Enter your ID number above first';
-    } else {
-      sub.textContent = 'Scan & verify a MEA ID';
+    async function attemptLogin() {
+      const idValue = input.value.trim();
+      err.textContent = '';
+
+      if (!idValue) {
+        err.textContent = 'Enter your ID number.';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'CHECKING…';
+
+      const result = await fetchIdLookup(idValue);
+
+      btn.disabled = false;
+      btn.textContent = 'ENTER';
+
+      if (result.status === 'NOT_CONFIGURED') {
+        err.textContent = 'ID Tracker isn\'t set up yet — contact an admin.';
+        return;
+      }
+      if (result.status === 'NETWORK_ERROR') {
+        err.textContent = 'Could not reach the server. Check your connection.';
+        return;
+      }
+      if (!result.found) {
+        err.textContent = 'ID number not recognized.';
+        return;
+      }
+
+      state.lastId = result;
+      saveLogin(result);
+      renderIdentity();
+      input.value = '';
+      showView('home');
     }
+
+    btn.addEventListener('click', attemptLogin);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') attemptLogin();
+    });
   }
+
+  /* ---------------- Home (page 1 layout) ---------------- */
 
   function bindHome() {
     document.getElementById('home-nav-inventory').addEventListener('click', () => {
-      captureHomeId();
       showView('catalog');
     });
 
     document.getElementById('home-nav-idtracker').addEventListener('click', () => {
-      const idValue = document.getElementById('home-id-input').value.trim();
-      const scriptUrl = getTrackerScriptUrl();
-
-      if (!scriptUrl) {
-        showToast('Add your Apps Script URL first — tap ⚙️', true);
+      if (!getTrackerScriptUrl()) {
+        showToast('ID Tracker isn\'t set up yet — contact an admin', true);
         return;
       }
-      if (!idValue) {
-        showToast('Enter your ID number first', true);
-        document.getElementById('home-id-input').focus();
+      if (!isPermitted(state.lastId)) {
+        showToast('You don\'t have permission to open ID Tracker', true);
         return;
       }
-
       // The tracker stays in its original, self-contained document so its
       // NFC, settings, saved IDs, and Google Sheets behavior are untouched.
-      captureHomeId();
-      window.location.href = 'id-tracker.html?id=' + encodeURIComponent(idValue);
+      window.location.href = 'id-tracker.html?id=' + encodeURIComponent(state.lastId.idNumber);
     });
 
-    document.getElementById('home-id-input').addEventListener('input', (e) => {
-      try { sessionStorage.setItem('mea_home_id', e.target.value); } catch(err) {}
-      updateIdTrackerCardState();
-    });
-
-    // Restore the ID typed earlier in this session — e.g. after navigating
-    // to id-tracker.html and back, which fully reloads this page.
-    try {
-      const savedId = sessionStorage.getItem('mea_home_id');
-      if (savedId) document.getElementById('home-id-input').value = savedId;
-    } catch(e) {}
-
-    document.getElementById('home-menu-btn').addEventListener('click', () => triggerInstall());
-
-    document.getElementById('home-setup-btn').addEventListener('click', () => {
-      const panel = document.getElementById('setupPanel');
-      const isOpen = panel.style.display !== 'none';
-      panel.style.display = isOpen ? 'none' : 'block';
-      if (!isOpen) {
-        document.getElementById('home-script-url').value = getTrackerScriptUrl();
-        document.getElementById('home-inventory-url').value = getInventoryScriptUrl();
+    document.getElementById('home-nav-dashboard').addEventListener('click', () => {
+      if (!isPermitted(state.lastId)) {
+        showToast('You don\'t have permission to open SUS Dashboard', true);
+        return;
       }
+      showToast('SUS Dashboard is coming in a future update');
     });
 
-    document.getElementById('test-inventory-url-btn').addEventListener('click', async () => {
-      const url = document.getElementById('home-inventory-url').value.trim();
-      const box = document.getElementById('inventoryTestStatus');
-      const btn = document.getElementById('test-inventory-url-btn');
+    const logoBtn = document.getElementById('logo-home-btn');
+    if (logoBtn) logoBtn.addEventListener('click', () => showView('home'));
+  }
+
+  /* ---------------- Settings ---------------- */
+
+  function bindSettings() {
+    document.getElementById('settings-install-btn').addEventListener('click', () => triggerInstall());
+
+    document.getElementById('settings-test-inventory-btn').addEventListener('click', async () => {
+      const url = document.getElementById('settings-inventory-url').value.trim();
+      const box = document.getElementById('settingsInventoryTestStatus');
+      const btn = document.getElementById('settings-test-inventory-btn');
 
       if (!url) {
         box.textContent = '✕ Enter a URL first.';
@@ -497,10 +675,10 @@
       btn.textContent = 'Test Inventory Connection';
     });
 
-    document.getElementById('save-script-url-btn').addEventListener('click', () => {
-      const trackerUrl = document.getElementById('home-script-url').value.trim();
-      const inventoryUrl = document.getElementById('home-inventory-url').value.trim();
-      const status = document.getElementById('setupStatus');
+    document.getElementById('settings-save-btn').addEventListener('click', () => {
+      const trackerUrl = document.getElementById('settings-script-url').value.trim();
+      const inventoryUrl = document.getElementById('settings-inventory-url').value.trim();
+      const status = document.getElementById('settingsStatus');
 
       if (!trackerUrl && !inventoryUrl) {
         status.textContent = 'Enter at least one Apps Script URL.';
@@ -512,34 +690,19 @@
 
       status.textContent = 'Saved!';
       status.className = 'setup-status ok';
-      updateIdTrackerCardState();
+      updateHomeCardStates();
       loadInventory(); // refresh right away so Catalog isn't stuck on stale/demo data
-      setTimeout(() => { document.getElementById('setupPanel').style.display = 'none'; }, 900);
     });
 
-    const logoBtn = document.getElementById('logo-home-btn');
-    if (logoBtn) logoBtn.addEventListener('click', () => showView('home'));
-
-    updateIdTrackerCardState();
-  }
-
-  /**
-   * Reads the ID number typed on the homepage and, if present, verifies it
-   * right away so it's already attached to state.lastId no matter which
-   * destination (Inventory or ID Tracker) the person opens next.
-   */
-  function captureHomeId() {
-    const idValue = document.getElementById('home-id-input').value.trim();
-    if (!idValue) return '';
-
-    google.script.run
-      .withSuccessHandler(result => {
-        state.lastId = result;
-      })
-      .withFailureHandler(() => {})
-      .lookupIdNumber(idValue, 'HOME');
-
-    return idValue;
+    document.getElementById('logout-link').addEventListener('click', () => {
+      clearLogin();
+      state.lastId = null;
+      const loginInput = document.getElementById('login-id-input');
+      const loginErr = document.getElementById('login-error');
+      if (loginInput) loginInput.value = '';
+      if (loginErr) loginErr.textContent = '';
+      showView('login');
+    });
   }
 
   /* ---------------- Inventory / catalog ---------------- */
