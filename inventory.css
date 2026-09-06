@@ -182,12 +182,7 @@ body::before {
   padding: 24px 20px 0;
 }
 .top-brand-mea { height: 34px; width: auto; }
-.top-brand-sus {
-  font-size: 20px;
-  font-weight: 900;
-  letter-spacing: 1px;
-  color: var(--white);
-}
+.top-brand-sus { height: 30px; width: auto; }
 
 /* ── Identity block (Home / Settings / Help) ── */
 .identity-block {
@@ -226,7 +221,7 @@ body::before {
   padding: 22vh 24px 0;
   text-align: center;
 }
-.login-logo img { width: 240px; max-width: 70%; height: auto; }
+.login-logo img { width: 280px; max-width: 78%; height: auto; }
 .login-enter-btn { width: 100%; max-width: 320px; }
 .login-error {
   min-height: 16px;
