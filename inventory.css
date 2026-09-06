@@ -811,9 +811,8 @@ select option:hover {
 /* ══════════════════════════════════════════════
    WIDE DESKTOP LAYOUT (1100px+)
    A real desktop UI, not a scaled-up phone card:
-   full-bleed background, a slim left sidebar nav
-   instead of the bottom bar, and centered content
-   that actually uses the available width. The
+   full-bleed background, a left sidebar nav instead
+   of the bottom bar, and a wide content column. The
    768–1099px tablet tier above (floating phone card)
    and everything below 768px are untouched.
    ══════════════════════════════════════════════ */
@@ -836,20 +835,14 @@ select option:hover {
     overflow: visible;
   }
 
-  /* Content area sits to the right of the sidebar and centers its own
-     children within that remaining space, rather than hugging the left
-     edge of a very wide window. */
   #app {
     min-height: 100vh;
-    margin-left: 184px;
+    max-width: 1400px;
+    margin: 0 0 0 248px;
     padding-bottom: 40px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
   }
 
   .mea-header {
-    width: 100%;
     padding: 20px 40px;
     position: sticky; top: 0;
   }
@@ -858,75 +851,60 @@ select option:hover {
   .mea-header-titles p { font-size: 11px; }
   .icon-btn { width: 40px; height: 40px; }
 
-  .view {
-    width: 100%;
-    padding: 28px 40px 0;
-  }
-  .view.active {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+  .view { padding: 28px 40px 0; }
 
-  /* Home — a real desktop landing layout: a bigger, centered hero and
-     full-width "lengthwise" action buttons stacked underneath, instead
-     of squeezed into a row of three narrow cards. */
-  .home-header { max-width: 640px; width: 100%; margin: -6px 0 16px; }
+  /* Home — a real desktop landing layout, not just an enlarged mobile one.
+     Centered as a column within the remaining width next to the sidebar,
+     not hugging the left edge. */
+  #view-home.active { display: flex; flex-direction: column; align-items: center; }
+
+  .home-header { max-width: 760px; width: 100%; margin: -6px auto 12px; }
 
   .home-hero {
-    max-width: 640px; width: 100%;
-    margin: 10px 0 32px;
-    padding: 44px 40px;
-    flex-direction: column;
-    text-align: center;
-    gap: 20px;
+    max-width: 760px; width: 100%;
+    margin: 10px auto 28px;
+    padding: 36px 40px;
+    gap: 24px;
     background: linear-gradient(135deg, rgba(42,157,157,0.16), rgba(255,255,255,0.03));
     border: 1px solid var(--border-mid);
     border-radius: var(--radius-lg);
   }
-  .home-hero-logo { width: 140px; height: 140px; border-radius: 30px; }
-  .home-hero-title { font-size: 28px; }
-  .home-hero-sub { font-size: 13px; }
+  .home-hero-logo { width: 100px; height: 100px; border-radius: 22px; }
+  .home-hero-title { font-size: 26px; }
+  .home-hero-sub { font-size: 12.5px; }
 
-  .id-input-label { text-align: left; max-width: 640px; width: 100%; }
-  .id-input-row { max-width: 640px; width: 100%; margin: 0 0 30px; }
+  .id-input-label { text-align: left; }
+  .id-input-row { max-width: 760px; width: 100%; margin: 0 auto 30px; }
   .id-input-row input { padding: 17px 22px; font-size: 17px; text-align: left; }
   .id-input-row button { width: 60px; font-size: 20px; }
-  .setup-panel { max-width: 640px; width: 100%; margin: 0 0 18px; }
+  .setup-panel { max-width: 760px; width: 100%; margin: 0 auto 18px; }
 
-  /* Full-width, lengthwise buttons — one per row, roomy padding, icon
-     and label side by side, chevron at the far right. */
-  .home-nav-list { flex-direction: column; gap: 14px; max-width: 640px; width: 100%; margin: 8px 0 0; }
+  .home-nav-list { flex-direction: row; gap: 20px; max-width: 760px; width: 100%; margin: 8px auto 0; }
   .home-nav-card {
-    flex-direction: row;
-    align-items: center;
-    gap: 18px;
-    padding: 22px 26px;
-    border-radius: var(--radius-lg);
+    flex: 1 1 0;
+    flex-direction: column; align-items: flex-start; gap: 16px;
+    padding: 26px; border-radius: var(--radius-lg);
     transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
   }
   .home-nav-icon {
-    width: 54px; height: 54px; border-radius: 14px;
-    flex-shrink: 0;
+    width: 56px; height: 56px; border-radius: 14px;
   }
-  .home-nav-text { flex: 1; }
   .home-nav-title { font-size: 16px; }
   .home-nav-sub { font-size: 12.5px; margin-top: 4px; }
-  .home-nav-chevron { font-size: 24px; }
+  .home-nav-chevron { align-self: flex-end; margin-top: -36px; font-size: 22px; }
 
-  .home-footnote { text-align: left; max-width: 640px; width: 100%; padding: 0; margin: 20px 0 0; }
+  .home-footnote { text-align: left; max-width: 760px; width: 100%; padding: 0; margin: 20px auto 0; }
 
   @media (hover: hover) and (pointer: fine) {
     .home-nav-card:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(0,0,0,0.3); }
   }
 
-  /* Catalog — real desktop grid that fills the wide column, centered */
-  .catalog-search-row, .catalog-toolbar, .item-grid, .item-list {
-    max-width: 1200px; width: 100%; margin-left: auto; margin-right: auto;
-  }
+  /* Catalog — real desktop grid that fills the wide column */
+  .catalog-toolbar { max-width: 1320px; }
   .item-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 16px;
+    max-width: 1320px;
   }
   .item-card { padding: 14px; border-radius: var(--radius-lg); }
   .item-thumb { height: 78px; margin-bottom: 12px; }
@@ -935,33 +913,31 @@ select option:hover {
   .item-qty { font-size: 11.5px; }
   .loc-tag { font-size: 12px; }
 
+  .item-list { max-width: 900px; }
   .item-row { padding: 14px 16px; gap: 16px; }
   .item-row .item-thumb { width: 110px; height: 50px; }
   .item-row .item-info .item-title { font-size: 14.5px; }
   .qty-btn { width: 36px; height: 36px; font-size: 18px; }
   .qty-stepper input { width: 46px; padding: 8px 4px; font-size: 14px; }
 
-  /* Cart / checkout — a comfortable reading column, centered */
+  /* Cart / checkout — a comfortable reading column, not edge to edge */
   #view-cart, #view-checkout { max-width: 640px; }
-  .btn-primary, .btn-secondary { max-width: 420px; width: 100%; }
+  .btn-primary, .btn-secondary { max-width: 420px; }
   .btn-primary { padding: 17px; font-size: 15.5px; border-radius: var(--radius-lg); }
   .btn-secondary { padding: 14px; font-size: 14px; }
 
-  .field-label { font-size: 11px; margin-bottom: 8px; align-self: flex-start; }
-  .field-static { padding: 16px 20px; font-size: 17px; width: 100%; }
-  select, .text-field { padding: 15px 18px; font-size: 14.5px; width: 100%; }
-  .case-toggle { width: 100%; }
+  .field-label { font-size: 11px; margin-bottom: 8px; }
+  .field-static { padding: 16px 20px; font-size: 17px; }
+  select, .text-field { padding: 15px 18px; font-size: 14.5px; }
   .case-btn { padding: 12px 8px; font-size: 13px; }
-  .case-hint { font-size: 12.5px; align-self: flex-start; }
-  .summary-table { width: 100%; }
+  .case-hint { font-size: 12.5px; }
   .summary-table th, .summary-table td { padding: 13px 16px; font-size: 14px; }
 
-  /* Sidebar nav — slim, fixed to the left, empty space below the nav
-     items is fine (nav sits at the top, not stretched). */
+  /* Sidebar nav — replaces the bottom bar entirely on desktop */
   .bottom-nav {
     position: fixed; top: 0; left: 0; bottom: auto; right: auto;
-    width: 184px; height: 100vh;
-    padding: 22px 12px;
+    width: 248px; height: 100vh;
+    padding: 24px 16px;
     background: rgba(7,38,38,0.9);
     border-right: 1px solid var(--border-dark);
     backdrop-filter: blur(12px);
@@ -981,24 +957,24 @@ select option:hover {
   .bottom-nav-inner::before {
     content: 'MEA';
     display: block;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 800;
     letter-spacing: 2px;
     color: var(--teal-light);
-    padding: 6px 10px 16px;
+    padding: 8px 12px 18px;
   }
   .nav-btn {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 12px;
     text-align: left;
-    padding: 10px 10px;
-    border-radius: 9px;
-    font-size: 12.5px;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 13px;
   }
-  .nav-btn .nav-emoji { display: inline-flex; margin-bottom: 0; font-size: 17px; }
-  .nav-svg-icon { width: 18px; height: 18px; margin: 0; }
+  .nav-btn .nav-emoji { display: inline-flex; margin-bottom: 0; font-size: 18px; }
+  .nav-svg-icon { width: 19px; height: 19px; margin: 0; }
 
   /* Toast — recenter within the content column, not the whole viewport */
-  .toast { left: calc(50% + 92px); bottom: 32px; }
+  .toast { left: calc(50% + 124px); bottom: 32px; }
 
   /* Modal — a centered dialog instead of a bottom sheet */
   .modal-backdrop { align-items: center; }
