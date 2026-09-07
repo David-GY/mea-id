@@ -401,6 +401,7 @@
 
     bindNav();
     bindMainNav();
+    bindSidebarLogout();
     bindLogin();
     bindHome();
     bindSettings();
@@ -448,6 +449,14 @@
         }
         showView(btn.dataset.mainview);
       });
+    });
+  }
+
+  // The pinned "Log out" at the bottom of the desktop sidebar — present in
+  // both nav bars since either one can be the active sidebar at a time.
+  function bindSidebarLogout() {
+    document.querySelectorAll('.sidebar-logout-link').forEach(link => {
+      link.addEventListener('click', performLogout);
     });
   }
 
@@ -726,15 +735,21 @@
       loadInventory(); // refresh right away so Catalog isn't stuck on stale/demo data
     });
 
-    document.getElementById('logout-link').addEventListener('click', () => {
-      clearLogin();
-      state.lastId = null;
-      const loginInput = document.getElementById('login-id-input');
-      const loginErr = document.getElementById('login-error');
-      if (loginInput) loginInput.value = '';
-      if (loginErr) loginErr.textContent = '';
-      showView('login');
-    });
+    document.getElementById('logout-link').addEventListener('click', performLogout);
+  }
+
+  /**
+   * Logs the current person out from anywhere in the app — the Settings
+   * page link (mobile) or either sidebar's pinned "Log out" (desktop).
+   */
+  function performLogout() {
+    clearLogin();
+    state.lastId = null;
+    const loginInput = document.getElementById('login-id-input');
+    const loginErr = document.getElementById('login-error');
+    if (loginInput) loginInput.value = '';
+    if (loginErr) loginErr.textContent = '';
+    showView('login');
   }
 
   /* ---------------- Inventory / catalog ---------------- */

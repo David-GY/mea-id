@@ -212,6 +212,11 @@ body::before {
   cursor: pointer;
 }
 
+/* Sidebar-only brand + logout — hidden here, shown at the 1100px
+   desktop tier where .bottom-nav becomes a fixed left sidebar. */
+.sidebar-brand { display: none; }
+.sidebar-logout { display: none; }
+
 /* ── History view ── */
 .history-head {
   display: flex;
@@ -996,41 +1001,71 @@ select option:hover {
   .bottom-nav {
     position: fixed; top: 0; left: 0; bottom: auto; right: auto;
     width: 248px; height: 100vh;
-    padding: 24px 16px;
+    padding: 20px 14px;
     background: rgba(7,38,38,0.9);
     border-right: 1px solid var(--border-dark);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    flex-direction: column;
+    align-items: stretch;
     justify-content: flex-start;
     z-index: 90;
   }
+
+  /* Logos, top-left of the sidebar — replaces the per-view .top-brand
+     block, which is hidden below so it isn't shown twice. */
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 4px 10px 20px;
+  }
+  .sidebar-brand-mea { height: 26px; width: auto; }
+  .sidebar-brand-sus { height: 22px; width: auto; }
+
   .bottom-nav-inner {
     max-width: none; width: 100%;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     background: transparent;
     border: none;
     padding: 0;
     backdrop-filter: none;
   }
-  .bottom-nav-inner::before {
-    content: 'MEA';
-    display: block;
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: 2px;
-    color: var(--teal-light);
-    padding: 8px 12px 18px;
-  }
   .nav-btn {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: 10px;
     text-align: left;
-    padding: 11px 12px;
-    border-radius: 10px;
-    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    font-size: 12.5px;
   }
-  .nav-btn .nav-emoji { display: inline-flex; margin-bottom: 0; font-size: 18px; }
-  .nav-svg-icon { width: 19px; height: 19px; margin: 0; }
+  .nav-btn .nav-emoji { display: inline-flex; margin-bottom: 0; font-size: 16px; }
+  .nav-svg-icon { width: 17px; height: 17px; margin: 0; }
+
+  /* Log out — pinned to the bottom of the sidebar at all times, on
+     every main view, instead of living inside Settings. */
+  .sidebar-logout {
+    display: block;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-dark);
+  }
+  .sidebar-logout a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  /* The per-view logo row and the Settings-page logout link are now
+     redundant with the sidebar — hide them without touching mobile. */
+  .top-brand { display: none; }
+  #view-settings .logout-row { display: none; }
 
   /* Toast — recenter within the content column, not the whole viewport */
   .toast { left: calc(50% + 124px); bottom: 32px; }
@@ -1048,5 +1083,8 @@ select option:hover {
   @media (hover: hover) and (pointer: fine) {
     .item-card:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
     .nav-btn:hover { background: var(--surface); }
+    .sidebar-logout a:hover { background: var(--surface); color: var(--danger); }
   }
+
+  .identity-block { padding-top: 8px; }
 }
