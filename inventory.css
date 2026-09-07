@@ -329,10 +329,10 @@ body::before {
 }
 .id-input-row button:active { transform: scale(0.94); }
 
-.home-nav-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; padding: 0 20px; }
+.home-nav-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding: 0 20px; }
 
 .home-nav-card {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  display: flex; flex-direction: row; align-items: center; gap: 14px;
   background: var(--surface);
   border: 1px solid var(--border-dark);
   border-radius: var(--radius-lg);
@@ -357,9 +357,10 @@ body::before {
   font-size: 21px;
   flex-shrink: 0;
 }
-.home-nav-text { flex: 1; min-width: 0; width: 100%; }
+.home-nav-text { flex: 1; min-width: 0; width: auto; }
 .home-nav-title { font-size: 14px; font-weight: 800; letter-spacing: 0.3px; }
 .home-nav-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.home-nav-chevron { font-size: 20px; color: var(--teal-light); flex-shrink: 0; }
 .home-nav-chevron { display: none; }
 
 /* Lists with a single card (e.g. Settings' Download App) keep the original
