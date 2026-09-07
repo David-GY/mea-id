@@ -1,4 +1,4 @@
-  /* ==================================================================
+/* ==================================================================
      MEA ID Tracker — client logic
      ================================================================== */
 
@@ -261,7 +261,7 @@
   }
 
   const state = {
-    view: 'login',           // login | home | settings | help | catalog | cart | checkout
+    view: 'login',           // login | home | settings | help | history | catalog | cart | checkout
     catalogFormat: 'grid',   // grid | list
     catalogSearch: '',
     catalogSort: 'default',  // default | name | category | location
@@ -270,6 +270,7 @@
     scanLog: [],             // { idNumber, status, time }
     lastId: null,            // logged-in ID lookup result: { idNumber, name, role, committee, status }
     projectOptions: [],
+    historyTab: 'personal',  // personal | project
     checkoutCase: 'BORROWING' // BORROWING | CONSUMING | RETURNING
   };
 
@@ -364,7 +365,7 @@
     const r = state.lastId;
     const idText = r ? r.idNumber : '—';
     const nameText = (r && r.name) ? r.name : (r ? 'Unknown Member' : '—');
-    ['home', 'settings', 'help'].forEach(v => {
+    ['home', 'settings', 'help', 'history'].forEach(v => {
       const idEl = document.getElementById(v + '-identity-id');
       const nameEl = document.getElementById(v + '-identity-name');
       if (idEl) idEl.textContent = idText;
@@ -440,13 +441,19 @@
 
   function bindMainNav() {
     document.querySelectorAll('#bottom-nav-main .nav-btn').forEach(btn => {
-      btn.addEventListener('click', () => showView(btn.dataset.mainview));
+      btn.addEventListener('click', () => {
+        if (state.view === 'history' && (btn.id === 'nav-slot-2' || btn.id === 'nav-slot-3')) {
+          setHistoryTab(btn.id === 'nav-slot-2' ? 'personal' : 'project');
+          return;
+        }
+        showView(btn.dataset.mainview);
+      });
     });
   }
 
   // Views that use the SUS/MEA identity header + the Home/Settings/Help
   // bottom nav instead of the standard app header + Catalog/Cart/Checkout nav.
-  const MAIN_VIEWS = ['home', 'settings', 'help'];
+  const MAIN_VIEWS = ['home', 'settings', 'help', 'history'];
 
   function showView(view) {
     state.view = view;
@@ -461,23 +468,80 @@
     const isMain = MAIN_VIEWS.includes(view);
     const isLogin = view === 'login';
 
-    // Login/Home/Settings/Help all use their own top brand block — hide the
-    // shared app chrome so it isn't duplicated. Catalog/Cart/Checkout share
-    // the standard header + bottom nav.
+    // Login/Home/Settings/Help/History all use their own top brand block —
+    // hide the shared app chrome so it isn't duplicated. Catalog/Cart/
+    // Checkout share the standard header + bottom nav.
     document.getElementById('app-header').style.display = (isMain || isLogin) ? 'none' : 'flex';
     document.getElementById('bottom-nav').style.display = (isMain || isLogin) ? 'none' : 'flex';
     document.getElementById('bottom-nav-main').style.display = isMain ? 'flex' : 'none';
     document.getElementById('cart-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
     document.getElementById('contact-icon-btn').style.display = view === 'catalog' ? 'flex' : 'none';
 
+    // History repurposes the Settings/Help nav slots as Personal/Project —
+    // relabel them here, and restore the defaults for every other view.
+    applyMainNavForView(view);
+
     if (view === 'settings') {
       document.getElementById('settings-script-url').value = getTrackerScriptUrl();
       document.getElementById('settings-inventory-url').value = getInventoryScriptUrl();
     }
     if (view === 'home') updateHomeCardStates();
+    if (view === 'history') setHistoryTab('personal');
     if (view === 'cart') renderCart();
     if (view === 'checkout') renderCheckout();
     if (view === 'catalog') loadInventory();
+  }
+
+  // ── History view's Personal/Project tabs ──
+  // The History view reuses the Home/Settings/Help bottom nav's slots 2 & 3
+  // (normally Settings/Help) as Personal/Project instead, per the design —
+  // rather than a fourth, separate nav bar.
+  const NAV_SLOT_DEFAULT = {
+    2: '<span class="nav-emoji">⚙️</span>Settings',
+    3: '<span class="nav-emoji">📞</span>Help'
+  };
+  const NAV_SLOT_HISTORY = {
+    2: '<span class="nav-emoji">👤</span>Personal',
+    3: '<span class="nav-emoji">📁</span>Project'
+  };
+
+  function applyMainNavForView(view) {
+    const slot2 = document.getElementById('nav-slot-2');
+    const slot3 = document.getElementById('nav-slot-3');
+    if (!slot2 || !slot3) return;
+    const map = view === 'history' ? NAV_SLOT_HISTORY : NAV_SLOT_DEFAULT;
+    slot2.innerHTML = map[2];
+    slot3.innerHTML = map[3];
+  }
+
+  function setHistoryTab(tab) {
+    state.historyTab = tab;
+
+    const slot2 = document.getElementById('nav-slot-2');
+    const slot3 = document.getElementById('nav-slot-3');
+    const homeSlot = document.querySelector('#bottom-nav-main .nav-btn[data-mainview="home"]');
+    [homeSlot, slot2, slot3].forEach(b => b && b.classList.remove('active'));
+    if (tab === 'project') {
+      slot3.classList.add('active');
+    } else {
+      slot2.classList.add('active');
+    }
+
+    const projectSelect = document.getElementById('history-project-select');
+    if (projectSelect) projectSelect.style.display = tab === 'project' ? '' : 'none';
+
+    renderHistory();
+  }
+
+  // Placeholder rendering — the Apps Script doesn't have a history-fetch
+  // endpoint yet, so this just reflects the selected tab/project in the UI.
+  // Swap this out once a real "getHistory" action exists on the backend.
+  function renderHistory() {
+    const pendingList = document.getElementById('history-pending-list');
+    const totalList = document.getElementById('history-total-list');
+    if (!pendingList || !totalList) return;
+    pendingList.innerHTML = '<div class="history-empty">No pending requests yet</div>';
+    totalList.innerHTML = '<div class="history-empty">Nothing logged yet</div>';
   }
 
   function bindHeaderActions() {
@@ -603,6 +667,15 @@
       showView('catalog');
     });
 
+    document.getElementById('home-nav-history').addEventListener('click', () => {
+      showView('history');
+    });
+
+    const historyProjectSelect = document.getElementById('history-project-select');
+    if (historyProjectSelect) {
+      historyProjectSelect.addEventListener('change', () => renderHistory());
+    }
+
     document.getElementById('home-nav-idtracker').addEventListener('click', () => {
       if (!getTrackerScriptUrl()) {
         showToast('ID Tracker isn\'t set up yet — contact an admin', true);
@@ -684,6 +757,16 @@
         select.innerHTML = state.projectOptions
           .map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`)
           .join('');
+
+        const historySelect = document.getElementById('history-project-select');
+        if (historySelect) {
+          const placeholder = historySelect.querySelector('option[value=""]');
+          historySelect.innerHTML = (placeholder ? placeholder.outerHTML : '<option value="">Project/Dept</option>') +
+            state.projectOptions
+              .filter(opt => opt !== 'Personal')
+              .map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`)
+              .join('');
+        }
       })
       .withFailureHandler(() => {})
       .getProjectOptions();

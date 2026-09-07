@@ -78,6 +78,14 @@
           </div>
           <div class="home-nav-chevron">›</div>
         </div>
+        <div class="home-nav-card" id="home-nav-history">
+          <div class="home-nav-icon"><span class="nav-emoji" style="font-size:20px;">📖</span></div>
+          <div class="home-nav-text">
+            <div class="home-nav-title">History</div>
+            <div class="home-nav-sub">Your borrow &amp; consume requests</div>
+          </div>
+          <div class="home-nav-chevron">›</div>
+        </div>
         <div class="home-nav-card" id="home-nav-idtracker">
           <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/id-badge.svg" alt="ID Tracker"></div>
           <div class="home-nav-text">
@@ -122,7 +130,7 @@
       <button class="btn-secondary" id="settings-save-btn" style="margin-top:14px;">Save</button>
       <div class="setup-status" id="settingsStatus"></div>
 
-      <div class="home-nav-list" style="margin-top:22px;">
+      <div class="home-nav-list home-nav-list-single" style="margin-top:22px;">
         <div class="home-nav-card" id="settings-install-btn">
           <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt="Install"></div>
           <div class="home-nav-text">
@@ -179,6 +187,35 @@
           </div>
           <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.facebook.com/hazelburce25', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/hazelburce25', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ===================== View: History ===================== -->
+    <section class="view" id="view-history">
+      <div class="top-brand">
+        <img class="top-brand-mea" src="brand/mea-logo-lightgray.png" alt="MEA">
+        <img class="top-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
+      </div>
+      <div class="identity-block">
+        <div class="identity-id" id="history-identity-id">—</div>
+        <div class="identity-name" id="history-identity-name">—</div>
+      </div>
+
+      <div class="history-head">
+        <div class="history-title">History</div>
+        <select id="history-project-select" class="history-project-select" style="display:none;">
+          <option value="">Project/Dept</option>
+        </select>
+      </div>
+
+      <div class="history-section-label">Pending</div>
+      <div class="history-list" id="history-pending-list">
+        <div class="history-empty">No pending requests yet</div>
+      </div>
+
+      <div class="history-section-label">Total</div>
+      <div class="history-list" id="history-total-list">
+        <div class="history-empty">Nothing logged yet</div>
       </div>
     </section>
 
@@ -255,8 +292,8 @@
   <nav class="bottom-nav" id="bottom-nav-main">
     <div class="bottom-nav-inner">
       <div class="nav-btn" data-mainview="home"><span class="nav-emoji">🏠</span>Home</div>
-      <div class="nav-btn" data-mainview="settings"><span class="nav-emoji">⚙️</span>Settings</div>
-      <div class="nav-btn" data-mainview="help"><span class="nav-emoji">📞</span>Help</div>
+      <div class="nav-btn" id="nav-slot-2" data-mainview="settings"><span class="nav-emoji">⚙️</span>Settings</div>
+      <div class="nav-btn" id="nav-slot-3" data-mainview="help"><span class="nav-emoji">📞</span>Help</div>
     </div>
   </nav>
 

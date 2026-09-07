@@ -212,6 +212,50 @@ body::before {
   cursor: pointer;
 }
 
+/* ── History view ── */
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 20px 4px;
+}
+.history-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--white);
+}
+.history-project-select {
+  max-width: 160px;
+  width: auto;
+  margin-bottom: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.history-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 18px 20px 8px;
+}
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px;
+}
+.history-empty {
+  background: var(--surface);
+  border: 1px dashed var(--border-mid);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
 /* ── Login screen ── */
 #view-login { padding-top: 0; }
 .login-wrap {
@@ -285,10 +329,10 @@ body::before {
 }
 .id-input-row button:active { transform: scale(0.94); }
 
-.home-nav-list { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding: 0 20px; }
+.home-nav-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; padding: 0 20px; }
 
 .home-nav-card {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
   background: var(--surface);
   border: 1px solid var(--border-dark);
   border-radius: var(--radius-lg);
@@ -313,10 +357,18 @@ body::before {
   font-size: 21px;
   flex-shrink: 0;
 }
-.home-nav-text { flex: 1; min-width: 0; }
+.home-nav-text { flex: 1; min-width: 0; width: 100%; }
 .home-nav-title { font-size: 14px; font-weight: 800; letter-spacing: 0.3px; }
 .home-nav-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-.home-nav-chevron { font-size: 20px; color: var(--teal-light); flex-shrink: 0; }
+.home-nav-chevron { display: none; }
+
+/* Lists with a single card (e.g. Settings' Download App) keep the original
+   full-width horizontal row instead of the compact 2-column tile grid. */
+.home-nav-list-single { grid-template-columns: 1fr; }
+.home-nav-list-single .home-nav-card { flex-direction: row; align-items: center; gap: 14px; }
+.home-nav-list-single .home-nav-text { width: auto; }
+.home-nav-list-single .home-nav-sub { display: block; }
+.home-nav-list-single .home-nav-chevron { display: block; font-size: 20px; color: var(--teal-light); flex-shrink: 0; }
 
 .home-footnote {
   text-align: center;
@@ -879,19 +931,24 @@ select option:hover {
   .id-input-row button { width: 60px; font-size: 20px; }
   .setup-panel { max-width: 760px; width: 100%; margin: 0 auto 18px; }
 
-  .home-nav-list { flex-direction: row; gap: 20px; max-width: 760px; width: 100%; margin: 8px auto 0; }
+  .home-nav-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 760px; width: 100%; margin: 8px auto 0;
+  }
   .home-nav-card {
-    flex: 1 1 0;
-    flex-direction: column; align-items: flex-start; gap: 16px;
-    padding: 26px; border-radius: var(--radius-lg);
+    flex-direction: row; align-items: center; gap: 16px;
+    padding: 22px 24px; border-radius: var(--radius-lg);
     transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
   }
   .home-nav-icon {
-    width: 56px; height: 56px; border-radius: 14px;
+    width: 52px; height: 52px; border-radius: 13px;
+    flex-shrink: 0;
   }
   .home-nav-title { font-size: 16px; }
-  .home-nav-sub { font-size: 12.5px; margin-top: 4px; }
-  .home-nav-chevron { align-self: flex-end; margin-top: -36px; font-size: 22px; }
+  .home-nav-sub { display: none; }
+  .home-nav-chevron { display: none; }
 
   .home-footnote { text-align: left; max-width: 760px; width: 100%; padding: 0; margin: 20px auto 0; }
 
@@ -921,7 +978,8 @@ select option:hover {
   .qty-stepper input { width: 46px; padding: 8px 4px; font-size: 14px; }
 
   /* Cart / checkout — a comfortable reading column, not edge to edge */
-  #view-cart, #view-checkout { max-width: 640px; }
+  #view-cart, #view-checkout, #view-history { max-width: 640px; }
+  .history-project-select { max-width: 200px; }
   .btn-primary, .btn-secondary { max-width: 420px; }
   .btn-primary { padding: 17px; font-size: 15.5px; border-radius: var(--radius-lg); }
   .btn-secondary { padding: 14px; font-size: 14px; }
