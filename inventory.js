@@ -542,15 +542,110 @@
     renderHistory();
   }
 
-  // Placeholder rendering — the Apps Script doesn't have a history-fetch
-  // endpoint yet, so this just reflects the selected tab/project in the UI.
-  // Swap this out once a real "getHistory" action exists on the backend.
-  function renderHistory() {
+  // ── History data: fetched from the Inventory Apps Script (action=history),
+  // cached locally so History still shows the last-known data offline,
+  // exactly like the Catalog's inventory cache.
+  const HISTORY_CACHE_KEY = 'mea_history_cache';
+
+  function getCachedHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_CACHE_KEY);
+      return raw ? JSON.parse(raw) : null; // { records, syncedAt }
+    } catch(e) { return null; }
+  }
+
+  function setCachedHistory(records) {
+    try {
+      localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify({ records, syncedAt: Date.now() }));
+    } catch(e) {}
+  }
+
+  async function fetchHistoryRecords() {
+    const url = getInventoryScriptUrl();
+    if (!url) return { records: [], offline: false, error: 'No Inventory Script URL configured yet.' };
+
+    if (!navigator.onLine) {
+      const cache = getCachedHistory();
+      return { records: cache ? cache.records : [], offline: true, syncedAt: cache ? cache.syncedAt : null };
+    }
+
+    try {
+      const res = await fetch(url + '?action=history');
+      const json = await res.json();
+      if (json && json.ok && Array.isArray(json.records)) {
+        setCachedHistory(json.records);
+        return { records: json.records, offline: false };
+      }
+      throw new Error((json && json.error) || 'Unexpected response');
+    } catch(err) {
+      const cache = getCachedHistory();
+      return {
+        records: cache ? cache.records : [],
+        offline: true,
+        syncedAt: cache ? cache.syncedAt : null,
+        error: err.message
+      };
+    }
+  }
+
+  function historyRowHtml(rec) {
+    const when = rec.time ? new Date(rec.time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+    const caseLabel = rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : 'Borrowed');
+    return `
+      <div class="history-item">
+        <div class="history-item-main">
+          <div class="history-item-title">${escapeHtml(rec.item)}${rec.qty ? ' × ' + escapeHtml(rec.qty) : ''}</div>
+          <div class="history-item-meta">${escapeHtml(rec.project || '—')}${rec.committee ? ' · ' + escapeHtml(rec.committee) : ''}${state.historyTab === 'project' && rec.name ? ' · ' + escapeHtml(rec.name) : ''}</div>
+        </div>
+        <div class="history-item-side">
+          <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>
+          <div class="history-item-date">${when}</div>
+        </div>
+      </div>`;
+  }
+
+  let historyLoadToken = 0;
+  async function renderHistory() {
     const pendingList = document.getElementById('history-pending-list');
     const totalList = document.getElementById('history-total-list');
     if (!pendingList || !totalList) return;
-    pendingList.innerHTML = '<div class="history-empty">No pending requests yet</div>';
-    totalList.innerHTML = '<div class="history-empty">Nothing logged yet</div>';
+
+    const myToken = ++historyLoadToken; // avoids a slow older fetch overwriting a newer render
+    pendingList.innerHTML = '<div class="history-empty">Loading…</div>';
+    totalList.innerHTML = '<div class="history-empty">Loading…</div>';
+
+    const { records, offline, error, syncedAt } = await fetchHistoryRecords();
+    if (myToken !== historyLoadToken) return; // a newer call already took over
+
+    let scoped = records;
+    if (state.historyTab === 'personal') {
+      const myId = state.lastId && state.lastId.idNumber ? String(state.lastId.idNumber).trim() : '';
+      scoped = records.filter(r => String(r.idNum).trim() === myId);
+    } else {
+      const projectSelect = document.getElementById('history-project-select');
+      const chosen = projectSelect ? projectSelect.value : '';
+      if (!chosen) {
+        pendingList.innerHTML = '<div class="history-empty">Select a Project/Dept above</div>';
+        totalList.innerHTML = '<div class="history-empty">Select a Project/Dept above</div>';
+        return;
+      }
+      scoped = records.filter(r => r.project === chosen);
+    }
+
+    const pending = scoped.filter(r => !r.resolved);
+    const total = scoped.filter(r => r.resolved);
+
+    const offlineNote = offline
+      ? `<div class="history-offline-note">📡 ${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
+      : '';
+
+    pendingList.innerHTML = offlineNote + (pending.length
+      ? pending.map(historyRowHtml).join('')
+      : '<div class="history-empty">No pending requests yet</div>');
+
+    totalList.innerHTML = total.length
+      ? total.map(historyRowHtml).join('')
+      : '<div class="history-empty">Nothing logged yet</div>';
   }
 
   function bindHeaderActions() {
