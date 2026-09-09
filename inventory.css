@@ -174,10 +174,12 @@ body::before {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Safety net: brand logos should never be able to render at native
-   pixel size (some source files are very large), even if a stale
-   cached stylesheet is missing a newer rule for one of them. */
-.top-brand img, .sidebar-brand img, .login-logo img {
+/* Safety net: the small top-bar/sidebar logos should never be able to
+   render at native pixel size (some source files are very large), even
+   if a stale cached stylesheet is missing a newer rule for one of them.
+   The login page's logo is intentionally much bigger, so it's excluded
+   here and sized by its own rule below instead. */
+.top-brand img, .sidebar-brand img {
   max-width: 100%;
   max-height: 60px;
 }
@@ -313,7 +315,7 @@ body::before {
   padding: 18vh 24px 0;
   text-align: center;
 }
-.login-logo img { width: 380px; max-width: 90%; height: auto; }
+.login-logo img { max-width: min(380px, 90%); width: 100%; height: auto; }
 .login-enter-btn { width: 100%; max-width: 320px; }
 .login-error {
   min-height: 16px;
