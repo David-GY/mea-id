@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>MEA</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a3535">
@@ -13,7 +13,8 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="inventory.css?v=3">
 </head>
 <body>
@@ -30,10 +31,10 @@
         <p>Management Engineering Association</p>
       </div>
       <div class="mea-header-actions">
-        <button class="icon-btn" id="cart-icon-btn" title="Cart">
-          <img class="svg-icon" src="icons/ui/shopping-basket.svg" alt="Cart"><span class="cart-badge" id="cart-badge" style="display:none;">0</span>
+        <button class="icon-btn" id="cart-icon-btn" title="Cart" aria-label="Open cart">
+          <img class="svg-icon" src="icons/ui/shopping-basket.svg" alt=""><span class="cart-badge" id="cart-badge" style="display:none;">0</span>
         </button>
-        <button class="icon-btn" id="contact-icon-btn" title="Contact"><img class="svg-icon" src="icons/ui/contact.svg" alt="Contact"></button>
+        <button class="icon-btn" id="contact-icon-btn" title="Contact" aria-label="Contact SUS"><img class="svg-icon" src="icons/ui/contact.svg" alt=""></button>
       </div>
     </header>
 
@@ -70,37 +71,37 @@
       </div>
 
       <div class="home-nav-list">
-        <div class="home-nav-card" id="home-nav-inventory">
-          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="SUSCART"></div>
+        <div class="home-nav-card" id="home-nav-inventory" role="button" tabindex="0">
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/archive-box.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">SUSCART</div>
             <div class="home-nav-sub">Browse items &amp; request supplies</div>
           </div>
-          <div class="home-nav-chevron">›</div>
+          <div class="home-nav-chevron" aria-hidden="true">›</div>
         </div>
-        <div class="home-nav-card" id="home-nav-history">
-          <div class="home-nav-icon"><span class="nav-emoji" style="font-size:20px;">📖</span></div>
+        <div class="home-nav-card" id="home-nav-history" role="button" tabindex="0">
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/book-open.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">History</div>
             <div class="home-nav-sub">Your borrow &amp; consume requests</div>
           </div>
-          <div class="home-nav-chevron">›</div>
+          <div class="home-nav-chevron" aria-hidden="true">›</div>
         </div>
-        <div class="home-nav-card" id="home-nav-idtracker">
-          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/id-badge.svg" alt="ID Tracker"></div>
+        <div class="home-nav-card" id="home-nav-idtracker" role="button" tabindex="0">
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/id-badge.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">ID Tracker</div>
             <div class="home-nav-sub" id="idtracker-sub">Scan &amp; verify a MEA ID</div>
           </div>
-          <div class="home-nav-chevron">›</div>
+          <div class="home-nav-chevron" aria-hidden="true">›</div>
         </div>
-        <div class="home-nav-card" id="home-nav-dashboard">
-          <div class="home-nav-icon"><span class="nav-emoji" style="font-size:20px;">📊</span></div>
+        <div class="home-nav-card" id="home-nav-dashboard" role="button" tabindex="0">
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/chart-bar.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">SUS Dashboard</div>
             <div class="home-nav-sub" id="dashboard-sub">Analytics &amp; reports</div>
           </div>
-          <div class="home-nav-chevron">›</div>
+          <div class="home-nav-chevron" aria-hidden="true">›</div>
         </div>
       </div>
     </section>
@@ -127,17 +128,23 @@
         <input type="url" id="settings-inventory-url" placeholder="https://script.google.com/macros/s/…/exec"
           autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
       </div>
+
+      <div class="id-input-label" style="text-align:left;">INVENTORY ACCESS TOKEN <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></div>
+      <div class="id-input-row">
+        <input type="password" id="settings-inventory-token" placeholder="Leave blank if your script doesn't require one"
+          autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
+      </div>
       <button class="btn-secondary" id="settings-save-btn" style="margin-top:14px;">Save</button>
       <div class="setup-status" id="settingsStatus"></div>
 
       <div class="home-nav-list home-nav-list-single" style="margin-top:22px;">
-        <div class="home-nav-card" id="settings-install-btn">
-          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt="Install"></div>
+        <div class="home-nav-card" id="settings-install-btn" role="button" tabindex="0">
+          <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">Download MEA App</div>
             <div class="home-nav-sub">Install to your home screen</div>
           </div>
-          <div class="home-nav-chevron">›</div>
+          <div class="home-nav-chevron" aria-hidden="true">›</div>
         </div>
       </div>
 
@@ -158,36 +165,7 @@
       <div class="help-title">Contact</div>
       <div class="help-sub">For concerns, contact SUS below.</div>
 
-      <div class="contact-list" style="padding:0 20px;">
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">David Yu</div>
-            <div class="contact-role">SUS Senior Associate</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://fb.com/davidcurtisyu', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/davidcurtisyu', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">Kendrick Jin</div>
-            <div class="contact-role">SUS Senior Associate</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.fb.com/ken.jin/', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/dkrypto', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">Riesha Chan</div>
-            <div class="contact-role">SUS AVP</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.facebook.com/rieeschann', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/rchchan', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">Hazel Burce</div>
-            <div class="contact-role">VP SUS</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.facebook.com/hazelburce25', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/hazelburce25', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-      </div>
+      <div class="contact-list" id="help-contact-list" style="padding:0 20px;"></div>
     </section>
 
     <!-- ===================== View: History ===================== -->
@@ -222,7 +200,11 @@
     <!-- ===================== View: Catalog ===================== -->
     <section class="view" id="view-catalog">
       <div class="catalog-search-row">
-        <input type="text" id="catalog-search" class="catalog-search-input" placeholder="Search items…" autocomplete="off">
+        <div class="catalog-search-wrap">
+          <img class="svg-icon catalog-search-icon" src="icons/ui/search.svg" alt="">
+          <input type="text" id="catalog-search" class="catalog-search-input" placeholder="Search items, category, location…" autocomplete="off">
+          <button class="catalog-search-clear" id="catalog-search-clear" aria-label="Clear search" style="display:none;"><img class="svg-icon" src="icons/ui/close.svg" alt=""></button>
+        </div>
         <select id="catalog-sort" class="catalog-sort-select">
           <option value="default">Sort: Default</option>
           <option value="name">Sort: Name (A–Z)</option>
@@ -230,12 +212,13 @@
           <option value="location">Sort: Location</option>
         </select>
       </div>
+      <div class="category-chip-row" id="category-chip-row"></div>
       <div class="catalog-toolbar">
         <div class="view-toggle">
-          <button class="icon-btn active" id="format-grid-btn" title="Grid view">▦</button>
-          <button class="icon-btn" id="format-list-btn" title="List view">☰</button>
+          <button class="icon-btn active" id="format-grid-btn" title="Grid view" aria-label="Grid view" aria-pressed="true"><img class="svg-icon" src="icons/ui/grid.svg" alt=""></button>
+          <button class="icon-btn" id="format-list-btn" title="List view" aria-label="List view" aria-pressed="false"><img class="svg-icon" src="icons/ui/list.svg" alt=""></button>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);">Click to add to cart</div>
+        <div id="catalog-result-count" style="font-size:11px;color:var(--text-dim);">Tap an item to add it to your cart</div>
       </div>
       <div id="catalog-container" class="item-grid"></div>
     </section>
@@ -285,10 +268,10 @@
       <img class="sidebar-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
     </div>
     <div class="bottom-nav-inner">
-      <div class="nav-btn" data-view="home"><span class="nav-emoji">🏠</span>Home</div>
-      <div class="nav-btn" data-view="catalog"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/archive-box.svg" alt=""></span>Catalog</div>
-      <div class="nav-btn" data-view="cart"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/shopping-basket.svg" alt=""></span>Cart</div>
-      <div class="nav-btn" data-view="checkout"><span class="nav-emoji">✅</span>Checkout</div>
+      <div class="nav-btn" data-view="home" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/home.svg" alt=""></span>Home</div>
+      <div class="nav-btn" data-view="catalog" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/archive-box.svg" alt=""></span>Catalog</div>
+      <div class="nav-btn" data-view="cart" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/shopping-basket.svg" alt=""></span>Cart</div>
+      <div class="nav-btn" data-view="checkout" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/check.svg" alt=""></span>Checkout</div>
     </div>
     <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a></div>
   </nav>
@@ -300,15 +283,34 @@
       <img class="sidebar-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
     </div>
     <div class="bottom-nav-inner">
-      <div class="nav-btn" data-mainview="home"><span class="nav-emoji">🏠</span>Home</div>
-      <div class="nav-btn" id="nav-slot-2" data-mainview="settings"><span class="nav-emoji">⚙️</span>Settings</div>
-      <div class="nav-btn" id="nav-slot-3" data-mainview="help"><span class="nav-emoji">📞</span>Help</div>
+      <div class="nav-btn" data-mainview="home" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/home.svg" alt=""></span>Home</div>
+      <div class="nav-btn" id="nav-slot-2" data-mainview="settings" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/cog.svg" alt=""></span>Settings</div>
+      <div class="nav-btn" id="nav-slot-3" data-mainview="help" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/contact.svg" alt=""></span>Help</div>
     </div>
     <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a></div>
   </nav>
 
+  <!-- ===================== Install App Banner (mobile only) ===================== -->
+  <div class="install-banner" id="install-banner" role="dialog" aria-label="Install app">
+    <div class="install-banner-row">
+      <div class="install-banner-icon"><img src="icons/icon-96.png" alt=""></div>
+      <div class="install-banner-text">
+        <div class="install-banner-title" id="install-banner-title">Install the MEA app</div>
+        <div class="install-banner-sub" id="install-banner-sub">Add it to your home screen for quick, full-screen access.</div>
+      </div>
+      <div class="install-banner-actions">
+        <button class="install-banner-btn" id="install-banner-btn">Install</button>
+        <button class="install-banner-dismiss" id="install-banner-dismiss" aria-label="Dismiss"><img class="svg-icon" src="icons/ui/close.svg" alt=""></button>
+      </div>
+    </div>
+    <div class="install-banner-steps" id="install-banner-steps" style="display:none;">
+      <img class="svg-icon" src="icons/ui/share.svg" alt="">
+      Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>
+    </div>
+  </div>
+
   <!-- ===================== Toast ===================== -->
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <!-- ===================== Contact Modal ===================== -->
   <div class="modal-backdrop" id="modal-backdrop">
@@ -316,36 +318,7 @@
       <h3>Contact</h3>
       <p>For concerns, reach out to any of the SUS team below.</p>
 
-      <div class="contact-list">
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">David Yu</div>
-            <div class="contact-role">SUS Senior Associate</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://fb.com/davidcurtisyu', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/davidcurtisyu', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">Kendrick Jin</div>
-            <div class="contact-role">SUS Senior Associate</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.fb.com/ken.jin/', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/dkrypto', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">Riesha Chan</div>
-            <div class="contact-role">SUS AVP</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.facebook.com/rieeschann', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/rchchan', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-        <div class="contact-row">
-          <div class="contact-info">
-            <div class="contact-name">Hazel Burce</div>
-            <div class="contact-role">VP SUS</div>
-          </div>
-          <div class="contact-btn-group"><button class="contact-icon-btn" title="Messenger" onclick="window.open('https://www.facebook.com/hazelburce25', '_blank')"><img class="svg-icon" src="icons/ui/messenger.svg" alt="Messenger"></button><button class="contact-icon-btn" title="Telegram" onclick="window.open('https://t.me/hazelburce25', '_blank')"><img class="svg-icon" src="icons/ui/telegram.svg" alt="Telegram"></button></div>
-        </div>
-      </div>
+      <div class="contact-list" id="modal-contact-list"></div>
 
       <button class="btn-secondary" id="modal-close-btn" style="margin-top:14px;">Close</button>
     </div>

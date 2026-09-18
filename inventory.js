@@ -48,7 +48,7 @@
       const cache = getCachedInventory();
       if (cache && cache.items && cache.items.length) {
         const ago = Math.round((Date.now() - cache.syncedAt) / 60000);
-        showInventoryDebug('📡 ' + reason + '\n\nShowing your last synced copy from ' + ago + ' minute(s) ago.');
+        showInventoryDebug(reason + '\n\nShowing your last synced copy from ' + ago + ' minute(s) ago.');
         return cache.items;
       }
       showInventoryDebug(reason + '\n\nNo previously synced copy on this device yet — showing demo items.');
@@ -59,7 +59,7 @@
       window.__meaInventoryDebugError = null;
       const url = getMeaInventoryScriptUrl();
       if (!url) {
-        showInventoryDebug('No Inventory Script URL configured yet.\n\nGo to Home → ⚙️ Setup → paste your Inventory Apps Script URL into the "Inventory Script URL" field → Save.');
+        showInventoryDebug('No Inventory Script URL configured yet.\n\nGo to Home > Settings > paste your Inventory Apps Script URL into the "Inventory Script URL" field > Save.');
         return demoInventory; // not configured yet — safe fallback
       }
 
@@ -117,6 +117,8 @@
     }
 
     const PENDING_ORDERS_KEY = 'mea_pending_orders';
+    const FAILED_ORDERS_KEY = 'mea_failed_orders';
+    const MAX_ORDER_ATTEMPTS = 5;
 
     function getPendingOrders() {
       try { return JSON.parse(localStorage.getItem(PENDING_ORDERS_KEY) || '[]'); }
@@ -128,9 +130,22 @@
       updateOrderSyncPill();
     }
 
-    function enqueuePendingOrder(payload) {
+    function getFailedOrders() {
+      try { return JSON.parse(localStorage.getItem(FAILED_ORDERS_KEY) || '[]'); }
+      catch(e) { return []; }
+    }
+
+    function saveFailedOrders(list) {
+      try { localStorage.setItem(FAILED_ORDERS_KEY, JSON.stringify(list)); } catch(e) {}
+    }
+
+    function enqueuePendingOrder(payload, clientId) {
       const list = getPendingOrders();
-      list.push({ payload, queuedAt: Date.now() });
+      // Reuse the caller's clientId when given (e.g. a failed immediate
+      // attempt that may have actually landed server-side) so a later
+      // retry carries the same idempotency key instead of a fresh one.
+      clientId = clientId || (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
+      list.push({ payload, queuedAt: Date.now(), attempts: 0, clientId });
       savePendingOrders(list);
     }
 
@@ -138,21 +153,31 @@
       const pill = document.getElementById('orderSyncPill');
       if (!pill) return;
       const count = getPendingOrders().length;
-      if (count === 0) {
+      const failedCount = getFailedOrders().length;
+      if (count === 0 && failedCount === 0) {
         pill.classList.remove('show');
         return;
       }
       pill.classList.add('show');
       pill.className = 'order-sync-pill show ' + (navigator.onLine ? 'syncing' : 'offline');
+      const parts = [];
+      if (count) parts.push(count + (count === 1 ? ' order' : ' orders') + ' pending');
+      if (failedCount) parts.push(failedCount + ' failed — tap to retry');
       pill.querySelector('.order-sync-text').textContent =
-        count + (count === 1 ? ' order' : ' orders') + ' pending' + (navigator.onLine ? ' — tap to sync' : ' — waiting for connection');
+        parts.join(', ') + (count && navigator.onLine ? ' — tap to sync' : (count ? ' — waiting for connection' : ''));
     }
 
     // The actual network call — throws on any failure, used by both the
-    // immediate submit path and the retry queue.
-    async function trySubmitOrderToSheet(payload) {
+    // immediate submit path and the retry queue. clientId is an idempotency
+    // key: if a retry follows a request that actually succeeded server-side
+    // but the response never reached us, a hardened backend can recognize
+    // it and skip inserting the order twice.
+    async function trySubmitOrderToSheet(payload, clientId) {
       const url = getMeaInventoryScriptUrl();
-      if (!url) throw new Error('No Inventory Script URL configured yet — go to Home → ⚙️ Setup.');
+      if (!url) throw new Error('No Inventory Script URL configured yet — go to Home > Settings.');
+
+      const token = getInventoryToken();
+      const body = Object.assign({ clientId: clientId || null }, payload, token ? { token } : {});
 
       let res, text;
       try {
@@ -161,7 +186,7 @@
         res = await fetch(url + '?action=submitOrder', {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(body)
         });
         text = await res.text();
       } catch (networkErr) {
@@ -190,13 +215,31 @@
       while (true) {
         const current = getPendingOrders();
         if (!current.length) break;
+        const item = current[0];
         try {
-          await trySubmitOrderToSheet(current[0].payload);
+          await trySubmitOrderToSheet(item.payload, item.clientId);
           const remaining = getPendingOrders();
           remaining.shift();
           savePendingOrders(remaining);
         } catch(err) {
-          break; // still failing — stop, keep the rest queued, retry later
+          // One permanently-failing order (bad data, a removed sheet) would
+          // otherwise block every order behind it forever — after
+          // MAX_ORDER_ATTEMPTS it moves to a "failed" bucket instead, and
+          // the queue keeps moving.
+          const remaining = getPendingOrders();
+          if (remaining.length && remaining[0].clientId === item.clientId) {
+            remaining[0].attempts = (remaining[0].attempts || 0) + 1;
+            if (remaining[0].attempts >= MAX_ORDER_ATTEMPTS) {
+              const failedItem = remaining.shift();
+              const failedQ = getFailedOrders();
+              failedQ.push(failedItem);
+              saveFailedOrders(failedQ);
+              savePendingOrders(remaining);
+              continue;
+            }
+            savePendingOrders(remaining);
+          }
+          break; // still within retry budget — stop, keep it queued, try again later
         }
       }
 
@@ -204,7 +247,22 @@
       updateOrderSyncPill();
     }
 
-    window.flushPendingOrders = flushPendingOrders; // exposed for the sync pill's tap handler
+    function retryFailedOrders() {
+      const failed = getFailedOrders();
+      if (!failed.length) return;
+      const q = getPendingOrders();
+      failed.forEach(item => { item.attempts = 0; q.push(item); });
+      savePendingOrders(q);
+      saveFailedOrders([]);
+      flushPendingOrders();
+    }
+
+    function orderSyncPillClick() {
+      if (getFailedOrders().length) { retryFailedOrders(); return; }
+      flushPendingOrders();
+    }
+
+    window.flushPendingOrders = orderSyncPillClick; // exposed for the sync pill's tap handler
     window.updateOrderSyncPill = updateOrderSyncPill; // exposed so boot can show any queue left over from last session
     window.addEventListener('online', () => { flushPendingOrders(); });
     setInterval(() => { if (navigator.onLine) flushPendingOrders(); }, 20000);
@@ -228,6 +286,8 @@
         orders.unshift({ ...payload, createdAt: new Date().toISOString() });
         localStorage.setItem('mea_inventory_orders', JSON.stringify(orders));
 
+        const clientId = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
+
         // No URL configured yet — nothing to sync to, but don't lose the order.
         if (!getMeaInventoryScriptUrl()) {
           enqueuePendingOrder(payload);
@@ -244,10 +304,10 @@
         // blip, server error), queue it instead of losing it; the queue
         // will retry automatically.
         try {
-          const json = await trySubmitOrderToSheet(payload);
+          const json = await trySubmitOrderToSheet(payload, clientId);
           return { success: true, queued: false, orderId: 'ORD-' + Date.now(), logged: json.logged };
         } catch(err) {
-          enqueuePendingOrder(payload);
+          enqueuePendingOrder(payload, clientId);
           return { success: true, queued: true, reason: 'error', message: err.message };
         }
       }
@@ -265,6 +325,7 @@
     catalogFormat: 'grid',   // grid | list
     catalogSearch: '',
     catalogSort: 'default',  // default | name | category | location
+    catalogCategory: 'all',  // 'all' or one of the sheet's own Category values
     inventory: [],
     cart: {},                // { itemId: { item, qty } }
     scanLog: [],             // { idNumber, status, time }
@@ -394,6 +455,19 @@
     dashSub.textContent = dashOk ? 'Analytics & reports' : 'Restricted — Dashboard access required';
   }
 
+  /* ---------------- Accessibility: keyboard support for role="button" divs ----------------
+     A handful of controls (home cards, bottom nav) are non-<button> elements
+     for layout reasons; this makes them behave like real buttons for anyone
+     navigating by keyboard or screen reader, without touching their click
+     handlers, which stay bound the normal way. */
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest('[role="button"]');
+    if (!el) return;
+    e.preventDefault();
+    el.click();
+  });
+
   /* ---------------- Init ---------------- */
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -409,6 +483,8 @@
     bindCatalogToggle();
     bindCheckoutForm();
     bindModal();
+    bindInstallBanner();
+    renderContacts();
 
     loadInventory();
     loadProjectOptions();
@@ -493,6 +569,8 @@
     if (view === 'settings') {
       document.getElementById('settings-script-url').value = getTrackerScriptUrl();
       document.getElementById('settings-inventory-url').value = getInventoryScriptUrl();
+      const tokenInput = document.getElementById('settings-inventory-token');
+      if (tokenInput) tokenInput.value = getInventoryToken();
     }
     if (view === 'home') updateHomeCardStates();
     if (view === 'history') setHistoryTab('personal');
@@ -506,12 +584,12 @@
   // (normally Settings/Help) as Personal/Project instead, per the design —
   // rather than a fourth, separate nav bar.
   const NAV_SLOT_DEFAULT = {
-    2: '<span class="nav-emoji">⚙️</span>Settings',
-    3: '<span class="nav-emoji">📞</span>Help'
+    2: '<span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/cog.svg" alt=""></span>Settings',
+    3: '<span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/contact.svg" alt=""></span>Help'
   };
   const NAV_SLOT_HISTORY = {
-    2: '<span class="nav-emoji">👤</span>Personal',
-    3: '<span class="nav-emoji">📁</span>Project'
+    2: '<span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/user.svg" alt=""></span>Personal',
+    3: '<span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/folder.svg" alt=""></span>Project'
   };
 
   function applyMainNavForView(view) {
@@ -611,8 +689,9 @@
     if (!pendingList || !totalList) return;
 
     const myToken = ++historyLoadToken; // avoids a slow older fetch overwriting a newer render
-    pendingList.innerHTML = '<div class="history-empty">Loading…</div>';
-    totalList.innerHTML = '<div class="history-empty">Loading…</div>';
+    const skeletonRow = '<div class="history-item skeleton-row skeleton" style="height:52px;"></div>';
+    pendingList.innerHTML = skeletonRow.repeat(2);
+    totalList.innerHTML = skeletonRow.repeat(3);
 
     const { records, offline, error, syncedAt } = await fetchHistoryRecords();
     if (myToken !== historyLoadToken) return; // a newer call already took over
@@ -636,7 +715,7 @@
     const total = scoped.filter(r => r.resolved);
 
     const offlineNote = offline
-      ? `<div class="history-offline-note">📡 ${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
+      ? `<div class="history-offline-note"><img class="svg-icon icon-inline" src="icons/ui/wifi.svg" alt="">${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
       : '';
 
     pendingList.innerHTML = offlineNote + (pending.length
@@ -692,6 +771,16 @@
 
   function saveInventoryScriptUrl(url) {
     localStorage.setItem(INVENTORY_URL_KEY, url);
+  }
+
+  const INVENTORY_TOKEN_KEY = 'mea_inventory_token';
+
+  function getInventoryToken() {
+    try { return (localStorage.getItem(INVENTORY_TOKEN_KEY) || '').trim(); } catch(e) { return ''; }
+  }
+
+  function saveInventoryToken(token) {
+    try { localStorage.setItem(INVENTORY_TOKEN_KEY, token || ''); } catch(e) {}
   }
 
   // Seeds both URLs with their defaults the very first time the app runs on
@@ -814,6 +903,7 @@
     document.getElementById('settings-save-btn').addEventListener('click', () => {
       const trackerUrl = document.getElementById('settings-script-url').value.trim();
       const inventoryUrl = document.getElementById('settings-inventory-url').value.trim();
+      const inventoryToken = document.getElementById('settings-inventory-token').value.trim();
       const status = document.getElementById('settingsStatus');
 
       if (!trackerUrl && !inventoryUrl) {
@@ -823,6 +913,7 @@
       }
       if (trackerUrl) saveTrackerScriptUrl(trackerUrl);
       if (inventoryUrl) saveInventoryScriptUrl(inventoryUrl);
+      saveInventoryToken(inventoryToken);
 
       status.textContent = 'Saved!';
       status.className = 'setup-status ok';
@@ -849,14 +940,53 @@
 
   /* ---------------- Inventory / catalog ---------------- */
 
+  function renderCatalogSkeleton() {
+    const container = document.getElementById('catalog-container');
+    if (!container || state.inventory.length) return; // only show on a genuinely empty first load
+    const grid = state.catalogFormat === 'grid';
+    container.className = grid ? 'item-grid' : 'item-list';
+    const card = grid
+      ? '<div class="item-card skeleton-card skeleton"><div class="skeleton-thumb"></div><div class="skeleton-line"></div><div class="skeleton-line w60"></div></div>'
+      : '<div class="item-row skeleton-row skeleton"><div class="skeleton-thumb"></div><div class="skeleton-lines"><div class="skeleton-line"></div><div class="skeleton-line w40"></div></div></div>';
+    container.innerHTML = card.repeat(grid ? 9 : 5);
+  }
+
   function loadInventory() {
+    renderCatalogSkeleton();
     google.script.run
       .withSuccessHandler(items => {
         state.inventory = items || [];
+        renderCategoryChips();
         renderCatalog();
       })
       .withFailureHandler(err => showToast(err.message || 'Could not load inventory', true))
       .getInventory();
+  }
+
+  // Category chips let people jump straight to a section of the catalog
+  // instead of scrolling or guessing a search term — built from whatever
+  // categories actually exist in the sheet right now, so it never goes
+  // stale relative to the data.
+  function renderCategoryChips() {
+    const row = document.getElementById('category-chip-row');
+    if (!row) return;
+    const categories = Array.from(new Set(
+      state.inventory.map(i => (i.category || '').trim()).filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+
+    if (!categories.length) { row.innerHTML = ''; return; }
+    if (!categories.includes(state.catalogCategory)) state.catalogCategory = 'all';
+
+    const chip = (value, label) => `<button type="button" class="category-chip${state.catalogCategory === value ? ' active' : ''}" data-category="${escapeAttr(value)}">${escapeHtml(label)}</button>`;
+    row.innerHTML = chip('all', 'All') + categories.map(c => chip(c, c)).join('');
+
+    row.querySelectorAll('.category-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.catalogCategory = btn.dataset.category;
+        row.querySelectorAll('.category-chip').forEach(b => b.classList.toggle('active', b === btn));
+        renderCatalog();
+      });
+    });
   }
 
   function loadProjectOptions() {
@@ -886,9 +1016,19 @@
     document.getElementById('format-grid-btn').addEventListener('click', () => setCatalogFormat('grid'));
     document.getElementById('format-list-btn').addEventListener('click', () => setCatalogFormat('list'));
 
-    document.getElementById('catalog-search').addEventListener('input', (e) => {
+    const searchInput = document.getElementById('catalog-search');
+    const clearBtn = document.getElementById('catalog-search-clear');
+    searchInput.addEventListener('input', (e) => {
       state.catalogSearch = e.target.value;
+      clearBtn.style.display = e.target.value ? 'flex' : 'none';
       renderCatalog();
+    });
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      state.catalogSearch = '';
+      clearBtn.style.display = 'none';
+      renderCatalog();
+      searchInput.focus();
     });
 
     document.getElementById('catalog-sort').addEventListener('change', (e) => {
@@ -910,6 +1050,10 @@
   function getVisibleInventory() {
     const q = state.catalogSearch.trim().toLowerCase();
     let items = state.inventory;
+
+    if (state.catalogCategory && state.catalogCategory !== 'all') {
+      items = items.filter(item => (item.category || '').trim() === state.catalogCategory);
+    }
 
     if (q) {
       items = items.filter(item => {
@@ -934,19 +1078,34 @@
     const container = document.getElementById('catalog-container');
     const debugMsg = window.__meaInventoryDebugError;
     const debugHtml = debugMsg
-      ? `<div style="grid-column:1/-1;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:12px;padding:14px;font-size:11px;font-family:monospace;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;">⚠ Inventory fetch failed — showing demo items below.\n\n${escapeHtml(debugMsg)}</div>`
+      ? `<div style="grid-column:1/-1;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:12px;padding:14px;font-size:11px;font-family:monospace;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;"><img class="svg-icon icon-inline" src="icons/ui/warning.svg" alt="">Inventory fetch failed — showing demo items below.\n\n${escapeHtml(debugMsg)}</div>`
       : '';
+
+    const countEl = document.getElementById('catalog-result-count');
 
     if (!state.inventory.length) {
       container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
+      if (countEl) countEl.textContent = 'Tap an item to add it to your cart';
       return;
     }
 
     const visible = getVisibleInventory();
+    const filtered = !!state.catalogSearch.trim() || state.catalogCategory !== 'all';
+
+    if (countEl) {
+      countEl.textContent = filtered
+        ? visible.length + (visible.length === 1 ? ' item found' : ' items found')
+        : 'Tap an item to add it to your cart';
+    }
 
     if (!visible.length) {
       container.className = state.catalogFormat === 'grid' ? 'item-grid' : 'item-list';
-      container.innerHTML = debugHtml + '<div class="empty-state" style="grid-column:1/-1;"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">No items match your search</div>';
+      container.innerHTML = debugHtml + `
+        <div class="empty-state" style="grid-column:1/-1;">
+          <img class="svg-icon" src="icons/ui/search.svg" alt="">
+          No items match${state.catalogCategory !== 'all' ? ' "' + escapeHtml(state.catalogCategory) + '"' : ''}${state.catalogSearch.trim() ? ' "' + escapeHtml(state.catalogSearch.trim()) + '"' : ''}
+          <button type="button" class="btn-secondary" style="margin-top:14px;max-width:200px;" onclick="clearCatalogFilters()">Clear filters</button>
+        </div>`;
       return;
     }
 
@@ -972,6 +1131,17 @@
         </div>
       `).join('');
     }
+  }
+
+  function clearCatalogFilters() {
+    state.catalogSearch = '';
+    state.catalogCategory = 'all';
+    const searchInput = document.getElementById('catalog-search');
+    const clearBtn = document.getElementById('catalog-search-clear');
+    if (searchInput) searchInput.value = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+    renderCategoryChips();
+    renderCatalog();
   }
 
   function cartQty(itemId) {
@@ -1049,10 +1219,10 @@
           <div class="item-qty">${item.notes ? escapeHtml(item.notes) : '<span style="opacity:0.5">No notes</span>'}</div>
         </div>
         <div class="qty-stepper">
-          <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', -1)">−</button>
-          <input type="number" min="0" value="${qty}"
+          <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', -1)" aria-label="Decrease quantity"><img class="svg-icon" src="icons/ui/minus.svg" alt=""></button>
+          <input type="number" min="0" value="${qty}" aria-label="Quantity"
                  onchange="setQty('${escapeAttr(item.id)}', this.value)" />
-          <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', 1)">+</button>
+          <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', 1)" aria-label="Increase quantity"><img class="svg-icon" src="icons/ui/plus.svg" alt=""></button>
         </div>
       </div>
     `).join('');
@@ -1154,6 +1324,38 @@
       .submitOrder(payload);
   }
 
+  /* ---------------- Contacts (shared by the Help view and the Contact modal) ----------------
+     Single source of truth so editing the team roster only ever means
+     touching one array instead of two identical hand-written HTML blocks. */
+  const CONTACTS = [
+    { name: 'David Yu',      role: 'SUS Senior Associate', messenger: 'https://fb.com/davidcurtisyu',        telegram: 'https://t.me/davidcurtisyu' },
+    { name: 'Kendrick Jin',  role: 'SUS Senior Associate', messenger: 'https://www.fb.com/ken.jin/',          telegram: 'https://t.me/dkrypto' },
+    { name: 'Riesha Chan',   role: 'SUS AVP',               messenger: 'https://www.facebook.com/rieeschann', telegram: 'https://t.me/rchchan' },
+    { name: 'Hazel Burce',   role: 'VP SUS',                messenger: 'https://www.facebook.com/hazelburce25', telegram: 'https://t.me/hazelburce25' }
+  ];
+
+  function contactRowHtml(c) {
+    return `
+      <div class="contact-row">
+        <div class="contact-info">
+          <div class="contact-name">${escapeHtml(c.name)}</div>
+          <div class="contact-role">${escapeHtml(c.role)}</div>
+        </div>
+        <div class="contact-btn-group">
+          <button class="contact-icon-btn" title="Message ${escapeAttr(c.name)} on Messenger" aria-label="Message ${escapeAttr(c.name)} on Messenger" onclick="window.open('${c.messenger}', '_blank', 'noopener')"><img class="svg-icon" src="icons/ui/messenger.svg" alt=""></button>
+          <button class="contact-icon-btn" title="Message ${escapeAttr(c.name)} on Telegram" aria-label="Message ${escapeAttr(c.name)} on Telegram" onclick="window.open('${c.telegram}', '_blank', 'noopener')"><img class="svg-icon" src="icons/ui/telegram.svg" alt=""></button>
+        </div>
+      </div>`;
+  }
+
+  function renderContacts() {
+    const html = CONTACTS.map(contactRowHtml).join('');
+    const help = document.getElementById('help-contact-list');
+    const modal = document.getElementById('modal-contact-list');
+    if (help) help.innerHTML = html;
+    if (modal) modal.innerHTML = html;
+  }
+
   /* ---------------- Contact modal ---------------- */
 
   function bindModal() {
@@ -1174,10 +1376,12 @@
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
+    maybeShowInstallBanner();
   });
 
   window.addEventListener('appinstalled', () => {
     showToast('MEA App installed!');
+    hideInstallBanner();
   });
 
   async function triggerInstall() {
@@ -1189,8 +1393,72 @@
     const choice = await deferredInstallPrompt.userChoice;
     if (choice.outcome === 'accepted') {
       showToast('Installing MEA App…');
+      hideInstallBanner();
     }
     deferredInstallPrompt = null;
+  }
+
+  /* ---------------- Install banner ----------------
+     Mobile-only prompt encouraging people to add the app to their home
+     screen. Android/Chrome gets a real "Install" button wired to the
+     captured beforeinstallprompt event; iOS Safari never fires that event
+     at all, so it gets instructions instead (Add to Home Screen is a
+     manual step there with no programmatic trigger). Dismissing snoozes
+     the banner for 14 days rather than hiding it forever, since people
+     often dismiss the first time they see anything new. */
+  const INSTALL_DISMISS_KEY = 'mea_install_banner_dismissed_at';
+  const INSTALL_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
+
+  function isStandalonePwa() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+  function isIOS() {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  }
+  function isMobileViewport() {
+    return window.matchMedia('(max-width: 767px)').matches;
+  }
+  function wasInstallBannerRecentlyDismissed() {
+    try {
+      const at = parseInt(localStorage.getItem(INSTALL_DISMISS_KEY) || '0', 10);
+      return at && (Date.now() - at) < INSTALL_SNOOZE_MS;
+    } catch(e) { return false; }
+  }
+
+  function maybeShowInstallBanner() {
+    if (!isMobileViewport() || isStandalonePwa() || wasInstallBannerRecentlyDismissed()) return;
+    const ios = isIOS();
+    if (!ios && !deferredInstallPrompt) return; // Android/Chrome with nothing to prompt yet
+    const banner = document.getElementById('install-banner');
+    if (!banner) return;
+
+    document.getElementById('install-banner-btn').style.display = ios ? 'none' : '';
+    document.getElementById('install-banner-steps').style.display = ios ? 'flex' : 'none';
+    document.getElementById('install-banner-sub').textContent = ios
+      ? 'Add it to your home screen for quick, full-screen access.'
+      : 'Add it to your home screen for a faster, full-screen experience.';
+    banner.classList.add('show');
+  }
+
+  function hideInstallBanner() {
+    const banner = document.getElementById('install-banner');
+    if (banner) banner.classList.remove('show');
+  }
+
+  function dismissInstallBanner() {
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch(e) {}
+    hideInstallBanner();
+  }
+
+  function bindInstallBanner() {
+    const btn = document.getElementById('install-banner-btn');
+    const dismiss = document.getElementById('install-banner-dismiss');
+    if (btn) btn.addEventListener('click', () => triggerInstall());
+    if (dismiss) dismiss.addEventListener('click', dismissInstallBanner);
+
+    // iOS never fires beforeinstallprompt, so it's the only case checked
+    // eagerly on load; Android waits for that event (handled above).
+    if (isIOS()) setTimeout(maybeShowInstallBanner, 1200);
   }
 
   /* ---------------- Toast ---------------- */

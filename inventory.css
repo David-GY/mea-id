@@ -22,13 +22,34 @@
   --border-mid:  rgba(255,255,255,0.15);
   --surface:     rgba(255,255,255,0.07);
   --surface-hi:  rgba(255,255,255,0.11);
+  --surface-hi-2: rgba(255,255,255,0.15);
   --success:     #2dd4a0;
   --danger:      #ff6b6b;
   --warn:        #ffd166;
   --radius-lg: 20px;
   --radius-md: 14px;
   --radius-sm: 10px;
-  --sans: 'Inter', sans-serif;
+  --sans: 'Plus Jakarta Sans', 'Inter', sans-serif;
+
+  /* Spacing scale — used by newer components; older hand-tuned rules are
+     left as-is rather than churned for the sake of it. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Shadows tinted with the app's own teal hue instead of flat black,
+     so elevation reads as part of the same lighting environment. */
+  --shadow-sm: 0 2px 10px rgba(3,20,20,0.35);
+  --shadow-md: 0 10px 28px rgba(2,16,16,0.45);
+  --shadow-lg: 0 22px 60px rgba(2,14,14,0.55);
+
+  --focus-ring: 0 0 0 3px rgba(77,196,196,0.45);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html, body {
@@ -37,7 +58,74 @@ html, body {
   background: var(--teal-deep);
   color: var(--white);
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* ── Accessibility: visible keyboard focus everywhere ──
+   :focus-visible keeps this from showing on a mouse click, only on
+   keyboard/assistive-tech navigation, so it doesn't add visual noise
+   to the tap-driven mobile flows this app is mostly used through. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html { scroll-behavior: smooth; }
+
+/* App feel on mobile: buttons/cards/nav shouldn't trigger the browser's
+   text-selection callout on a long-press the way a plain web page would. */
+button, .nav-btn, .home-nav-card, .icon-btn, .item-card, .item-row,
+.qty-btn, .case-btn, .contact-btn, .contact-icon-btn, [role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ── Skeleton loaders — shown while catalog/history fetch is in flight,
+   shaped like the content they stand in for instead of a generic spinner. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-dark);
+}
+.skeleton::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-sheen { 100% { transform: translateX(100%); } }
+
+.skeleton-card { border-radius: var(--radius-md); padding: 8px; }
+.skeleton-card .skeleton-thumb { height: 40px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.06); margin-bottom: 8px; }
+.skeleton-card .skeleton-line { height: 9px; border-radius: 4px; background: rgba(255,255,255,0.08); }
+.skeleton-card .skeleton-line.w60 { width: 60%; margin-top: 6px; }
+
+.skeleton-row {
+  display: flex; align-items: center; gap: 12px;
+  border-radius: var(--radius-md);
+  padding: 10px;
+}
+.skeleton-row .skeleton-thumb { width: 78px; height: 36px; border-radius: var(--radius-sm); flex-shrink: 0; background: rgba(255,255,255,0.06); }
+.skeleton-row .skeleton-lines { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.skeleton-row .skeleton-line { height: 9px; border-radius: 4px; background: rgba(255,255,255,0.08); }
+.skeleton-row .skeleton-line.w40 { width: 40%; }
 
 body::before {
   content: '';
@@ -66,7 +154,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 14px 18px;
+  padding: calc(14px + env(safe-area-inset-top)) 18px 14px;
   background: rgba(10,53,53,0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -124,6 +212,7 @@ body::before {
     filter: invert(1);
   }
   .svg-icon { width: 19px; height: 19px; }
+  .icon-inline { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; filter: invert(1); }
   .home-nav-icon .svg-icon { width: 25px; height: 25px; }
   .scan-svg-icon { width: 48px; height: 48px; }
   .nav-svg-icon { width: 18px; height: 18px; margin: 0 auto 3px; }
@@ -189,7 +278,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 20px 0;
+  padding: calc(24px + env(safe-area-inset-top)) 20px 0;
 }
 .top-brand-mea { height: 50px; width: auto; }
 .top-brand-sus { height: 44px; width: auto; }
@@ -312,7 +401,7 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 18vh 24px 0;
+  padding: max(18vh, calc(64px + env(safe-area-inset-top))) 24px 0;
   text-align: center;
 }
 .login-logo img { max-width: min(380px, 90%); width: 100%; height: auto; }
@@ -388,9 +477,10 @@ body::before {
   border-radius: var(--radius-lg);
   padding: 16px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, background 0.15s, transform 0.1s, box-shadow 0.2s;
 }
-.home-nav-card:active { transform: scale(0.98); background: var(--surface-hi); }
+.home-nav-card:active { transform: scale(0.98); background: var(--surface-hi); box-shadow: none; }
 
 .home-nav-card.disabled {
   opacity: 0.4;
@@ -475,13 +565,25 @@ body::before {
   gap: 8px;
   margin-bottom: 12px;
 }
-.catalog-search-input {
+.catalog-search-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.catalog-search-icon {
+  position: absolute; left: 13px;
+  width: 15px; height: 15px;
+  opacity: 0.45;
+  pointer-events: none;
+}
+.catalog-search-input {
+  width: 100%;
   background: var(--surface);
   border: 1.5px solid var(--border-mid);
   border-radius: var(--radius-md);
-  padding: 11px 14px;
+  padding: 11px 34px 11px 36px;
   font-family: var(--sans);
   font-size: 13px;
   color: var(--white);
@@ -490,6 +592,45 @@ body::before {
 }
 .catalog-search-input::placeholder { color: var(--text-faint); }
 .catalog-search-input:focus { border-color: var(--teal-bright); }
+.catalog-search-clear {
+  position: absolute; right: 8px;
+  width: 22px; height: 22px;
+  border-radius: 50%; border: none;
+  background: var(--surface-hi);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.catalog-search-clear .svg-icon { width: 10px; height: 10px; }
+
+/* ── Category filter chips ── */
+.category-chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  margin-bottom: 14px;
+  scrollbar-width: none;
+}
+.category-chip-row::-webkit-scrollbar { display: none; }
+.category-chip {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--border-mid);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.category-chip.active {
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
+  border-color: transparent;
+  color: var(--white);
+}
 
 .catalog-sort-select {
   flex: 0 0 auto;
@@ -522,9 +663,10 @@ body::before {
   padding: 8px;
   cursor: pointer;
   text-align: center;
-  transition: border-color 0.15s, background 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.2s;
 }
-.item-card:active { border-color: var(--teal-bright); background: var(--surface-hi); }
+.item-card:active { border-color: var(--teal-bright); background: var(--surface-hi); box-shadow: none; }
 
 .item-thumb {
   width: 100%; height: 40px;
@@ -617,10 +759,11 @@ body::before {
   color: var(--white);
   font-weight: 700; font-size: 14px; letter-spacing: 0.3px;
   cursor: pointer; margin-top: 16px;
-  transition: transform 0.1s, opacity 0.15s;
+  box-shadow: 0 8px 22px rgba(15,80,80,0.35);
+  transition: transform 0.1s, opacity 0.15s, box-shadow 0.2s;
 }
-.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
-.btn-primary:active:not(:disabled) { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+.btn-primary:active:not(:disabled) { transform: scale(0.98); box-shadow: 0 4px 12px rgba(15,80,80,0.3); }
 
 .btn-secondary {
   width: 100%; padding: 12px;
@@ -763,6 +906,58 @@ select option:hover {
 .nav-btn .nav-emoji { display: block; font-size: 17px; margin-bottom: 3px; }
 .nav-btn.active { background: rgba(77,196,196,0.18); color: var(--teal-light); }
 
+/* ── Install app banner (mobile-only prompt to add to home screen) ── */
+.install-banner {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(78px + env(safe-area-inset-bottom)); /* sits above the bottom nav, never covers it */
+  z-index: 250;
+  display: none;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  margin: 0 10px;
+  background: rgba(9,45,45,0.98);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-mid);
+  box-shadow: var(--shadow-lg);
+  animation: install-banner-in 0.3s var(--ease-out);
+}
+.install-banner.show { display: block; }
+@keyframes install-banner-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.install-banner-row { display: flex; align-items: center; gap: 12px; max-width: 460px; margin: 0 auto; }
+.install-banner-icon {
+  width: 44px; height: 44px; flex-shrink: 0;
+  border-radius: 12px; overflow: hidden;
+}
+.install-banner-icon img { width: 100%; height: 100%; object-fit: cover; }
+.install-banner-text { flex: 1; min-width: 0; }
+.install-banner-title { font-size: 13.5px; font-weight: 800; color: var(--white); }
+.install-banner-sub { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; line-height: 1.4; }
+.install-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.install-banner-btn {
+  padding: 9px 14px; border-radius: 100px; border: none;
+  background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
+  color: var(--white); font-family: var(--sans); font-weight: 700; font-size: 12px;
+  cursor: pointer; white-space: nowrap;
+}
+.install-banner-btn:active { transform: scale(0.96); }
+.install-banner-dismiss {
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 50%; border: none; background: var(--surface);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.install-banner-dismiss img { width: 12px; height: 12px; }
+.install-banner-steps {
+  max-width: 460px; margin: 10px auto 0;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-dim);
+  background: var(--surface); border: 1px solid var(--border-dark);
+  border-radius: 100px; padding: 7px 12px;
+}
+.install-banner-steps img { width: 13px; height: 13px; flex-shrink: 0; }
+.install-banner-steps strong { color: var(--white); font-weight: 700; }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 100px; left: 50%;
@@ -794,6 +989,7 @@ select option:hover {
   border: 1px solid var(--border-mid);
   border-bottom: none;
   border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-lg);
   padding: 22px 20px calc(22px + env(safe-area-inset-bottom));
 }
 .modal-sheet h3 { margin: 0 0 12px; font-size: 16px; font-weight: 800; }
@@ -864,6 +1060,10 @@ select option:hover {
    styles above are completely untouched.
    ══════════════════════════════════════════════ */
 @media (min-width: 768px) {
+  /* The install banner only ever makes sense on a phone's own browser
+     chrome — a desktop "install to home screen" prompt is meaningless. */
+  .install-banner.show { display: none; }
+
   html, body {
     display: flex;
     justify-content: center;
@@ -907,6 +1107,8 @@ select option:hover {
     .contact-icon-btn:hover { background: rgba(42,157,157,0.2); cursor: pointer; }
     .case-btn:hover:not(.active) { background: rgba(255,255,255,0.05); cursor: pointer; }
     .modal-tab:hover { color: var(--teal-light); cursor: pointer; }
+    .category-chip:hover:not(.active) { background: var(--surface-hi); color: var(--white); cursor: pointer; }
+    .catalog-search-clear:hover { background: var(--surface-hi-2); cursor: pointer; }
     a { cursor: pointer; }
   }
 }
@@ -1008,6 +1210,8 @@ select option:hover {
   }
 
   /* Catalog — real desktop grid that fills the wide column */
+  .catalog-search-row { max-width: 1320px; }
+  .category-chip-row { max-width: 1320px; }
   .catalog-toolbar { max-width: 1320px; }
   .item-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
