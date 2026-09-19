@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>MEA ID Tracker</title>
 
 <!-- PWA -->
@@ -15,7 +15,8 @@
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after {
   box-sizing: border-box; margin: 0; padding: 0;
@@ -41,7 +42,8 @@
   --success:     #2dd4a0;
   --danger:      #ff6b6b;
   --warn:        #ffd166;
-  --sans: 'Inter', sans-serif;
+  --sans: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  --focus-ring: 0 0 0 3px rgba(77,196,196,0.45);
 }
 
 body {
@@ -50,7 +52,56 @@ body {
   color: var(--white);
   min-height: 100vh;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
+
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* .tracker-svg had no rule at all before this fix — every icon using it
+   (menu dropdown, scan button, saved-IDs modal, NFC-unavailable notice)
+   was rendering as an invisible black shape on this dark background. */
+.tracker-svg { display: block; filter: invert(1); object-fit: contain; }
+.icon-inline { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; filter: invert(1); }
+
+.spin { animation: spin-rotate 1.1s linear infinite; }
+@keyframes spin-rotate { to { transform: rotate(360deg); } }
+
+button, .tab-btn, .icon-btn, .scan-circle, .header-back-row, [role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── Skeleton loader (mirrors inventory.css so the two documents read as
+   one design language even though they're separate files) ── */
+.skeleton { position: relative; overflow: hidden; }
+.skeleton::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-sheen { 100% { transform: translateX(100%); } }
+.skeleton-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-dark);
+  border-radius: 11px;
+}
+.skeleton-row .skeleton-ic { width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,0.08); flex-shrink: 0; }
+.skeleton-row .skeleton-lines { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.skeleton-row .skeleton-line { height: 9px; border-radius: 4px; background: rgba(255,255,255,0.08); }
+.skeleton-row .skeleton-line.w40 { width: 40%; }
 
 /* ── Global gradient bg ── */
 body::before {
@@ -75,7 +126,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: calc(14px + env(safe-area-inset-top)) 18px 14px;
   background: rgba(10,53,53,0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -524,6 +575,7 @@ body::before {
   border-radius: 20px 20px 0 0;
   border: 1px solid var(--border-mid);
   border-bottom: none;
+  box-shadow: 0 22px 60px rgba(2,14,14,0.55);
   width: 100%; max-width: 520px; max-height: 80vh;
   display: flex; flex-direction: column;
   animation: slideup 0.28s cubic-bezier(0.34,1.1,0.64,1);
@@ -602,6 +654,7 @@ body::before {
   background: var(--surface);
   border: 1px solid var(--border-dark);
   border-radius: 14px; overflow: hidden;
+  box-shadow: 0 2px 10px rgba(3,20,20,0.35);
 }
 
 .s-head {
@@ -670,6 +723,7 @@ body::before {
 .btn-teal {
   background: linear-gradient(135deg, var(--teal-mid), var(--teal-bright));
   color: var(--white);
+  box-shadow: 0 8px 22px rgba(15,80,80,0.35);
 }
 .btn-outline {
   background: transparent;
@@ -688,6 +742,7 @@ body::before {
   background: var(--surface);
   border: 1px solid var(--border-dark);
   border-radius: 14px; overflow: hidden;
+  box-shadow: 0 2px 10px rgba(3,20,20,0.35);
 }
 .step-head {
   display: flex; align-items: center; gap: 12px;
@@ -731,10 +786,14 @@ body::before {
 .copy-btn:active { background: rgba(77,196,196,0.35); }
 
 .alert {
+  display: flex; align-items: flex-start; gap: 9px;
   border-radius: 9px; padding: 11px 14px;
   font-size: 12px; line-height: 1.65; margin-top: 10px;
   border-left: 3px solid;
 }
+.alert-icon { flex-shrink: 0; margin-top: 2px; }
+.alert-icon img { display: block; width: 15px; height: 15px; }
+.alert-warn .alert-icon img, .alert-info .alert-icon img { filter: invert(1); }
 .alert-warn {
   background: rgba(255,209,102,0.08);
   border-color: var(--warn); color: rgba(255,230,150,0.9);
@@ -785,7 +844,7 @@ body::before {
     radial-gradient(ellipse at 10% 90%, #0a353580 0%, transparent 60%),
     linear-gradient(145deg, #0d5050 0%, #0a3535 50%, #081e2e 100%);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 22px; padding: 32px; text-align: center;
+  gap: 22px; padding: max(32px, env(safe-area-inset-top)) 32px max(32px, env(safe-area-inset-bottom)); text-align: center;
 }
 #accessGate.hidden { display: none; }
 .gate-logo { width: 84px; height: 84px; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 28px rgba(0,0,0,0.35); }
@@ -956,9 +1015,9 @@ body::before {
       </div>
     </div>
     <div class="header-right">
-      <a href="index.html" class="icon-btn" title="Back to Home" style="text-decoration:none;font-size:15px;">🏠</a>
+      <a href="index.html" class="icon-btn" title="Back to Home" aria-label="Back to Home" style="text-decoration:none;"><img class="tracker-svg" src="icons/ui/home.svg" alt="" width="17" height="17"></a>
       <div class="dd-wrap">
-        <div class="icon-btn" id="menuBtn" onclick="toggleDD()">⋯</div>
+        <div class="icon-btn" id="menuBtn" onclick="toggleDD()" role="button" tabindex="0" aria-label="Menu"><img class="tracker-svg" src="icons/ui/more-horizontal.svg" alt="" width="18" height="18"></div>
         <div class="dd-menu" id="ddMenu">
           <div class="dd-item" id="installMenuItem" style="display:none" onclick="triggerInstall(); closeDD()">
             <span class="dd-icon"><img class="tracker-svg" src="icons/ui/arrow-down-to-line.svg" alt=""></span> Install App
@@ -991,13 +1050,13 @@ body::before {
     </button>
   </div>
 
-  <div class="sync-pill" id="syncPill" onclick="flushQueue()">
+  <div class="sync-pill" id="syncPill" onclick="syncPillClick()">
     <div class="sync-dot" id="syncDot"></div>
     <span id="syncPillText">0 pending</span>
   </div>
 
   <div class="offline-banner" id="offlineBanner">
-    📡 You're offline — scans are being saved on this device and will sync automatically once you're back online.
+    <img class="tracker-svg icon-inline" src="icons/ui/wifi.svg" alt="">You're offline — scans are being saved on this device and will sync automatically once you're back online.
   </div>
 
   <!-- Scan zone -->
@@ -1009,7 +1068,7 @@ body::before {
         <input type="text" class="manual-input" id="manualInput" placeholder="e.g. 212345"
           inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false"
           onkeydown="if(event.key==='Enter') submitManual()">
-        <button class="manual-submit" onclick="submitManual()">→</button>
+        <button class="manual-submit" onclick="submitManual()" aria-label="Submit ID"><img class="tracker-svg" src="icons/ui/arrow-right.svg" alt="" width="20" height="20"></button>
       </div>
     </div>
 
@@ -1058,7 +1117,7 @@ body::before {
   <div id="nfcDebug" style="display:none; margin:0 16px 24px; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:14px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
       <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--teal-light);">NFC Debug</div>
-      <button onclick="document.getElementById('nfcDebug').style.display='none'" style="background:none;border:none;color:var(--text-dim);font-size:12px;cursor:pointer;">✕ close</button>
+      <button onclick="document.getElementById('nfcDebug').style.display='none'" style="background:none;border:none;color:var(--text-dim);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;"><img class="tracker-svg" src="icons/ui/close.svg" alt="" width="12" height="12">close</button>
     </div>
     <pre id="nfcDebugText" style="font-family:'Courier New',monospace;font-size:11px;color:#88ddcc;line-height:1.7;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
   </div>
@@ -1072,7 +1131,7 @@ body::before {
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-head">
       <div class="modal-title"><img class="tracker-svg" src="icons/ui/id-badge.svg" alt="" width="42" height="42"> Saved IDs</div>
-      <button class="close-btn" onclick="closeSaved()">✕</button>
+      <button class="close-btn" onclick="closeSaved()" aria-label="Close"><img class="tracker-svg" src="icons/ui/close.svg" alt="" width="12" height="12"></button>
     </div>
     <div class="modal-tabs">
       <button class="modal-tab active" onclick="switchSavedTab('INVENTORY')">Inventory</button>
@@ -1093,8 +1152,8 @@ body::before {
 <div class="page" id="page-settings">
 
   <div class="header">
-    <div class="header-back-row" onclick="goTo('page-main')">
-      <div class="back-arrow">←</div>
+    <div class="header-back-row" onclick="goTo('page-main')" role="button" tabindex="0">
+      <div class="back-arrow" aria-hidden="true"><img class="tracker-svg" src="icons/ui/chevron-right.svg" alt="" width="14" height="14" style="transform:rotate(180deg);"></div>
       <div class="page-title">Settings</div>
     </div>
   </div>
@@ -1107,6 +1166,15 @@ body::before {
         <div class="s-label">Web App Endpoint</div>
         <input class="s-input url-input" type="url" id="s-url"
           placeholder="https://script.google.com/macros/s/…/exec"
+          spellcheck="false" autocomplete="off">
+      </div>
+      <div class="s-row col-dir">
+        <div class="s-label">
+          Access Token <span style="font-weight:400;color:var(--text-dim)">(optional)</span>
+          <div class="s-sub">Only needed if your script checks an ACCESS_TOKEN script property — see Help & Setup, step 2</div>
+        </div>
+        <input class="s-input url-input" type="password" id="s-token"
+          placeholder="Leave blank if your script doesn't require one"
           spellcheck="false" autocomplete="off">
       </div>
     </div>
@@ -1154,8 +1222,8 @@ body::before {
 <div class="page" id="page-help">
 
   <div class="header">
-    <div class="header-back-row" onclick="goTo('page-main')">
-      <div class="back-arrow">←</div>
+    <div class="header-back-row" onclick="goTo('page-main')" role="button" tabindex="0">
+      <div class="back-arrow" aria-hidden="true"><img class="tracker-svg" src="icons/ui/chevron-right.svg" alt="" width="14" height="14" style="transform:rotate(180deg);"></div>
       <div class="page-title">Help & Setup</div>
     </div>
   </div>
@@ -1181,33 +1249,62 @@ body::before {
       <div class="step-body">
         Handles writing the student ID to the selected sheet and
         <strong>automatically removes it from the other two sheets</strong> if it exists there.
+        <div class="alert alert-warn">
+          <span class="alert-icon"><img src="icons/ui/warning.svg" alt=""></span>
+          <span>This endpoint moves data with no login of its own — anyone who has the
+          <code>/exec</code> URL can call it directly. Setting an <strong>ACCESS_TOKEN</strong>
+          script property (below) is the only thing standing between "URL is unlisted" and
+          "URL requires a secret." Set one. If your full script also has <code>action=login</code>
+          / <code>action=access</code> handlers not shown here, apply the same token check to those too.</span>
+        </div>
         <div class="code-block">
           <button class="copy-btn" onclick="copyScript()">COPY</button>
           <code class="code-text" id="scriptCode">function doGet(e) {
-  var p      = e && e.parameter ? e.parameter : {};
-  var ss     = SpreadsheetApp.getActiveSpreadsheet();
+  var p = e && e.parameter ? e.parameter : {};
+
+  // Optional shared secret: set Extensions -> Apps Script -> Project
+  // Settings -> Script Properties -> ACCESS_TOKEN, then paste the same
+  // value into the app's Settings -> Access Token field. Leave the
+  // property unset only if you accept that anyone with this URL can
+  // write to the sheet.
+  var requiredToken = PropertiesService.getScriptProperties().getProperty('ACCESS_TOKEN');
+  if (requiredToken && p.token !== requiredToken) {
+    return respond({ ok: false, error: 'Unauthorized' });
+  }
+
+  var ALL_SHEETS = ['INVENTORY', 'W/Proj', 'DEPLOYED'];
   var target = p.sheet;
-  var col    = (p.col || "A").toUpperCase();
-  var colIdx = col.charCodeAt(0) - 64;
-  var data   = p.data ? String(p.data).trim() : "";
-  var all    = ["INVENTORY", "W/Proj", "DEPLOYED"];
+  if (ALL_SHEETS.indexOf(target) === -1) {
+    return respond({ ok: false, error: 'Unknown sheet' });
+  }
 
-  // Get target sheet, fall back to active sheet
-  var sheet  = ss.getSheetByName(target) || ss.getActiveSheet();
+  var data = p.data ? String(p.data).trim() : '';
+  if (!data) return respond({ ok: false, error: 'Missing data' });
 
-  // Remove this ID from the OTHER two sheets
-  all.forEach(function(name) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(target);
+  if (!sheet) return respond({ ok: false, error: 'Sheet not found' });
+
+  // Each sheet may track the ID in a different column — colInv/colProj/
+  // colDep are sent with every request so a cross-sheet cleanup checks
+  // the ONE column that sheet actually uses, not every cell in the row
+  // (matching any column risks deleting an unrelated row whose Name or
+  // Notes field happens to equal this ID).
+  var colOf = {
+    'INVENTORY': (p.colInv  || p.col || 'A').toUpperCase(),
+    'W/Proj':    (p.colProj || p.col || 'A').toUpperCase(),
+    'DEPLOYED':  (p.colDep  || p.col || 'A').toUpperCase()
+  };
+
+  // Remove this ID from the OTHER two sheets' tracked column only
+  ALL_SHEETS.forEach(function(name) {
     if (name === target) return;
     var sh = ss.getSheetByName(name);
-    if (!sh) return;
-    if (sh.getLastRow() < 1) return;
-    var vals = sh.getDataRange().getValues();
+    if (!sh || sh.getLastRow() < 1) return;
+    var colIdx = colOf[name].charCodeAt(0) - 64;
+    var vals = sh.getRange(1, colIdx, sh.getLastRow(), 1).getValues();
     for (var i = vals.length - 1; i >= 0; i--) {
-      for (var j = 0; j < vals[i].length; j++) {
-        if (String(vals[i][j]).trim() === data) {
-          sh.deleteRow(i + 1);
-        }
-      }
+      if (String(vals[i][0]).trim() === data) sh.deleteRow(i + 1);
     }
   });
 
@@ -1221,11 +1318,19 @@ body::before {
     }
   }
 
-  // Append the ID to the next available row
+  var colIdx = colOf[target].charCodeAt(0) - 64;
   var lastRow = sheet.getLastRow();
-  sheet.getRange(lastRow + 1, colIdx).setValue(data);
 
-  return respond({ok: true, row: lastRow + 1});
+  // Duplicate guard: if a client retries after a request that actually
+  // succeeded (but the response never made it back), don't write the
+  // same ID into the same column twice in a row.
+  if (lastRow >= 1) {
+    var lastVal = String(sheet.getRange(lastRow, colIdx).getValue()).trim();
+    if (lastVal === data) return respond({ ok: true, row: lastRow, deduped: true });
+  }
+
+  sheet.getRange(lastRow + 1, colIdx).setValue(data);
+  return respond({ ok: true, row: lastRow + 1 });
 }
 
 function respond(obj) {
@@ -1250,8 +1355,15 @@ function doPost(e) { return doGet(e); }</code>
         · Execute as: <strong>Me</strong><br>
         · Who has access: <strong>Anyone</strong><br><br>
         Authorize when prompted, then <strong>copy the /exec URL</strong> and paste it in Settings.
+        <div class="alert alert-info">
+          <span class="alert-icon"><img src="icons/ui/lock.svg" alt=""></span>
+          <span>To require the Access Token: open <strong>Project Settings</strong> (gear icon) in the
+          Apps Script editor → <strong>Script Properties</strong> → add one named <code>ACCESS_TOKEN</code>
+          with a value only your team knows. Paste that same value into this app's Settings → Access Token.</span>
+        </div>
         <div class="alert alert-warn">
-          ⚠ Every time you edit the script you must create a <strong>New Version</strong> — edits don't go live automatically.
+          <span class="alert-icon"><img src="icons/ui/warning.svg" alt=""></span>
+          <span>Every time you edit the script you must create a <strong>New Version</strong> — edits don't go live automatically.</span>
         </div>
       </div>
     </div>
@@ -1269,7 +1381,8 @@ function doPost(e) { return doGet(e); }</code>
           <div style="background:rgba(45,212,160,0.08);border:1px solid rgba(45,212,160,0.2);border-radius:8px;padding:9px 14px;font-family:'Courier New',monospace;font-size:13px;font-weight:700;letter-spacing:1px;">DEPLOYED</div>
         </div>
         <div class="alert alert-info" style="margin-top:10px">
-          💡 Use <strong>Test Connection</strong> in Settings after deploying to confirm everything works before scanning.
+          <span class="alert-icon"><img src="icons/ui/info.svg" alt=""></span>
+          <span>Use <strong>Test Connection</strong> in Settings after deploying to confirm everything works before scanning.</span>
         </div>
       </div>
     </div>
@@ -1284,7 +1397,8 @@ function doPost(e) { return doGet(e); }</code>
         Select a destination tab, tap the circle, and hold a tag to the back of your Android device.
         The ID is logged locally and sent to Google Sheets.
         <div class="alert alert-warn">
-          📱 Web NFC only works on <strong>Chrome on Android</strong>. It will not work on iOS or desktop.
+          <span class="alert-icon"><img src="icons/ui/smartphone.svg" alt=""></span>
+          <span>Web NFC only works on <strong>Chrome on Android</strong>. It will not work on iOS or desktop.</span>
         </div>
       </div>
     </div>
@@ -1292,13 +1406,24 @@ function doPost(e) { return doGet(e); }</code>
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 </div>
 <script>
 // ────────────────────────────────────────────
 // Constants
 // ────────────────────────────────────────────
+// Keyboard support for role="button" divs (menu button, back rows) — same
+// pattern as index.html's inventory.js, kept separate since this page is
+// its own self-contained document.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest('[role="button"]');
+  if (!el) return;
+  e.preventDefault();
+  el.click();
+});
+
 const TABS   = ['INVENTORY','W/Proj','DEPLOYED'];
 const CHIPS  = { 'INVENTORY':'chip-inv','W/Proj':'chip-proj','DEPLOYED':'chip-dep' };
 const LABELS = { 'INVENTORY':'INVENTORY','W/Proj':'W/PROJ','DEPLOYED':'DEPLOYED' };
@@ -1308,9 +1433,24 @@ const LABELS = { 'INVENTORY':'INVENTORY','W/Proj':'W/PROJ','DEPLOYED':'DEPLOYED'
 // ────────────────────────────────────────────
 let cfg = {
   url: '',
+  token: '',
   cols: { 'INVENTORY':'A','W/Proj':'A','DEPLOYED':'A' },
   cooldown: 3
 };
+
+// Columns for every sheet are sent with every write so the backend can
+// check the specific column each sheet tracks the ID in when clearing it
+// from the other two sheets, instead of scanning every cell in every row.
+function sheetColParams() {
+  return {
+    colInv:  cfg.cols['INVENTORY'] || 'A',
+    colProj: cfg.cols['W/Proj']    || 'A',
+    colDep:  cfg.cols['DEPLOYED']  || 'A'
+  };
+}
+function authParams() {
+  return cfg.token ? { token: cfg.token } : {};
+}
 let activeTab     = 'INVENTORY';
 let isScanning    = false;
 let nfcReader     = null;
@@ -1456,6 +1596,153 @@ function lookupMemberName(id) {
 }
 
 // ────────────────────────────────────────────
+// Sheets
+// ────────────────────────────────────────────
+// ────────────────────────────────────────────
+// Offline Queue — scans made while offline are stored here and
+// automatically retried once the connection comes back. Declared before
+// Boot (below) because Boot calls updateSyncPill()/flushQueue() synchronously
+// as soon as the page loads — a pre-existing bug had this section defined
+// *after* Boot, which threw "Cannot access before initialization" (a
+// `let`/`const` temporal-dead-zone error) every time the app opened while
+// online, silently skipping the initial queue flush and roster refresh.
+// ────────────────────────────────────────────
+const QUEUE_KEY = 'mea_pending_scans';
+const FAILED_QUEUE_KEY = 'mea_failed_scans';
+const MAX_SCAN_ATTEMPTS = 5; // after this many failures, an item stops blocking the rest of the queue
+
+function getQueue() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function saveQueue(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch(e) {}
+  updateSyncPill();
+}
+
+function getFailedQueue() {
+  try { return JSON.parse(localStorage.getItem(FAILED_QUEUE_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function saveFailedQueue(q) {
+  try { localStorage.setItem(FAILED_QUEUE_KEY, JSON.stringify(q)); } catch(e) {}
+}
+
+function enqueueScan(tab, col, data) {
+  const q = getQueue();
+  // Idempotency key — lets a hardened backend recognize and ignore a
+  // duplicate delivery of the same scan if a retry follows a request that
+  // actually succeeded but the client never saw the response.
+  q.push({ tab, col, data, ts: Date.now(), attempts: 0, clientId: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))) });
+  saveQueue(q);
+}
+
+function updateSyncPill() {
+  const q = getQueue();
+  const failed = getFailedQueue();
+  const pill = document.getElementById('syncPill');
+  const dot = document.getElementById('syncDot');
+  const text = document.getElementById('syncPillText');
+  if (!pill) return;
+
+  if (q.length === 0 && failed.length === 0) {
+    pill.classList.remove('show');
+    return;
+  }
+  pill.classList.add('show');
+  pill.className = 'sync-pill show ' + (navigator.onLine ? 'syncing' : 'offline');
+  dot.className = 'sync-dot' + (navigator.onLine ? ' pulse' : '');
+  const parts = [];
+  if (q.length) parts.push(q.length + ' pending');
+  if (failed.length) parts.push(failed.length + ' failed — tap to retry');
+  text.textContent = parts.join(', ') + (q.length && navigator.onLine ? ' — tap to sync' : (q.length ? ' — waiting for connection' : ''));
+}
+
+let isFlushing = false;
+async function flushQueue() {
+  if (isFlushing || !navigator.onLine) return;
+  const q = getQueue();
+  if (!q.length || !cfg.url) return;
+
+  isFlushing = true;
+  updateSyncPill();
+
+  while (true) {
+    const current = getQueue();
+    if (!current.length) break;
+    const item = current[0];
+
+    try {
+      const params = new URLSearchParams(Object.assign(
+        { action: 'tracker', sheet: item.tab, col: item.col, data: item.data, clientId: item.clientId },
+        sheetColParams(), authParams()
+      ));
+      const res = await fetch(cfg.url + '?' + params.toString());
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      // success — remove this item from the front of the queue
+      const remaining = getQueue();
+      remaining.shift();
+      saveQueue(remaining);
+    } catch(err) {
+      // Track attempts per item so one permanently-broken item (bad data,
+      // a since-deleted sheet) can't block every item behind it forever —
+      // after MAX_SCAN_ATTEMPTS it moves to a "failed" bucket the person
+      // can inspect and retry manually from the sync pill / Saved IDs.
+      const remaining = getQueue();
+      if (remaining.length && remaining[0].clientId === item.clientId) {
+        remaining[0].attempts = (remaining[0].attempts || 0) + 1;
+        if (remaining[0].attempts >= MAX_SCAN_ATTEMPTS) {
+          const failedItem = remaining.shift();
+          const failedQ = getFailedQueue();
+          failedQ.push(failedItem);
+          saveFailedQueue(failedQ);
+          saveQueue(remaining);
+          continue; // keep going — try the next item instead of stalling
+        }
+        saveQueue(remaining);
+      }
+      break; // still within retry budget — stop, keep it queued, try again later
+    }
+  }
+
+  isFlushing = false;
+  updateSyncPill();
+}
+
+// Moves every item in the failed bucket back into the live queue and
+// resets its attempt count — used by the "tap to retry" affordance.
+function retryFailedQueue() {
+  const failed = getFailedQueue();
+  if (!failed.length) return;
+  const q = getQueue();
+  failed.forEach(item => { item.attempts = 0; q.push(item); });
+  saveQueue(q);
+  saveFailedQueue([]);
+  toast('Retrying ' + failed.length + ' failed scan(s)…', 'info');
+  flushQueue();
+}
+
+function updateOfflineBanner() {
+  const banner = document.getElementById('offlineBanner');
+  if (banner) banner.classList.toggle('show', !navigator.onLine);
+}
+
+window.addEventListener('online', () => { updateOfflineBanner(); flushQueue(); });
+window.addEventListener('offline', () => { updateOfflineBanner(); updateSyncPill(); });
+
+// Periodic retry in case the 'online' event doesn't fire reliably (some
+// mobile browsers are inconsistent about this)
+setInterval(() => { if (navigator.onLine) flushQueue(); }, 20000);
+
+function syncPillClick() {
+  const failed = getFailedQueue();
+  if (failed.length) { retryFailedQueue(); return; }
+  flushQueue();
+}
+
+// ────────────────────────────────────────────
 // Boot
 // ────────────────────────────────────────────
 (function boot() {
@@ -1491,7 +1778,7 @@ function lookupMemberName(id) {
     document.getElementById('gateInput').style.display = 'none';
     document.getElementById('gateSubmitBtn').style.display = 'none';
     document.getElementById('gateHomeBtn').style.display = 'block';
-    document.getElementById('gateError').textContent = 'Not configured yet — go to the Home page and tap ⚙️ to add the Apps Script URL.';
+    document.getElementById('gateError').textContent = 'Not configured yet — go to the Home page Settings to add the Apps Script URL.';
     document.getElementById('gateError').classList.add('show');
   } else {
     const cached = getCachedAccess();
@@ -1642,7 +1929,7 @@ async function startScan() {
       handleRead(message, serialNumber);
     };
 
-    setScanUI('active', '🔄', 'Scanning…');
+    setScanUI('active', 'refresh', 'Scanning…');
     document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
     toast('Listening for NFC tags…','info');
   } catch(err) {
@@ -1653,7 +1940,7 @@ async function startScan() {
 function stopScan() {
   isScanning = false;
   nfcReader  = null;
-  setScanUI('', '📡', 'Tap to Scan');
+  setScanUI('', 'id-badge', 'Tap to Scan');
   document.getElementById('statusTitle').textContent = LABELS[activeTab];
   document.getElementById('statusSub').textContent = 'Tap the button to start scanning';
 }
@@ -1702,7 +1989,7 @@ async function handleRead(message, serialNumber) {
   // If we got something, use it
   if (raw) {
     const memberName = lookupMemberName(raw);
-    setScanUI('detected','✓', 'Detected!');
+    setScanUI('detected','check', 'Detected!');
     document.getElementById('statusTitle').textContent = memberName ? memberName : raw;
     document.getElementById('statusSub').textContent = (memberName ? raw + ' · ' : '') + '→ Sending to ' + LABELS[activeTab] + '…';
     document.getElementById('lastPill').style.display = 'inline-flex';
@@ -1710,110 +1997,24 @@ async function handleRead(message, serialNumber) {
 
     setTimeout(() => {
       if (!isScanning) return;
-      setScanUI('active','🔄','Scanning…');
+      setScanUI('active','refresh','Scanning…');
       document.getElementById('statusTitle').textContent = LABELS[activeTab];
       document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
     }, 2200);
 
     await sendToSheets(raw);
   } else {
-    setScanUI('error-state', '✕', 'No Data');
+    setScanUI('error-state', 'close', 'No Data');
     document.getElementById('statusTitle').textContent = 'Nothing decoded';
     document.getElementById('statusSub').textContent = 'See debug panel below';
     toast('No data — see debug panel','fail');
     setTimeout(() => {
-      setScanUI('active','🔄','Scanning…');
+      setScanUI('active','refresh','Scanning…');
       document.getElementById('statusTitle').textContent = LABELS[activeTab];
       document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
     }, 3000);
   }
 }
-
-// ────────────────────────────────────────────
-// Sheets
-// ────────────────────────────────────────────
-// ────────────────────────────────────────────
-// Offline Queue — scans made while offline are stored here and
-// automatically retried once the connection comes back.
-// ────────────────────────────────────────────
-const QUEUE_KEY = 'mea_pending_scans';
-
-function getQueue() {
-  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
-  catch(e) { return []; }
-}
-
-function saveQueue(q) {
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch(e) {}
-  updateSyncPill();
-}
-
-function enqueueScan(tab, col, data) {
-  const q = getQueue();
-  q.push({ tab, col, data, ts: Date.now() });
-  saveQueue(q);
-}
-
-function updateSyncPill() {
-  const q = getQueue();
-  const pill = document.getElementById('syncPill');
-  const dot = document.getElementById('syncDot');
-  const text = document.getElementById('syncPillText');
-  if (!pill) return;
-
-  if (q.length === 0) {
-    pill.classList.remove('show');
-    return;
-  }
-  pill.classList.add('show');
-  pill.className = 'sync-pill show ' + (navigator.onLine ? 'syncing' : 'offline');
-  dot.className = 'sync-dot' + (navigator.onLine ? ' pulse' : '');
-  text.textContent = q.length + ' pending' + (navigator.onLine ? ' — tap to sync' : ' — waiting for connection');
-}
-
-let isFlushing = false;
-async function flushQueue() {
-  if (isFlushing || !navigator.onLine) return;
-  const q = getQueue();
-  if (!q.length || !cfg.url) return;
-
-  isFlushing = true;
-  updateSyncPill();
-
-  while (true) {
-    const current = getQueue();
-    if (!current.length) break;
-    const item = current[0];
-
-    try {
-      const params = new URLSearchParams({ action: 'tracker', sheet: item.tab, col: item.col, data: item.data });
-      const res = await fetch(cfg.url + '?' + params.toString());
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      // success — remove this item from the front of the queue
-      const remaining = getQueue();
-      remaining.shift();
-      saveQueue(remaining);
-    } catch(err) {
-      // network still unreliable — stop here, keep remaining items queued, try again later
-      break;
-    }
-  }
-
-  isFlushing = false;
-  updateSyncPill();
-}
-
-function updateOfflineBanner() {
-  const banner = document.getElementById('offlineBanner');
-  if (banner) banner.classList.toggle('show', !navigator.onLine);
-}
-
-window.addEventListener('online', () => { updateOfflineBanner(); flushQueue(); });
-window.addEventListener('offline', () => { updateOfflineBanner(); updateSyncPill(); });
-
-// Periodic retry in case the 'online' event doesn't fire reliably (some
-// mobile browsers are inconsistent about this)
-setInterval(() => { if (navigator.onLine) flushQueue(); }, 20000);
 
 async function sendToSheets(data) {
   const tab = activeTab;
@@ -1830,7 +2031,10 @@ async function sendToSheets(data) {
   }
 
   try {
-    const params = new URLSearchParams({ action: 'tracker', sheet: tab, col: col, data: data });
+    const params = new URLSearchParams(Object.assign(
+      { action: 'tracker', sheet: tab, col: col, data: data },
+      sheetColParams(), authParams()
+    ));
     const res = await fetch(cfg.url + '?' + params.toString());
     if (!res.ok) throw new Error('HTTP ' + res.status);
     toast(data + ' → ' + LABELS[tab], 'ok');
@@ -1844,12 +2048,23 @@ async function sendToSheets(data) {
 // ────────────────────────────────────────────
 // Manual ID entry (works on any device — iOS, PC, etc.)
 // ────────────────────────────────────────────
+let lastManualSubmit = { data: '', ms: 0 };
+
 async function submitManual() {
   const input = document.getElementById('manualInput');
   const raw = input.value.trim();
 
   if (!cfg.url) { toast('Add your Script URL in Settings first', 'info'); return; }
   if (!raw) { toast('Enter an ID number first', 'info'); input.focus(); return; }
+
+  // Same cooldown NFC scans get, applied per-value — stops an accidental
+  // double-tap/double-Enter from writing the same ID twice in a row.
+  const now = Date.now();
+  if (raw === lastManualSubmit.data && now - lastManualSubmit.ms < cfg.cooldown * 1000) {
+    toast('Already submitted — cooldown active', 'skip');
+    return;
+  }
+  lastManualSubmit = { data: raw, ms: now };
 
   input.value = '';
   input.blur();
@@ -1864,13 +2079,15 @@ async function submitManual() {
 // ────────────────────────────────────────────
 // Scan UI helper
 // ────────────────────────────────────────────
-function setScanUI(state, icon, label) {
+function setScanUI(state, iconName, label) {
   const circle = document.getElementById('scanCircle');
   const wrap   = document.getElementById('scanWrap');
   circle.className = 'scan-circle' + (state ? ' ' + state : '');
   wrap.className   = 'scan-wrap'   + (state === 'active' ? ' active' : '');
-  document.getElementById('scanIcon').textContent = icon;
-  document.getElementById('scanTxt').textContent  = label;
+  const spin = state === 'active' ? ' spin' : '';
+  document.getElementById('scanIcon').innerHTML =
+    '<img class="tracker-svg' + spin + '" src="icons/ui/' + iconName + '.svg" alt="" width="42" height="42">';
+  document.getElementById('scanTxt').textContent = label;
 }
 
 // ────────────────────────────────────────────
@@ -1881,7 +2098,7 @@ function addLog(data, type, tab, meta) {
   const empty  = scroll.querySelector('.log-empty');
   if (empty) empty.remove();
 
-  const ic   = type === 'ok' ? '✓' : type === 'fail' ? '✕' : '–';
+  const icName = type === 'ok' ? 'check' : type === 'fail' ? 'close' : 'minus';
   const chip = CHIPS[tab] || '';
   const lbl  = LABELS[tab] || tab;
   const time = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -1892,7 +2109,7 @@ function addLog(data, type, tab, meta) {
   const el = document.createElement('div');
   el.className = 'log-row ' + type;
   el.innerHTML =
-    '<div class="log-ic">' + ic + '</div>' +
+    '<div class="log-ic"><img class="tracker-svg" src="icons/ui/' + icName + '.svg" alt="" width="14" height="14"></div>' +
     '<div><div class="log-id">' + displayText + '</div><div class="log-when">' + time + '</div>' + metaHtml + '</div>' +
     '<div class="log-chip ' + chip + '">' + lbl + '</div>';
   scroll.prepend(el);
@@ -1939,7 +2156,7 @@ function renderSaved() {
     '<div class="saved-row">' +
       '<div><div class="saved-id-text">' + esc(item.id) + '</div>' +
       '<div class="saved-time">' + esc(item.time) + '</div></div>' +
-      '<button class="del-btn" onclick="delSaved(' + i + ')">✕</button>' +
+      '<button class="del-btn" onclick="delSaved(' + i + ')" aria-label="Delete"><img class="tracker-svg" src="icons/ui/close.svg" alt="" width="11" height="11"></button>' +
     '</div>'
   ).join('');
 }
@@ -1972,6 +2189,7 @@ function exportCSV() {
 // ────────────────────────────────────────────
 function fillSettings() {
   document.getElementById('s-url').value          = cfg.url || '';
+  document.getElementById('s-token').value         = cfg.token || '';
   document.getElementById('s-col-INVENTORY').value = cfg.cols['INVENTORY'] || 'A';
   document.getElementById('s-col-WProj').value     = cfg.cols['W/Proj']    || 'A';
   document.getElementById('s-col-DEPLOYED').value  = cfg.cols['DEPLOYED']  || 'A';
@@ -1981,6 +2199,7 @@ function fillSettings() {
 
 function saveSettings() {
   cfg.url              = document.getElementById('s-url').value.trim();
+  cfg.token            = document.getElementById('s-token').value.trim();
   cfg.cols['INVENTORY']= (document.getElementById('s-col-INVENTORY').value||'A').toUpperCase();
   cfg.cols['W/Proj']   = (document.getElementById('s-col-WProj').value||'A').toUpperCase();
   cfg.cols['DEPLOYED'] = (document.getElementById('s-col-DEPLOYED').value||'A').toUpperCase();
@@ -2000,7 +2219,12 @@ async function testConn() {
   box.style.display = 'none';
 
   try {
-    const res  = await fetch(url + '?action=tracker&sheet=INVENTORY&col=A&data=000000');
+    const testToken = document.getElementById('s-token').value.trim();
+    const params = new URLSearchParams(Object.assign(
+      { action: 'tracker', sheet: 'INVENTORY', col: 'A', data: '000000' },
+      sheetColParams(), testToken ? { token: testToken } : {}
+    ));
+    const res  = await fetch(url + '?' + params.toString());
     const text = await res.text();
     btn.textContent = 'Test Connection';
     btn.disabled    = false;
@@ -2013,23 +2237,23 @@ async function testConn() {
       box.style.background = 'rgba(45,212,160,0.1)';
       box.style.borderColor = 'var(--success)';
       box.style.color = 'var(--success)';
-      box.textContent = '✓ Connected! Script is working correctly.\n(Test ID "000000" was written to INVENTORY — you can delete it.)';
+      box.textContent = 'Connected! Script is working correctly.\n(Test ID "000000" was written to INVENTORY — you can delete it.)';
       toast('Connection successful!','ok');
     } else if (parsed && parsed.ok === false) {
       box.style.background = 'rgba(255,107,107,0.08)';
       box.style.borderColor = 'var(--danger)';
       box.style.color = 'var(--danger)';
-      box.textContent = '✕ Script error: ' + (parsed.error || JSON.stringify(parsed));
+      box.textContent = 'Script error: ' + (parsed.error || JSON.stringify(parsed));
     } else if (text.includes('<html') || text.includes('<!DOCTYPE')) {
       box.style.background = 'rgba(255,209,102,0.08)';
       box.style.borderColor = 'var(--warn)';
       box.style.color = 'var(--warn)';
-      box.textContent = '⚠ Received an HTML page instead of JSON.\n\nFix: In Apps Script → Deploy → Manage deployments → Edit → set "Who has access" to Anyone → deploy as a New Version.';
+      box.textContent = 'Received an HTML page instead of JSON.\n\nFix: In Apps Script → Deploy → Manage deployments → Edit → set "Who has access" to Anyone → deploy as a New Version.';
     } else {
       box.style.background = 'rgba(255,209,102,0.08)';
       box.style.borderColor = 'var(--warn)';
       box.style.color = 'var(--warn)';
-      box.textContent = '⚠ Unexpected response:\n' + text.substring(0, 400);
+      box.textContent = 'Unexpected response:\n' + text.substring(0, 400);
     }
   } catch(err) {
     btn.textContent = 'Test Connection';
@@ -2038,7 +2262,7 @@ async function testConn() {
     box.style.background  = 'rgba(255,107,107,0.08)';
     box.style.borderColor = 'var(--danger)';
     box.style.color       = 'var(--danger)';
-    box.textContent = '✕ Network error: ' + err.message;
+    box.textContent = 'Network error: ' + err.message;
     toast('Failed: ' + err.message,'fail');
   }
 }

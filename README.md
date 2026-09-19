@@ -59,17 +59,19 @@ brand/                Source logo assets
 
 ### 1. Deploy the ID Tracker Apps Script
 1. Open your ID Tracker Google Sheet → **Extensions → Apps Script**
-2. Paste in the tracker script (handles `action=tracker`, `action=access`, `action=deets`)
+2. Paste in the tracker script (handles `action=tracker`, `action=access`, `action=deets`) — the ID Tracker's Help & Setup page (step 2) has a hardened reference implementation of the sheet-write handler with an optional shared-secret token, a sheet whitelist, and per-sheet column matching
 3. **Deploy → New deployment → Web app** — execute as **Me**, access **Anyone**
 4. Copy the `/exec` URL
+5. **Recommended:** set a Script Property named `ACCESS_TOKEN` (Project Settings → Script Properties) with a value only your team knows, then paste that same value into the app's Settings → Access Token field. Without this, the deployed `/exec` URL has no authentication of its own — anyone who has it can call it directly, since Apps Script Web Apps don't support session-based auth. Apply the same token check to any `action=login` / `action=access` handlers in your full script, not just the write handler shown in Help & Setup.
 
 Required sheet tabs: `INVENTORY`, `W/Proj`, `DEPLOYED`, `ACCESS` (columns: ID Number, Name).
 
 ### 2. Deploy the Inventory Apps Script
 1. Use a **separate** spreadsheet and **separate** script project
 2. Open your Room Inventory Sheet → **Extensions → Apps Script**
-3. Paste in the inventory script (handles `action=inventory`)
+3. Paste in the inventory script (handles `action=inventory`, `action=submitOrder`, `action=history`)
 4. Deploy the same way and copy its `/exec` URL
+5. **Recommended:** apply the same `ACCESS_TOKEN` script-property pattern as the ID Tracker script to `action=submitOrder` (the only endpoint here that writes data), and paste the value into Settings → Inventory Access Token. `action=submitOrder` payloads include a `clientId` field the client generates per order — check it against the last few written orders and skip the insert if it's already present, so a client retry after a dropped response can't create a duplicate order.
 
 Expected sheet columns: `Type | Quantity | Location | Category | Notes` (the header row is auto-detected by matching "Type").
 
