@@ -18,10 +18,10 @@ The frontend is static and deployable to GitHub Pages. Google Sheets remain the 
 
 | Source | Use |
 |---|---|
-| `[SUS] MEA ID tracker` | `MAIN`, `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, `ACCESS`, and new `ACTIVITY_LOG`/`IDEMPOTENCY_LOG` tabs |
+| `[SUS] MEA ID tracker` (`1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I`) | `MAIN` as the home/member list, plus `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, `ACCESS`, and new `ACTIVITY_LOG`/`IDEMPOTENCY_LOG` tabs |
 | `[2627] MEA Room Inventory` | Existing Catalog, order, and history backend |
 
-The consolidated Apps Script is [apps-script/sus-dashboard-reference.gs](apps-script/sus-dashboard-reference.gs). It contains no deployed URL or access token and is intended to be the single tracker web-app script. It preserves the legacy `tracker`, `login`, `access`, and `meansList` routes, includes the optional `deets` lookup and spreadsheet-bound `bulkMove` utility, and adds the Dashboard routes. Keep the `[2627] MEA Room Inventory` backend separate.
+The consolidated Apps Script is [apps-script/sus-dashboard-reference.gs](apps-script/sus-dashboard-reference.gs). It explicitly opens spreadsheet `1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I` and uses `MAIN` as the home/member sheet. It contains no deployed URL or access token and is intended to be the single tracker web-app script. It preserves the legacy `tracker`, `login`, `access`, and `meansList` routes, includes the optional `deets` lookup and spreadsheet-bound `bulkMove` utility, and adds the Dashboard routes. Keep the `[2627] MEA Room Inventory` backend separate.
 
 ### Important files
 
@@ -69,7 +69,7 @@ MAIN project columns are detected dynamically. A non-reserved project column wit
    Event ID | Server timestamp | Actor ID | Actor name | Action type | Target ID | Target name | Project | Previous state | New state | Batch ID | Device/client ID | Result | Details
    ```
 
-3. Replace duplicate tracker router/helper files with the single consolidated `apps-script/sus-dashboard-reference.gs` source. Do not leave another file defining `doGet` or `doPost`; Apps Script silently uses the duplicate declaration that appears later. The script supports `login`, `access`, `meansList`, `tracker`, `dashboardData`, `activity`, `batchMove`, optional `deets`, and the spreadsheet-bound `bulkMove` utility. It accepts both headered state tabs and older headerless ID columns.
+3. Replace duplicate tracker router/helper files with the single consolidated `apps-script/sus-dashboard-reference.gs` source. Do not leave another file defining `doGet` or `doPost`; Apps Script silently uses the duplicate declaration that appears later. The script supports `login`, `access`, `meansList`, `tracker`, `dashboardData`, `activity`, `batchMove`, optional `deets`, and the spreadsheet-bound `bulkMove` utility. It accepts the tracker workbook's two-row `MAIN` header layout, headered state tabs, and older headerless ID columns.
 4. Deploy a new Web App version, executing as the sheet owner. Keep the existing `/exec` URL configuration in the app; Apps Script changes require a new deployment version.
 5. Set the optional `ACCESS_TOKEN` Script Property and configure the same token in the existing ID Tracker settings. The Dashboard sends the logged-in actor ID and token; the backend verifies `ACCESS` levels server-side. If the project is standalone rather than sheet-bound, set `TRACKER_SPREADSHEET_ID`; the optional Digital Card lookup can use `DEETS_SPREADSHEET_ID` and `DEETS_SHEET_NAME`.
 6. The first state-changing request creates `IDEMPOTENCY_LOG` if necessary. Its schema is:

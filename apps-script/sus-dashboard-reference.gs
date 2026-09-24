@@ -28,7 +28,9 @@
  */
 
 var SUS_DASHBOARD = {
+  SPREADSHEET_ID: '1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I',
   MAIN: 'MAIN',
+  HOME_SHEET: 'MAIN',
   INVENTORY: 'INVENTORY',
   WITH_PROJECT: 'W/Proj',
   DEPLOYED: 'DEPLOYED',
@@ -50,7 +52,7 @@ var SUS_DASHBOARD = {
 };
 
 var MEA_DEETS_DEFAULTS = {
-  spreadsheetId: '1PARM7OaS1UdRkzOerirDKFmx1mNL_W3qMT49k6TOBl0',
+  spreadsheetId: '1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I',
   sheetName: 'MEAns',
   columns: {
     id: 1,
@@ -174,11 +176,10 @@ function requireLevel_(p, levels) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function activeSpreadsheet_() {
-  var active = SpreadsheetApp.getActiveSpreadsheet();
-  if (active) return active;
-  var id = PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID');
-  if (id) return SpreadsheetApp.openById(id);
-  throw new Error('Tracker spreadsheet is not available. Bind this project to the tracker sheet or set TRACKER_SPREADSHEET_ID.');
+  // Always use the explicit tracker file. This prevents a bound script that
+  // was opened from another spreadsheet from silently reading the wrong data.
+  var id = PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || SUS_DASHBOARD.SPREADSHEET_ID;
+  return SpreadsheetApp.openById(id);
 }
 
 function sheet_(name, required) {
@@ -203,18 +204,20 @@ function hasHeaderRow_(values) {
   });
 }
 
-function tableFromValues_(values, headerRow) {
+function tableFromValues_(values, headerRow, headerIndex) {
   if (!values || !values.length) return { headers: [], rows: [], headerRow: false };
   var width = values.reduce(function (max, row) { return Math.max(max, row.length); }, 0);
   if (!width) return { headers: [], rows: [], headerRow: headerRow };
 
+  var selectedHeaderIndex = headerRow ? Math.max(0, Math.min(headerIndex == null ? 0 : headerIndex, values.length - 1)) : -1;
+
   var headers = [];
   for (var h = 0; h < width; h++) {
-    var raw = headerRow ? values[0][h] : '';
+    var raw = headerRow ? values[selectedHeaderIndex][h] : '';
     headers.push(String(raw == null ? '' : raw).trim() || ('Column ' + (h + 1)));
   }
 
-  var start = headerRow ? 1 : 0;
+  var start = headerRow ? selectedHeaderIndex + 1 : 0;
   var rows = values.slice(start).map(function (row, offset) {
     var object = { rowNumber: offset + start + 1 };
     headers.forEach(function (header, index) {
@@ -229,7 +232,25 @@ function displayTable_(sheet) {
   if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) {
     return { headers: [], rows: [], headerRow: false };
   }
-  return tableFromValues_(sheet.getDataRange().getDisplayValues(), true);
+  var values = sheet.getDataRange().getDisplayValues();
+  return tableFromValues_(values, true, headerRowIndex_(sheet, values));
+}
+
+function headerRowIndex_(sheet, values) {
+  // MAIN has a frozen title/project row above its actual field headers.
+  // Find the first row containing both an ID and a name header so the helper
+  // remains correct if the sheet gains another title row later.
+  if (sheet && sheet.getName() === SUS_DASHBOARD.MAIN) {
+    var limit = Math.min(values.length, 10);
+    for (var i = 0; i < limit; i++) {
+      var normalized = values[i].map(normalizeHeader_);
+      var hasId = normalized.indexOf('id') !== -1 || normalized.indexOf('idnumber') !== -1 || normalized.indexOf('studentid') !== -1;
+      var hasName = normalized.indexOf('fullname') !== -1 || normalized.indexOf('name') !== -1;
+      if (hasId && hasName) return i;
+    }
+    return Math.max(0, Math.min(values.length - 1, (sheet.getFrozenRows() || 1) - 2));
+  }
+  return 0;
 }
 
 // State tabs in older tracker sheets are often just a column of IDs without a
@@ -239,7 +260,8 @@ function stateTable_(sheet) {
     return { headers: [], rows: [], headerRow: false };
   }
   var values = sheet.getDataRange().getDisplayValues();
-  return tableFromValues_(values, hasHeaderRow_(values));
+  var headerRow = hasHeaderRow_(values);
+  return tableFromValues_(values, headerRow, headerRow ? 0 : -1);
 }
 
 function columnIndex_(headers, candidates, fallback) {
@@ -462,8 +484,9 @@ function mainRecord_(row, headers, headerRow) {
   var projects = [];
   if (headerRow) {
     var known = [
-      'ID Number', 'Student ID', 'ID', 'Full Name', 'Name', 'Nickname', 'Nick Name',
-      'Department', 'Dept', 'ID Location', 'Location', 'Requires ID?', 'Requires ID', 'ID Required'
+      'Email', 'Email Address', 'ID Number', 'Student ID', 'ID', 'Full Name', 'Name',
+      'Nickname', 'Nick Name', 'Last Name', 'Department', 'Dept', 'Batch', 'Year',
+      'Phone', 'ID Location', 'Location', 'Requires ID?', 'Requires ID', 'ID Required'
     ].map(normalizeHeader_);
     projects = headers.filter(function (header) {
       return known.indexOf(normalizeHeader_(header)) === -1 && normalizeHeader_(header).indexOf('timestamp') === -1;
@@ -484,6 +507,15 @@ function mainRecord_(row, headers, headerRow) {
   };
 }
 
+function isIgnorableMainRow_(row, headers) {
+  var id = rowId_(row, headers, 1);
+  if (id) return false;
+  var first = normalizeId_(row[headers[0]]).toUpperCase();
+  // MAIN row 3 is the sheet's formula seed marker, not a member record.
+  if (first === 'SET') return true;
+  return headers.every(function (header) { return !normalizeId_(row[header]); });
+}
+
 function stateForSources_(sources, requiresId) {
   if (sources.indexOf('DEPLOYED') !== -1) return 'DEPLOYED';
   if (sources.indexOf('WITH_PROJECT') !== -1) return 'WITH_PROJECT';
@@ -498,6 +530,7 @@ function dashboardData_() {
   var byId = {};
 
   main.rows.forEach(function (row) {
+    if (isIgnorableMainRow_(row, main.headers)) return;
     var member = mainRecord_(row, main.headers, main.headerRow);
     if (!member.idNumber) return;
     if (!byId[member.idNumber]) {
@@ -543,7 +576,9 @@ function dashboardData_() {
   });
 
   var rawTabs = {
-    main: main.rows.map(function (row) {
+    main: main.rows.filter(function (row) {
+      return !isIgnorableMainRow_(row, main.headers);
+    }).map(function (row) {
       return Object.assign({}, row, {
         idNumber: rowId_(row, main.headers, main.headerRow ? 1 : 0),
         fullName: rowName_(row, main.headers, main.headerRow ? 2 : 1)

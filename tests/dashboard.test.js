@@ -103,7 +103,10 @@ test('reference Apps Script includes locked re-read, idempotency, permissions, a
     "case 'deets'",
     "case 'tracker'",
     'function bulkMove()',
-    'function stateTable_('
+    'function stateTable_(',
+    "SPREADSHEET_ID: '1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I'",
+    "HOME_SHEET: 'MAIN'",
+    'function headerRowIndex_('
   ]) assert.ok(source.includes(required), `missing backend safeguard: ${required}`);
   assert.equal(/AKfycb/.test(source), false);
   assert.equal((source.match(/^function doGet\(/gm) || []).length, 1);
