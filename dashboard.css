@@ -11,6 +11,7 @@
 .dashboard-connection.error { color:var(--danger); border-color:rgba(255,107,107,.35); background:rgba(255,107,107,.07); }
 .dashboard-alert, .dashboard-result, .cached-note { border:1px solid rgba(255,107,107,.35); border-radius:var(--radius-md); background:rgba(255,107,107,.08); color:#ffb3b3; padding:11px 12px; margin:0 0 14px; font-size:11px; line-height:1.5; }
 .dashboard-loading { display:block; }
+.dashboard-loading[hidden], #dashboard-content[hidden] { display:none !important; }
 .dashboard-skeleton-cards { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
 .dashboard-skeleton-card { height:95px; border-radius:var(--radius-md); }
 .dashboard-skeleton-panel { height:190px; border-radius:var(--radius-lg); margin-top:14px; }

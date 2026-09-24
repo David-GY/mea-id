@@ -32,11 +32,9 @@
     ['all', 'All members'],
     ['inventory', 'In Inventory'],
     ['with-project', 'With Project'],
-    ['needs-deployment', 'Needs deployment'],
-    ['deployed', 'Already deployed'],
+    ['deployed', 'Deployed'],
     ['needs-printing', 'Needs printing'],
     ['missing', 'Missing ID'],
-    ['not-required', 'No ID required'],
     ['data-issues', 'Has data issues']
   ];
 
@@ -184,7 +182,7 @@
       }
     } finally {
       dashboardState.dashboardRequestInFlight = false;
-      if (useCache) setLoading(false);
+      setLoading(false);
     }
   }
 

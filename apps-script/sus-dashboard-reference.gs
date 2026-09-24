@@ -183,7 +183,15 @@ function activeSpreadsheet_() {
 }
 
 function sheet_(name, required) {
-  var sheet = activeSpreadsheet_().getSheetByName(name);
+  var spreadsheet = activeSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(name);
+  if (!sheet) {
+    var normalized = normalizeHeader_(name);
+    var matches = spreadsheet.getSheets().filter(function (candidate) {
+      return normalizeHeader_(candidate.getName()) === normalized;
+    });
+    if (matches.length === 1) sheet = matches[0];
+  }
   if (!sheet && required !== false) throw new Error('Required sheet not found: ' + name);
   return sheet;
 }
@@ -456,15 +464,19 @@ function buildStateRows_() {
   var result = {};
   names.forEach(function (name) {
     var table = stateTable_(sheet_(name, false));
-    var idFallback = table.headerRow ? undefined : 0;
+    // Live state tabs have a blank A1 and formula-generated names in B:D.
+    var idFallback = 0;
     var nameFallback = table.headerRow ? undefined : 1;
     result[name] = {
       table: table,
-      rows: table.rows.map(function (row) {
+      rows: table.rows.filter(function (row) {
+        var id = rowId_(row, table.headers, idFallback);
+        return id && id.toUpperCase() !== 'SET';
+      }).map(function (row) {
         return {
           idNumber: rowId_(row, table.headers, idFallback),
           fullName: rowName_(row, table.headers, nameFallback),
-          printName: normalizeId_(objectValue_(row, table.headers, ['Print Name', 'Usable Print Name'])),
+          printName: normalizeId_(objectValue_(row, table.headers, ['Print Name', 'Usable Print Name', 'ID Name'])),
           rowNumber: row.rowNumber
         };
       })

@@ -18,6 +18,11 @@
 
   const STATE_ALIASES = {
     inventory: R.STATES.INVENTORY,
+    susinventory: R.STATES.INVENTORY,
+    withproject: R.STATES.WITH_PROJECT,
+    needsprinting: R.STATES.NEEDS_PRINTING,
+    forprinting: R.STATES.NEEDS_PRINTING,
+    notrequired: R.STATES.NOT_REQUIRED,
     'in inventory': R.STATES.INVENTORY,
     with_project: R.STATES.WITH_PROJECT,
     'with project': R.STATES.WITH_PROJECT,
@@ -77,7 +82,7 @@
     return {
       main: normalizeTabRows(source.main || source.MAIN || response.main),
       inventory: normalizeTabRows(source.inventory || source.INVENTORY || response.inventory),
-      withProject: normalizeTabRows(source.withProject || source['W/Proj'] || source.wproj || response.withProject),
+      withProject: normalizeTabRows(source.withProject || source['W/Proj'] || source['W/ proj'] || source.wproj || response.withProject),
       deployed: normalizeTabRows(source.deployed || source.DEPLOYED || response.deployed),
       printing: normalizeTabRows(source.printing || source.PRINTING || response.printing),
       access: normalizeTabRows(source.access || source.ACCESS || response.access)
