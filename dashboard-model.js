@@ -129,16 +129,15 @@
     const projects = rowProjects(row);
     const sourceStates = array(row.sourceStates || row.states || source || []);
     const state = stateFromSources(sourceStates, row.state || row.status, requiresId);
-    const warnings = array(row.warnings || row.dataQualityWarnings || row.issues);
-    const dataIssues = array(row.dataIssues || row.dataIssuesList);
+    // MAIN contains membership metadata, not a mutually exclusive ID state.
+    // Also discard these retired warnings from older backend/cache responses.
+    const retiredIssues = new Set(['Requires ID? is unclear', 'Requires ID? conflict', 'Requires ID? and state conflict', 'Location/state conflict']);
+    const warnings = array(row.warnings || row.dataQualityWarnings || row.issues).filter(issue => !retiredIssues.has(issue));
+    const dataIssues = array(row.dataIssues || row.dataIssuesList).filter(issue => !retiredIssues.has(issue));
     if (!idNumber) dataIssues.push('Missing ID number');
     if (!fullName) dataIssues.push('Missing name');
-    if (requiresId === null) dataIssues.push('Requires ID? is unclear');
     if (requiresId === true && !projects.length) dataIssues.push('No project assignment');
     if (state === R.STATES.UNKNOWN) dataIssues.push('Invalid or unrecognized state');
-    if (requiresId === false && [R.STATES.INVENTORY, R.STATES.WITH_PROJECT, R.STATES.DEPLOYED, R.STATES.NEEDS_PRINTING].includes(state)) dataIssues.push('Requires ID? and state conflict');
-    const locationState = canonicalState(location);
-    if (location && locationState !== R.STATES.UNKNOWN && locationState !== state) dataIssues.push('Location/state conflict');
     const uniqueIssues = Array.from(new Set(dataIssues));
     return {
       idNumber,
@@ -287,9 +286,6 @@
 
     members.forEach(member => {
       if (member.requiresId === true && !member.projects.length) out.push(exception('medium', 'Missing project assignment', member, 'This member requires an ID but has no project assignment.', 'Add the relevant project column value in MAIN.', { projectRequired: true }));
-      if (member.requiresId === null) out.push(exception('medium', 'Requires ID? conflict', member, 'Requires ID? is blank or unrecognized.', 'Set Requires ID? to Yes or No in MAIN.', {}));
-      if (member.dataIssues && member.dataIssues.includes('Requires ID? and state conflict')) out.push(exception('high', 'Requires ID? and state conflict', member, 'The record is marked as not requiring an ID but appears in an ID state tab.', 'Resolve Requires ID? or remove the conflicting state-tab row.', {}));
-      if (member.dataIssues && member.dataIssues.includes('Location/state conflict')) out.push(exception('medium', 'Location/state conflict', member, 'The recorded location/state does not match the normalized current ID state.', 'Confirm the authoritative state and correct the conflicting field.', {}));
       if (member.state === R.STATES.UNKNOWN) out.push(exception('high', 'Invalid or unrecognized state data', member, 'The current state could not be mapped to a supported state.', 'Correct the state value or move the row into a supported state tab.', {}));
     });
 

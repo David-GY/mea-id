@@ -580,7 +580,6 @@ function dashboardData_() {
     member.dataIssues = unique_(member.dataIssues || []);
     if (!member.idNumber) member.dataIssues.push('Missing ID number');
     if (!member.fullName) member.dataIssues.push('Missing name');
-    if (member.requiresId === null) member.dataIssues.push('Requires ID? is unclear');
     if (member.requiresId === true && !(member.projects || []).length) member.dataIssues.push('No project assignment');
     if (member.sourceStates.length > 1) member.dataIssues.push('ID appears in multiple state tabs');
     member.state = stateForSources_(member.sourceStates, member.requiresId);

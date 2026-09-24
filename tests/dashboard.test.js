@@ -80,14 +80,26 @@ test('activity merge is idempotent and preserves newest server ordering', () => 
   assert.equal(merged[1].details, 'same event');
 });
 
-test('flags Requires ID and location/state conflicts without auto-repairing them', () => {
+test('MAIN metadata never creates a state conflict, including cached warnings', () => {
   const data = model.normalizeResponse({ members: [
     { idNumber: '300001', fullName: 'No ID Person', requiresId: false, projects: ['ALPHA'], state: 'DEPLOYED' },
-    { idNumber: '300002', fullName: 'Location Conflict', requiresId: true, projects: ['ALPHA'], state: 'INVENTORY', location: 'DEPLOYED' }
+    { idNumber: '300002', fullName: 'Location Conflict', requiresId: true, projects: ['ALPHA'], state: 'INVENTORY', location: 'DEPLOYED' },
+    { idNumber: '300003', fullName: 'Cached', requiresId: null, state: 'INVENTORY', dataIssues: ['Requires ID? is unclear', 'Requires ID? and state conflict', 'Location/state conflict'] }
   ] });
   const issues = model.detectExceptions(data).map(exception => exception.type);
-  assert.ok(issues.includes('Requires ID? and state conflict'));
-  assert.ok(issues.includes('Location/state conflict'));
+  assert.ok(!issues.some(issue => /conflict/i.test(issue)));
+  assert.ok(data.members.every(member => member.dataIssues.length === 0));
+});
+
+test('only overlapping state tabs produce the multiple-state warning; MAIN is excluded', () => {
+  for (const pair of [['inventory', 'deployed'], ['withProject', 'inventory'], ['printing', 'inventory']]) {
+    const row = { idNumber: '400001', fullName: 'Member' };
+    const data = model.normalizeResponse({ rawTabs: { main: [row], [pair[0]]: [row], [pair[1]]: [row] } });
+    assert.equal(model.detectExceptions(data).filter(e => e.type === 'ID appears in multiple state tabs').length, 1);
+  }
+  const row = { idNumber: '400001', fullName: 'Member' };
+  const data = model.normalizeResponse({ rawTabs: { main: [row], inventory: [row] } });
+  assert.equal(model.detectExceptions(data).filter(e => e.type === 'ID appears in multiple state tabs').length, 0);
 });
 
 test('reference Apps Script includes locked re-read, idempotency, permissions, and append-only activity paths', () => {
