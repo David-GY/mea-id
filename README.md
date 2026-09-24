@@ -5,7 +5,7 @@ A mobile-first Progressive Web App for the Management Engineering Association. I
 ## What is included
 
 - ID Operations Dashboard for Admin and Dashboard users.
-- Project Deployment Planner with project/member selection, filters, confirmation, atomic batch moves, and per-record results.
+- Read-only project roster with project/member selection and sheet-backed state filters.
 - Interactive ID operation totals derived from one normalized tracker response.
 - Project Readiness Matrix with reusable readiness calculation and traffic-light status.
 - Data-quality Exceptions Inbox. Ambiguous records are review-only; the app never silently repairs them.
@@ -30,7 +30,7 @@ index.html                         PWA shell and Dashboard/Activity views
 inventory.js                       Existing app logic plus Dashboard navigation guard
 dashboard-rules.js                 Pure Needs deployment/readiness rules
 dashboard-model.js                 Pure normalization, totals, readiness, exceptions, activity merge
-dashboard.js                       Dashboard UI, API client, planner, polling, offline fallback
+dashboard.js                       Read-only Dashboard UI, API client, polling, offline fallback
 dashboard.css                      Responsive Dashboard/Activity styling
 apps-script/sus-dashboard-reference.gs  Apps Script reference implementation
 tests/dashboard.test.js            Fixture-driven rule/model/backend-contract tests
@@ -69,16 +69,12 @@ MAIN project columns are detected dynamically. A non-reserved project column wit
    Event ID | Server timestamp | Actor ID | Actor name | Action type | Target ID | Target name | Project | Previous state | New state | Batch ID | Device/client ID | Result | Details
    ```
 
-3. Replace duplicate tracker router/helper files with the single consolidated `apps-script/sus-dashboard-reference.gs` source. Do not leave another file defining `doGet` or `doPost`; Apps Script silently uses the duplicate declaration that appears later. The script supports `login`, `access`, `meansList`, `tracker`, `dashboardData`, `activity`, `batchMove`, optional `deets`, and the spreadsheet-bound `bulkMove` utility. It accepts the tracker workbook's two-row `MAIN` header layout, headered state tabs, and older headerless ID columns.
+3. Replace duplicate tracker router/helper files with the single consolidated `apps-script/sus-dashboard-reference.gs` source. Do not leave another file defining `doGet` or `doPost`; Apps Script silently uses the duplicate declaration that appears later. The script supports `login`, `access`, `meansList`, `tracker`, `dashboardData`, `activity`, optional `deets`, and the spreadsheet-bound `bulkMove` utility. Dashboard routes are read-only; the existing single-ID tracker route remains separate. It accepts the tracker workbook's two-row `MAIN` header layout, headered state tabs, and older headerless ID columns.
 4. Deploy a new Web App version, executing as the sheet owner. Keep the existing `/exec` URL configuration in the app; Apps Script changes require a new deployment version.
 5. Set the optional `ACCESS_TOKEN` Script Property and configure the same token in the existing ID Tracker settings. The Dashboard sends the logged-in actor ID and token; the backend verifies `ACCESS` levels server-side. If the project is standalone rather than sheet-bound, set `TRACKER_SPREADSHEET_ID`; the optional Digital Card lookup can use `DEETS_SPREADSHEET_ID` and `DEETS_SHEET_NAME`.
-6. The first state-changing request creates `IDEMPOTENCY_LOG` if necessary. Its schema is:
+6. If the legacy tracker write path is used, keep its existing tracker-side logging and safeguards. The read-only Dashboard does not modify tracker tabs.
 
-   ```text
-   Idempotency key | Batch ID | Actor ID | Request hash | Server timestamp | Response JSON
-   ```
-
-7. Open the PWA, sign in with an `ACCESS` record, and open Dashboard. Do not use the batch action until the Activity Log tab is present and the read view succeeds.
+7. Open the PWA, sign in with an `ACCESS` record, and open Dashboard. Confirm that the displayed totals, project rosters, state filters, and activity match the tracker sheets.
 
 The `[2627] MEA Room Inventory` Apps Script remains a separate backend and is configured through the existing Inventory Script URL field. No production Sheet data is modified by the repository test suite.
 
@@ -88,13 +84,11 @@ Dashboard reads use the tracker endpoint with `action=dashboardData`, `actorId`,
 
 Activity reads use `action=activity&cursor=<last event ID>`. The response contains only events after the cursor, `nextCursor`, and the current revision. The Activity Log polls about every four seconds while visible; dashboard preview refreshes more slowly. Hidden tabs pause timers and visibility/online events refresh immediately.
 
-Batch writes use `POST ?action=batchMove` with a text/plain JSON body containing `actorId`, `actorName`, `project`, `destination` (`W/Proj` or `DEPLOYED`), `ids`, `batchId`, `idempotencyKey`, and `deviceId`.
-
-The reference write path acquires `LockService`, re-reads the state after acquiring the lock, validates every ID, and only then applies all changes and Activity Log rows. If any record is invalid or changed concurrently, the entire batch is rejected with per-record results and `BATCH_ATOMIC_ABORT`; no valid subset is applied. A repeated idempotency key returns the stored authoritative response and cannot create duplicate moves or events.
+The Dashboard uses read-only `GET` requests for `dashboardData` and `activity`. It never sends batch moves or writes tracker state; update the source sheets through the established tracker workflow instead.
 
 ## Permissions
 
-- `Admin`: Dashboard reads, deployment actions, exceptions, and full Activity Log.
+- `Admin`: Dashboard reads, exceptions, and full Activity Log.
 - `Dashboard`: read-only Dashboard and Activity Log.
 - `Tracker`: existing ID Tracker only.
 - Ordinary users: existing ordinary-user surfaces only.
@@ -111,7 +105,7 @@ node --test tests/dashboard.test.js tests/batch-simulator.test.js
 
 The tests cover normal, missing, duplicate, conflicting, orphaned, printing, readiness, “Needs deployment”, activity de-duplication/order, and backend safeguard contracts. Apps Script execution itself requires the Google Apps Script runtime; use a copied test spreadsheet or fixtures and never the production tabs.
 
-For a deployment smoke test, verify these isolated scenarios against a test sheet: successful batch, partially invalid all-or-nothing batch, concurrent state conflict, duplicate idempotency key, activity added from a second browser/device, reconnect/visibility polling, cached offline display, and Admin/Dashboard/Tracker/ordinary-user access. Check both a narrow mobile viewport and a wide desktop viewport, then confirm the service worker cache version is updated and the app shell is served from the new deployment.
+For a deployment smoke test, verify the sheet snapshot, state-tab conflict detection, activity added from a second browser/device, reconnect/visibility polling, cached offline display, and Admin/Dashboard/Tracker/ordinary-user access. Check both a narrow mobile viewport and a wide desktop viewport, then confirm the service worker cache version is updated and the app shell is served from the new deployment.
 
 ## Existing limitations
 

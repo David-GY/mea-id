@@ -1,10 +1,9 @@
-/* SUS Dashboard client: data loading, project planning, activity sync, and UI. */
+/* SUS Dashboard client: sheet-backed data loading, read-only roster views, and activity sync. */
 (function () {
   'use strict';
 
-  const Rules = window.MEADashboardRules;
   const Model = window.MEADashboardModel;
-  if (!Rules || !Model) return;
+  if (!Model) return;
 
   const DASHBOARD_CACHE_KEY = 'mea_dashboard_cache_v1';
   const ACTIVITY_CACHE_KEY = 'mea_activity_cache_v1';
@@ -16,7 +15,6 @@
     data: null,
     project: '',
     filter: 'all',
-    selectedIds: new Set(),
     activity: [],
     activityCursor: null,
     activityTimer: null,
@@ -24,7 +22,6 @@
     activityBackoff: ACTIVITY_POLL_MS,
     activityInFlight: false,
     lastActivityRefresh: null,
-    pendingMove: null,
     dashboardRequestInFlight: false
   };
 
@@ -84,8 +81,6 @@
     const level = actor().level;
     return level === 'ADMIN' || level === 'DASHBOARD';
   }
-
-  function canWriteDashboard() { return actor().level === 'ADMIN'; }
 
   function cacheRead(key) {
     try {
@@ -195,33 +190,29 @@
     renderExceptions(data);
     renderProjectOptions(data);
     renderFilters();
-    renderPlanner();
+    renderRoster();
     renderActivityPreview();
   }
 
   function renderSummaryCards(data) {
     const totals = Model.totals(data.members);
     const cards = [
-      ['totalRegistered', 'Total registered MEAns', 'all', 'chart-bar.svg'],
-      ['inventory', 'IDs in Inventory', 'inventory', 'archive-box.svg'],
-      ['withProject', 'IDs With Project', 'with-project', 'folder.svg'],
-      ['deployed', 'IDs Deployed', 'deployed', 'check.svg'],
-      ['needsPrinting', 'IDs needing printing', 'needs-printing', 'warning.svg'],
-      ['requiredMissing', 'Required IDs missing', 'missing', 'warning.svg'],
-      ['dataIssues', 'Duplicate or incomplete data', 'data-issues', 'info.svg']
+      ['totalRegistered', 'Total registered MEAns', 'chart-bar.svg'],
+      ['inventory', 'IDs in Inventory', 'archive-box.svg'],
+      ['withProject', 'IDs With Project', 'folder.svg'],
+      ['deployed', 'IDs Deployed', 'check.svg'],
+      ['needsPrinting', 'IDs needing printing', 'warning.svg'],
+      ['requiredMissing', 'Required IDs missing', 'warning.svg'],
+      ['dataIssues', 'Duplicate or incomplete data', 'info.svg']
     ];
     const container = document.getElementById('dashboard-summary-cards');
     if (!container) return;
-    container.innerHTML = cards.map(([key, label, filter, icon]) => `
-      <button type="button" class="dashboard-metric-card" data-summary-filter="${escapeAttr(filter)}" aria-label="${escapeAttr(label)}: ${totals[key]}">
+    container.innerHTML = cards.map(([key, label, icon]) => `
+      <div class="dashboard-metric-card" role="group" aria-label="${escapeAttr(label)}: ${totals[key]}">
         <span class="metric-icon"><img class="svg-icon" src="icons/ui/${icon}" alt=""></span>
         <span class="metric-value">${totals[key]}</span>
         <span class="metric-label">${escapeHtml(label)}</span>
-      </button>`).join('');
-    container.querySelectorAll('[data-summary-filter]').forEach(card => card.addEventListener('click', () => {
-      const filter = card.dataset.summaryFilter;
-      focusPlanner(filter);
-    }));
+      </div>`).join('');
   }
 
   function renderReadiness(data) {
@@ -235,20 +226,11 @@
       return;
     }
     list.innerHTML = matrix.map(project => `
-      <button type="button" class="readiness-row" data-readiness-project="${escapeAttr(project.project)}">
+      <div class="readiness-row">
         <span class="traffic-light ${project.status}" aria-label="${project.status} status"></span>
         <span class="readiness-main"><strong>${escapeHtml(project.project)}</strong><span>${project.totalAssigned} assigned · ${project.membersRequiringIds} require IDs</span></span>
         <span class="readiness-stats"><b>${project.readiness}%</b><span>${project.idsDeployed}/${project.membersRequiringIds} deployed</span></span>
-        <span class="readiness-chevron" aria-hidden="true">›</span>
-      </button>`).join('');
-    list.querySelectorAll('[data-readiness-project]').forEach(row => row.addEventListener('click', () => {
-      dashboardState.project = row.dataset.readinessProject;
-      dashboardState.filter = 'all';
-      renderProjectOptions(data);
-      renderFilters();
-      renderPlanner();
-      document.getElementById('deployment-planner-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }));
+      </div>`).join('');
   }
 
   function renderExceptions(data) {
@@ -262,20 +244,10 @@
       return;
     }
     list.innerHTML = exceptions.slice(0, 20).map(issue => `
-      <button type="button" class="exception-row severity-${escapeAttr(issue.severity)}" data-exception-id="${escapeAttr(issue.affectedId)}" data-exception-type="${escapeAttr(issue.type)}">
+      <div class="exception-row severity-${escapeAttr(issue.severity)}">
         <span class="severity-dot" aria-hidden="true"></span>
         <span class="exception-main"><strong>${escapeHtml(issue.type)}</strong><span>${escapeHtml(issue.explanation)}</span></span>
-        <span class="exception-action">Review ›</span>
-      </button>`).join('') + (exceptions.length > 20 ? `<div class="muted exception-overflow">Showing 20 of ${exceptions.length} exceptions.</div>` : '');
-    list.querySelectorAll('[data-exception-id]').forEach(row => row.addEventListener('click', () => {
-      const member = data.members.find(item => item.idNumber === row.dataset.exceptionId);
-      if (member && member.projects.length) dashboardState.project = member.projects[0];
-      dashboardState.filter = 'data-issues';
-      renderProjectOptions(data);
-      renderFilters();
-      renderPlanner();
-      document.getElementById('deployment-planner-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }));
+      </div>`).join('') + (exceptions.length > 20 ? `<div class="muted exception-overflow">Showing 20 of ${exceptions.length} exceptions.</div>` : '');
   }
 
   function renderProjectOptions(data) {
@@ -287,25 +259,23 @@
   }
 
   function renderFilters() {
-    const row = document.getElementById('deployment-filters');
+    const row = document.getElementById('dashboard-roster-filters');
     if (!row) return;
     row.innerHTML = FILTERS.map(([value, label]) => `<button type="button" class="filter-chip${dashboardState.filter === value ? ' active' : ''}" data-planner-filter="${value}">${escapeHtml(label)}</button>`).join('');
     row.querySelectorAll('[data-planner-filter]').forEach(button => button.addEventListener('click', () => {
       dashboardState.filter = button.dataset.plannerFilter;
-      dashboardState.selectedIds.clear();
       renderFilters();
-      renderPlanner();
+      renderRoster();
     }));
   }
 
   function matchesFilter(member) {
     switch (dashboardState.filter) {
-      case 'inventory': return member.state === Rules.STATES.INVENTORY;
-      case 'with-project': return member.state === Rules.STATES.WITH_PROJECT;
-      case 'needs-deployment': return Rules.needsDeployment(member);
-      case 'deployed': return member.state === Rules.STATES.DEPLOYED;
-      case 'needs-printing': return member.state === Rules.STATES.NEEDS_PRINTING;
-      case 'missing': return member.state === Rules.STATES.MISSING || (member.requiresId === true && member.state === Rules.STATES.UNKNOWN);
+      case 'inventory': return member.state === 'INVENTORY';
+      case 'with-project': return member.state === 'WITH_PROJECT';
+      case 'deployed': return member.state === 'DEPLOYED';
+      case 'needs-printing': return member.state === 'NEEDS_PRINTING';
+      case 'missing': return member.state === 'MISSING' || (member.requiresId === true && member.state === 'UNKNOWN');
       case 'not-required': return member.requiresId === false;
       case 'data-issues': return (member.dataIssues || []).length > 0 || (member.warnings || []).length > 0;
       default: return true;
@@ -319,55 +289,37 @@
     })[state] || state;
   }
 
-  function renderPlanner() {
-    const list = document.getElementById('deployment-list');
+  function renderRoster() {
+    const list = document.getElementById('dashboard-roster-list');
     if (!list || !dashboardState.data) return;
     const project = dashboardState.project;
     if (!project) {
-      list.innerHTML = '<div class="dashboard-empty">Select a project to see assigned members.</div>';
-      updateSelectionToolbar();
+      list.innerHTML = '<div class="dashboard-empty">Select a project to see its sheet-backed roster.</div>';
       return;
     }
     const members = dashboardState.data.members.filter(member => member.projects.includes(project) && matchesFilter(member));
     if (!members.length) {
       list.innerHTML = `<div class="dashboard-empty">No members match “${escapeHtml(FILTERS.find(item => item[0] === dashboardState.filter)[1])}”.</div>`;
-      updateSelectionToolbar();
       return;
     }
     list.innerHTML = members.map(member => {
-      const selectable = canWriteDashboard() && member.idNumber && member.requiresId === true && [Rules.STATES.INVENTORY, Rules.STATES.WITH_PROJECT].includes(member.state);
-      const checked = dashboardState.selectedIds.has(member.idNumber);
       const warnings = (member.dataIssues || []).concat(member.warnings || []);
       return `<div class="planner-member-row${warnings.length ? ' has-issues' : ''}">
-        <div class="planner-check">${selectable ? `<input type="checkbox" class="member-select" data-member-id="${escapeAttr(member.idNumber)}"${checked ? ' checked' : ''} aria-label="Select ${escapeAttr(member.fullName || member.idNumber)}">` : '<span class="check-placeholder" aria-hidden="true"></span>'}</div>
         <div class="planner-member-main"><div class="planner-name"><strong>${escapeHtml(member.fullName || 'Unnamed member')}</strong>${member.nickname ? `<span class="nickname">“${escapeHtml(member.nickname)}”</span>` : ''}</div><div class="planner-meta">${escapeHtml(member.idNumber || 'No ID')} · ${escapeHtml(member.department || 'Department not set')}</div>${warnings.length ? `<div class="planner-warning"><img class="svg-icon" src="icons/ui/warning.svg" alt="">${escapeHtml(warnings.join(' · '))}</div>` : ''}</div>
-        <div class="planner-status"><span class="state-pill state-${member.state.toLowerCase()}">${escapeHtml(stateLabel(member.state))}</span><span class="planner-action">${escapeHtml(Rules.recommendedAction(member))}</span></div>
+        <div class="planner-status"><span class="state-pill state-${member.state.toLowerCase()}">${escapeHtml(stateLabel(member.state))}</span></div>
       </div>`;
     }).join('');
-    list.querySelectorAll('.member-select').forEach(input => input.addEventListener('change', () => {
-      if (input.checked) dashboardState.selectedIds.add(input.dataset.memberId);
-      else dashboardState.selectedIds.delete(input.dataset.memberId);
-      updateSelectionToolbar();
-    }));
-    updateSelectionToolbar();
   }
 
-  function updateSelectionToolbar() {
-    const count = document.getElementById('deployment-selection-count');
-    const button = document.getElementById('deployment-move-btn');
-    if (count) count.textContent = dashboardState.selectedIds.size + (dashboardState.selectedIds.size === 1 ? ' selected' : ' selected');
-    if (button) button.disabled = !canWriteDashboard() || dashboardState.selectedIds.size === 0 || !dashboardState.project;
-  }
-
-  function focusPlanner(filter) {
+  function focusRoster(filter) {
     if (!dashboardState.data) return;
     const project = dashboardState.project || dashboardState.data.projects[0] || '';
     dashboardState.project = project;
     dashboardState.filter = filter || 'all';
     renderProjectOptions(dashboardState.data);
     renderFilters();
-    renderPlanner();
-    const panel = document.getElementById('deployment-planner-panel');
+    renderRoster();
+    const panel = document.getElementById('dashboard-roster-panel');
     if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -457,88 +409,6 @@
     }, DASHBOARD_PREVIEW_POLL_MS);
   }
 
-  function showConfirmation() {
-    const selected = Array.from(dashboardState.selectedIds).map(id => dashboardState.data.members.find(member => member.idNumber === id)).filter(Boolean);
-    if (!selected.length || !dashboardState.project) return;
-    const destination = document.getElementById('deployment-destination').value;
-    dashboardState.pendingMove = { project: dashboardState.project, destination, members: selected };
-    document.getElementById('deployment-confirm-summary').innerHTML = `<strong>${escapeHtml(dashboardState.project)}</strong><span>Move ${selected.length} ID${selected.length === 1 ? '' : 's'} to <strong>${escapeHtml(destination === 'DEPLOYED' ? 'Deployed' : 'With Project')}</strong></span>`;
-    document.getElementById('deployment-confirm-list').innerHTML = selected.map(member => `<div><span>${escapeHtml(member.idNumber)}</span><span>${escapeHtml(member.fullName || 'Unnamed member')}</span></div>`).join('');
-    const modal = document.getElementById('deployment-confirm-backdrop');
-    modal.classList.add('show');
-    modal.setAttribute('aria-hidden', 'false');
-    document.getElementById('deployment-confirm-submit').focus();
-  }
-
-  function hideConfirmation() {
-    const modal = document.getElementById('deployment-confirm-backdrop');
-    if (!modal) return;
-    modal.classList.remove('show');
-    modal.setAttribute('aria-hidden', 'true');
-    dashboardState.pendingMove = null;
-  }
-
-  function makeIdempotencyKey() {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return Date.now() + '-' + Math.random().toString(36).slice(2);
-  }
-
-  async function submitMove() {
-    const move = dashboardState.pendingMove;
-    if (!move || !canWriteDashboard()) return;
-    const submit = document.getElementById('deployment-confirm-submit');
-    submit.disabled = true;
-    submit.textContent = 'Validating…';
-    const batchId = makeIdempotencyKey();
-    try {
-      const json = await request('batchMove', {
-        method: 'POST',
-        query: {},
-        body: {
-          action: 'batchMove',
-          actorId: actor().id,
-          actorName: actor().name,
-          batchId,
-          idempotencyKey: batchId,
-          project: move.project,
-          destination: move.destination,
-          ids: move.members.map(member => member.idNumber),
-          deviceId: getDeviceId()
-        }
-      });
-      hideConfirmation();
-      dashboardState.selectedIds.clear();
-      const results = Array.isArray(json.results) ? json.results : [];
-      const failed = results.filter(result => result.ok === false || result.result === 'rejected');
-      const resultBox = document.getElementById('deployment-result');
-      if (resultBox) {
-        resultBox.hidden = false;
-        resultBox.className = 'dashboard-result ' + (failed.length ? 'warning' : 'success');
-        resultBox.textContent = failed.length ? `${failed.length} of ${results.length || move.members.length} record(s) were rejected. No ambiguous change was applied; refresh to review the latest state.` : `Moved ${move.members.length} ID${move.members.length === 1 ? '' : 's'} successfully.`;
-      }
-      if (Array.isArray(json.events)) dashboardState.activity = Model.mergeActivity(dashboardState.activity, json.events);
-      await loadDashboard();
-      await pollActivity(true);
-    } catch (error) {
-      hideConfirmation();
-      const resultBox = document.getElementById('deployment-result');
-      if (resultBox) { resultBox.hidden = false; resultBox.className = 'dashboard-result warning'; resultBox.textContent = 'Move rejected: ' + error.message; }
-      await loadDashboard();
-    } finally {
-      submit.disabled = false;
-      submit.textContent = 'Confirm move';
-    }
-  }
-
-  function getDeviceId() {
-    const key = 'mea_dashboard_device_id';
-    try {
-      let id = localStorage.getItem(key);
-      if (!id) { id = makeIdempotencyKey(); localStorage.setItem(key, id); }
-      return id;
-    } catch (e) { return 'ephemeral-' + makeIdempotencyKey(); }
-  }
-
   function guardView(view) {
     if (!canReadDashboard()) {
       if (window.showToast) window.showToast('Dashboard access is restricted.', true);
@@ -567,18 +437,11 @@
     }));
     document.getElementById('dashboard-project-select').addEventListener('change', event => {
       dashboardState.project = event.target.value;
-      dashboardState.selectedIds.clear();
-      renderPlanner();
+      renderRoster();
     });
-    document.getElementById('deployment-destination').addEventListener('change', () => {});
-    document.getElementById('deployment-move-btn').addEventListener('click', showConfirmation);
-    document.getElementById('deployment-confirm-cancel').addEventListener('click', hideConfirmation);
-    document.getElementById('deployment-confirm-submit').addEventListener('click', submitMove);
-    document.getElementById('deployment-confirm-backdrop').addEventListener('click', event => { if (event.target.id === 'deployment-confirm-backdrop') hideConfirmation(); });
     document.getElementById('dashboard-refresh-btn').addEventListener('click', () => loadDashboard());
     document.getElementById('activity-refresh-btn').addEventListener('click', () => pollActivity(true));
     document.getElementById('view-all-activity-btn').addEventListener('click', () => { if (guardView('activity-log')) showView('activity-log'); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') hideConfirmation(); });
     document.addEventListener('mea:viewchange', event => {
       const view = event.detail && event.detail.view;
       if (view === 'dashboard') { guardView(view); loadDashboard(); schedulePreviewPoll(); }

@@ -9,7 +9,6 @@
  *   tracker                   legacy single-ID move used by id-tracker.html
  *   dashboardData             normalized MAIN + state-tab snapshot
  *   activity                  incremental ACTIVITY_LOG read
- *   batchMove                 locked, all-or-nothing Dashboard move
  *   deets                     optional MEA Digital Card lookup
  *
  * Required tracker tabs:
@@ -104,16 +103,13 @@ function route_(e, body) {
       case 'activity':
         requireLevel_(p, ['ADMIN', 'DASHBOARD']);
         return activity_(p);
-      case 'batchMove':
-        requireLevel_(p, ['ADMIN']);
-        return batchMove_(p);
       case 'tracker':
         requireLevel_(p, ['ADMIN', 'TRACKER']);
         return legacyTracker_(p);
       default:
         return respond_({
           ok: false,
-          error: 'Unknown action. Use login, access, meansList, tracker, dashboardData, activity, batchMove, or deets.'
+          error: 'Unknown action. Use login, access, meansList, tracker, dashboardData, activity, or deets.'
         });
     }
   } catch (err) {

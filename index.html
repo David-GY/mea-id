@@ -243,23 +243,15 @@
           <div class="exceptions-list" id="dashboard-exceptions-list"></div>
         </div>
 
-        <div class="dashboard-panel" id="deployment-planner-panel">
-          <div class="dashboard-section-head planner-head"><div><div class="eyebrow">CONTROLLED ACTIONS</div><h3>Project deployment planner</h3><p class="muted">Select a project, review the current state, then choose people to move.</p></div></div>
+        <div class="dashboard-panel" id="dashboard-roster-panel">
+          <div class="dashboard-section-head planner-head"><div><div class="eyebrow">SHEET ROSTER</div><h3>Project roster</h3><p class="muted">Read-only view of the members and ID states currently reflected by the tracker sheets.</p></div></div>
           <div class="planner-controls">
             <label class="dashboard-field">Project
               <select id="dashboard-project-select" aria-label="Select a project"><option value="">Select a project</option></select>
             </label>
-            <label class="dashboard-field">Destination
-              <select id="deployment-destination" aria-label="Deployment destination"><option value="W/Proj">With Project</option><option value="DEPLOYED">Deployed</option></select>
-            </label>
           </div>
-          <div class="filter-chip-row" id="deployment-filters" role="group" aria-label="Deployment planner filters"></div>
-          <div class="selection-toolbar" id="deployment-selection-toolbar">
-            <span id="deployment-selection-count">0 selected</span>
-            <button type="button" class="btn-primary compact-action" id="deployment-move-btn" disabled>Move selected</button>
-          </div>
-          <div class="dashboard-result" id="deployment-result" role="status" aria-live="polite" hidden></div>
-          <div class="planner-list" id="deployment-list"></div>
+          <div class="filter-chip-row" id="dashboard-roster-filters" role="group" aria-label="Project roster filters"></div>
+          <div class="planner-list" id="dashboard-roster-list"></div>
         </div>
 
         <div class="dashboard-panel dashboard-preview-panel">
@@ -406,19 +398,6 @@
     </div>
   </div>
 
-  <!-- ===================== Deployment confirmation ===================== -->
-  <div class="modal-backdrop" id="deployment-confirm-backdrop" aria-hidden="true">
-    <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="deployment-confirm-title">
-      <h3 id="deployment-confirm-title">Confirm ID move</h3>
-      <div id="deployment-confirm-summary" class="deployment-confirm-summary"></div>
-      <div class="deployment-confirm-list" id="deployment-confirm-list"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn-secondary" id="deployment-confirm-cancel">Cancel</button>
-        <button type="button" class="btn-primary" id="deployment-confirm-submit">Confirm move</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ===================== Toast ===================== -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -438,6 +417,6 @@
 <script src="dashboard-rules.js?v=1"></script>
 <script src="dashboard-model.js?v=1"></script>
 <script src="inventory.js?v=4"></script>
-<script src="dashboard.js?v=1"></script>
+<script src="dashboard.js?v=2"></script>
 </body>
 </html>
