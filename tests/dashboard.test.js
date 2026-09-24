@@ -102,6 +102,18 @@ test('only overlapping state tabs produce the multiple-state warning; MAIN is ex
   assert.equal(model.detectExceptions(data).filter(e => e.type === 'ID appears in multiple state tabs').length, 0);
 });
 
+test('CBAB roster rows become project assignments without becoming state sources', () => {
+  const data = model.normalizeResponse({ rawTabs: {
+    main: [{ rowNumber: 4, idNumber: '230492', fullName: 'Joaquim Reign G. Artes', 'Requires ID?': 'Yes' }],
+    cbab: [{ rowNumber: 3, idNumber: '230492', fullName: 'Joaquim Reign G. Artes' }],
+    inventory: [{ rowNumber: 3, idNumber: '230492', fullName: 'Joaquim Reign G. Artes' }]
+  } });
+  assert.deepEqual(data.projects, ['CBAB']);
+  assert.deepEqual(data.members[0].projects, ['CBAB']);
+  assert.deepEqual(data.members[0].sourceStates, ['INVENTORY']);
+  assert.equal(model.detectExceptions(data).filter(e => e.type === 'ID appears in multiple state tabs').length, 0);
+});
+
 test('reference Apps Script includes locked re-read, idempotency, permissions, and append-only activity paths', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'sus-dashboard-reference.gs'), 'utf8');
   for (const required of [

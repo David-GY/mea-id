@@ -30,6 +30,29 @@ test('live state layout reads blank A1 ID headers, skips SET, and resolves W/ pr
   for (const state of Object.values(states)) assert.equal(state.rows.length, 1);
 });
 
+test('CBAB roster layout exposes valid IDs as the CBAB project roster', () => {
+  const values = [
+    ['0', '', 'ID num', 'Full name'],
+    ['', '', 'SET', ''],
+    ['1', 'President', '230492', 'Joaquim Reign G. Artes'],
+    ['2', 'CAO', '244653', 'Kendrick Q. Uy']
+  ];
+  const sheet = {
+    getName: () => 'CBAB', getLastRow: () => values.length,
+    getLastColumn: () => values[0].length,
+    getDataRange: () => ({ getDisplayValues: () => values })
+  };
+  const book = { getSheetByName: name => name === 'CBAB' ? sheet : null, getSheets: () => [sheet] };
+  const context = vm.createContext({
+    SpreadsheetApp: { openById: () => book },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) }
+  });
+  vm.runInContext(fs.readFileSync(require.resolve('../apps-script/sus-dashboard-reference.gs'), 'utf8'), context);
+  const roster = context.projectRoster_('CBAB');
+  assert.deepEqual(roster.rows.map(row => row.idNumber), ['230492', '244653']);
+  assert.equal(roster.rows[0].fullName, 'Joaquim Reign G. Artes');
+});
+
 test('canonical backend states and sheet location labels retain their meaning', () => {
   const data = model.normalizeResponse({ members: [
     { idNumber: '100001', state: 'WITH_PROJECT', location: 'W/ Proj' },

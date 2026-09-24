@@ -85,7 +85,8 @@
       withProject: normalizeTabRows(source.withProject || source['W/Proj'] || source['W/ proj'] || source.wproj || response.withProject),
       deployed: normalizeTabRows(source.deployed || source.DEPLOYED || response.deployed),
       printing: normalizeTabRows(source.printing || source.PRINTING || response.printing),
-      access: normalizeTabRows(source.access || source.ACCESS || response.access)
+      access: normalizeTabRows(source.access || source.ACCESS || response.access),
+      cbab: normalizeTabRows(source.cbab || source.CBAB || response.cbab)
     };
   }
 
@@ -177,6 +178,15 @@
       member.tabRows = Object.assign({}, member.tabRows, { [tab]: row.rowNumber });
       byId.set(id, member);
     }));
+    tabs.cbab.forEach(row => {
+      const id = rowId(row);
+      if (!id) return;
+      const member = byId.get(id) || { idNumber: id };
+      member.projects = Array.from(new Set([...(member.projects || []), 'CBAB']));
+      if (!member.fullName) member.fullName = rowName(row);
+      member.tabRows = Object.assign({}, member.tabRows, { cbab: row.rowNumber });
+      byId.set(id, member);
+    });
     return Array.from(byId.values()).map(row => normalizeMember(row, row.sourceStates));
   }
 

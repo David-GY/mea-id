@@ -14,6 +14,8 @@
  *
  * Required tracker tabs:
  *   MAIN, INVENTORY, W/Proj, DEPLOYED, PRINTING, ACCESS, ACTIVITY_LOG
+ * Optional project roster tabs:
+ *   CBAB (adds CBAB as a dashboard project option when present)
  *
  * Optional Script Properties:
  *   ACCESS_TOKEN              shared token expected by the PWA
@@ -35,6 +37,7 @@ var SUS_DASHBOARD = {
   WITH_PROJECT: 'W/Proj',
   DEPLOYED: 'DEPLOYED',
   PRINTING: 'PRINTING',
+  CBAB: 'CBAB',
   ACCESS: 'ACCESS',
   ACTIVITY: 'ACTIVITY_LOG',
   IDEMPOTENCY: 'IDEMPOTENCY_LOG',
@@ -306,7 +309,7 @@ function unique_(items) {
 }
 
 function rowId_(row, headers, fallbackIndex) {
-  return normalizeId_(objectValue_(row, headers, ['ID Number', 'Student ID', 'ID'], fallbackIndex));
+  return normalizeId_(objectValue_(row, headers, ['ID Number', 'ID num', 'Student ID', 'ID'], fallbackIndex));
 }
 
 function rowName_(row, headers, fallbackIndex) {
@@ -519,6 +522,23 @@ function mainRecord_(row, headers, headerRow) {
   };
 }
 
+function projectRoster_(name) {
+  var table = displayTable_(sheet_(name, false));
+  if (!table.headers.length) return { table: table, rows: [] };
+  var idIndex = columnIndex_(table.headers, ['ID Number', 'ID num', 'Student ID', 'ID'], 2);
+  var nameIndex = columnIndex_(table.headers, ['Full Name', 'Name'], 3);
+  var rows = table.rows.map(function (row) {
+    var id = normalizeId_(row[table.headers[idIndex]]);
+    if (!id || id.toUpperCase() === 'SET' || !/^\d{6}$/.test(id)) return null;
+    return {
+      idNumber: id,
+      fullName: normalizeId_(row[table.headers[nameIndex]]),
+      rowNumber: row.rowNumber
+    };
+  }).filter(function (row) { return !!row; });
+  return { table: table, rows: rows };
+}
+
 function isIgnorableMainRow_(row, headers) {
   var id = rowId_(row, headers, 1);
   if (id) return false;
@@ -539,6 +559,7 @@ function stateForSources_(sources, requiresId) {
 function dashboardData_() {
   var main = displayTable_(sheet_(SUS_DASHBOARD.MAIN));
   var states = buildStateRows_();
+  var cbab = projectRoster_(SUS_DASHBOARD.CBAB);
   var byId = {};
 
   main.rows.forEach(function (row) {
@@ -574,6 +595,24 @@ function dashboardData_() {
     });
   });
 
+  // CBAB is maintained as its own roster tab rather than as a MAIN column.
+  // Treat its IDs as project membership only; it is not an additional state
+  // source and therefore cannot create a state conflict by itself.
+  cbab.rows.forEach(function (projectRow) {
+    var member = byId[projectRow.idNumber];
+    if (!member) {
+      byId[projectRow.idNumber] = {
+        idNumber: projectRow.idNumber,
+        fullName: projectRow.fullName,
+        projects: [SUS_DASHBOARD.CBAB],
+        requiresId: null,
+        dataIssues: ['Project-tab ID absent from MAIN']
+      };
+      return;
+    }
+    member.projects = unique_((member.projects || []).concat(SUS_DASHBOARD.CBAB));
+  });
+
   var members = Object.keys(byId).map(function (id) {
     var member = byId[id];
     member.sourceStates = unique_(member.sourceStates || []);
@@ -598,7 +637,8 @@ function dashboardData_() {
     inventory: states[SUS_DASHBOARD.INVENTORY].rows,
     withProject: states[SUS_DASHBOARD.WITH_PROJECT].rows,
     deployed: states[SUS_DASHBOARD.DEPLOYED].rows,
-    printing: states[SUS_DASHBOARD.PRINTING].rows
+    printing: states[SUS_DASHBOARD.PRINTING].rows,
+    cbab: cbab.rows
   };
   return respond_({
     ok: true,

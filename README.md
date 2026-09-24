@@ -18,7 +18,7 @@ The frontend is static and deployable to GitHub Pages. Google Sheets remain the 
 
 | Source | Use |
 |---|---|
-| `[SUS] MEA ID tracker` (`1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I`) | `MAIN` as the home/member list, plus `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, `ACCESS`, and new `ACTIVITY_LOG`/`IDEMPOTENCY_LOG` tabs |
+| `[SUS] MEA ID tracker` (`1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I`) | `MAIN` as the home/member list, plus `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, `ACCESS`, `CBAB`, and new `ACTIVITY_LOG`/`IDEMPOTENCY_LOG` tabs |
 | `[2627] MEA Room Inventory` | Existing Catalog, order, and history backend |
 
 The consolidated Apps Script is [apps-script/sus-dashboard-reference.gs](apps-script/sus-dashboard-reference.gs). It explicitly opens spreadsheet `1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I` and uses `MAIN` as the home/member sheet. It contains no deployed URL or access token and is intended to be the single tracker web-app script. It preserves the legacy `tracker`, `login`, `access`, and `meansList` routes, includes the optional `deets` lookup and spreadsheet-bound `bulkMove` utility, and adds the Dashboard routes. Keep the `[2627] MEA Room Inventory` backend separate.
@@ -58,11 +58,11 @@ deployed required members / required members × 100, otherwise
 
 An available ID in Inventory or With Project counts under `IDs ready`, but not as deployed. Any missing/printing/unknown required ID or data blocker makes the project red; complete deployment is green; otherwise it is yellow.
 
-MAIN project columns are detected dynamically. A non-reserved project column with a truthy value (`Yes`, `true`, `1`, or another non-empty value other than `No`/`false`/`0`) is treated as an assignment.
+MAIN project columns are detected dynamically. A non-reserved project column with a truthy value (`Yes`, `true`, `1`, or another non-empty value other than `No`/`false`/`0`) is treated as an assignment. The separate `CBAB` roster tab is also treated as the `CBAB` project membership source, using its `ID num` column.
 
 ## Apps Script setup and migration
 
-1. Open the `[SUS] MEA ID tracker` spreadsheet and create the required tabs if they do not exist: `MAIN`, `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, and `ACCESS`.
+1. Open the `[SUS] MEA ID tracker` spreadsheet and create the required tabs if they do not exist: `MAIN`, `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, and `ACCESS`. Keep the `CBAB` roster tab available if CBAB should appear as a project option.
 2. Add an `ACTIVITY_LOG` tab with exactly this header row:
 
    ```text
