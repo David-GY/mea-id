@@ -3,13 +3,17 @@
 // Cache is only used as an offline fallback, never as the primary source.
 // NFC scanning and Google Sheets requests always go live, never cached.
 
-const CACHE_NAME = 'mea-app-v3'; // bump this string on any future SW change to force a clean cache
+const CACHE_NAME = 'mea-app-v4'; // bump this string on any future SW change to force a clean cache
 const APP_SHELL = [
   './',
   './index.html',
   './id-tracker.html',
   './inventory.css',
+  './dashboard.css',
   './inventory.js',
+  './dashboard-rules.js',
+  './dashboard-model.js',
+  './dashboard.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -59,6 +63,6 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(event.request, { ignoreSearch: true }))
   );
 });

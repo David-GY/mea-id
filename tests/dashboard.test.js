@@ -1,0 +1,105 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const rules = require('../dashboard-rules.js');
+const model = require('../dashboard-model.js');
+
+test('needs deployment is centralized and only accepts required, available IDs', () => {
+  assert.equal(rules.needsDeployment({ requiresId: true, state: rules.STATES.INVENTORY }), true);
+  assert.equal(rules.needsDeployment({ requiresId: true, state: rules.STATES.WITH_PROJECT }), true);
+  assert.equal(rules.needsDeployment({ requiresId: true, state: rules.STATES.DEPLOYED }), false);
+  assert.equal(rules.needsDeployment({ requiresId: true, state: rules.STATES.MISSING }), false);
+  assert.equal(rules.needsDeployment({ requiresId: false, state: rules.STATES.INVENTORY }), false);
+});
+
+test('normalizes raw MAIN and state tabs into one model and derives totals', () => {
+  const normalized = model.normalizeResponse({
+    ok: true,
+    rawTabs: {
+      main: [
+        { rowNumber: 2, 'ID Number': '100001', Name: 'Ada One', Nickname: 'A', Department: 'SUS', 'Requires ID?': 'Yes', 'PROJECT ALPHA': 'Yes' },
+        { rowNumber: 3, 'ID Number': '100002', Name: 'Bea Two', 'Requires ID?': 'Yes', 'PROJECT ALPHA': 'Yes' },
+        { rowNumber: 4, 'ID Number': '100003', Name: 'Cal Three', 'Requires ID?': 'No', 'PROJECT ALPHA': 'Yes' }
+      ],
+      inventory: [{ rowNumber: 2, idNumber: '100001', fullName: 'Ada One' }],
+      deployed: [{ rowNumber: 2, idNumber: '100003', fullName: 'Cal Three' }],
+      printing: [{ rowNumber: 2, idNumber: '100002', fullName: 'Bea Two', printName: 'Bea Two' }]
+    }
+  });
+  const totals = model.totals(normalized.members);
+  assert.equal(totals.totalRegistered, 3);
+  assert.equal(totals.inventory, 1);
+  assert.equal(totals.deployed, 1);
+  assert.equal(totals.needsPrinting, 1);
+  assert.equal(totals.requiredMissing, 1);
+  assert.equal(normalized.projects[0], 'PROJECT ALPHA');
+  const readiness = model.projectReadiness(normalized.members, 'PROJECT ALPHA');
+  assert.deepEqual({
+    totalAssigned: readiness.totalAssigned,
+    membersRequiringIds: readiness.membersRequiringIds,
+    idsReady: readiness.idsReady,
+    idsDeployed: readiness.idsDeployed,
+    idsMissing: readiness.idsMissing,
+    readiness: readiness.readiness,
+    status: readiness.status
+  }, { totalAssigned: 3, membersRequiringIds: 2, idsReady: 1, idsDeployed: 0, idsMissing: 1, readiness: 0, status: 'red' });
+});
+
+test('detects duplicate MAIN/state rows, conflicting states, orphans, and incomplete records', () => {
+  const data = model.normalizeResponse({
+    members: [{ idNumber: '200001', fullName: 'Duplicate Person', requiresId: true, projects: ['ALPHA'], state: 'INVENTORY' }],
+    rawTabs: {
+      main: [
+        { rowNumber: 2, idNumber: '200001', fullName: 'Duplicate Person' },
+        { rowNumber: 3, idNumber: '200001', fullName: 'Duplicate Person' },
+        { rowNumber: 4, idNumber: '', fullName: '' }
+      ],
+      inventory: [{ rowNumber: 2, idNumber: '200001', fullName: 'Duplicate Person' }, { rowNumber: 3, idNumber: '200001', fullName: 'Duplicate Person' }],
+      deployed: [{ rowNumber: 2, idNumber: '200001', fullName: 'Duplicate Person' }, { rowNumber: 3, idNumber: '200099', fullName: 'Orphan' }],
+      printing: [{ rowNumber: 2, idNumber: '200100', fullName: '', printName: '' }]
+    }
+  });
+  const types = model.detectExceptions(data).map(exception => exception.type);
+  assert.ok(types.includes('Duplicate ID number'));
+  assert.ok(types.includes('Duplicate entries in state tab'));
+  assert.ok(types.includes('ID appears in multiple state tabs'));
+  assert.ok(types.includes('State ID absent from MAIN'));
+  assert.ok(types.includes('Missing ID number'));
+  assert.ok(types.includes('Printing record missing usable print name'));
+});
+
+test('activity merge is idempotent and preserves newest server ordering', () => {
+  const first = [{ eventId: 'e1', serverTimestamp: '2026-01-01T00:00:00Z', actionType: 'MOVE' }];
+  const merged = model.mergeActivity(first, [
+    { eventId: 'e1', serverTimestamp: '2026-01-01T00:00:00Z', actionType: 'MOVE', details: 'same event' },
+    { eventId: 'e2', serverTimestamp: '2026-01-01T00:00:01Z', actionType: 'BATCH_MOVE' }
+  ]);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[0].eventId, 'e2');
+  assert.equal(merged[1].details, 'same event');
+});
+
+test('flags Requires ID and location/state conflicts without auto-repairing them', () => {
+  const data = model.normalizeResponse({ members: [
+    { idNumber: '300001', fullName: 'No ID Person', requiresId: false, projects: ['ALPHA'], state: 'DEPLOYED' },
+    { idNumber: '300002', fullName: 'Location Conflict', requiresId: true, projects: ['ALPHA'], state: 'INVENTORY', location: 'DEPLOYED' }
+  ] });
+  const issues = model.detectExceptions(data).map(exception => exception.type);
+  assert.ok(issues.includes('Requires ID? and state conflict'));
+  assert.ok(issues.includes('Location/state conflict'));
+});
+
+test('reference Apps Script includes locked re-read, idempotency, permissions, and append-only activity paths', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'sus-dashboard-reference.gs'), 'utf8');
+  for (const required of [
+    'LockService.getScriptLock()',
+    'priorIdempotentResponse_',
+    'requireLevel_(p, [\'ADMIN\'])',
+    'ACTIVITY_LOG',
+    'BATCH_ATOMIC_ABORT',
+    'dashboardData_',
+    'activity_'
+  ]) assert.ok(source.includes(required), `missing backend safeguard: ${required}`);
+  assert.equal(/AKfycb/.test(source), false);
+});

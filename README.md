@@ -1,91 +1,121 @@
 # MEA App
 
-A mobile-first Progressive Web App for the **Management Engineering Association**. It bundles two tools MEA officers use day-to-day — an NFC-based ID Tracker and a Room Inventory catalog — into one installable, offline-capable app with **no backend server to run or maintain**.
+A mobile-first Progressive Web App for the Management Engineering Association. It combines the NFC/manual ID Tracker, the room-inventory catalog, and the SUS Dashboard in one static GitHub Pages app backed by Google Sheets and Apps Script.
 
-**Live app:** `https://david-gy.github.io/mea-id/`
+## What is included
 
----
-
-## Quick facts
-
-- 📱 **PWA** — installable to your home screen on Android, iOS, and desktop
-- 📡 **NFC or manual entry** — scan tags on Android Chrome, or type IDs anywhere
-- 🔌 **Offline-first** — both tools keep working without a connection and sync when it returns
-- 🗄️ **Google Sheets as the database** — no servers, no hosting costs, no infra to patch
-- 🚀 **Deploy by editing a Sheet** — most changes to data or access don't touch code at all
-
----
-
-## What it does
-
-### 🏠 Home
-Enter your ID number once and it carries into whichever section you open next, persisting for the rest of your session. From here you can jump into Inventory or the ID Tracker, and install the app to your home screen.
-
-### 📡 ID Tracker
-Move an asset ID between three states — **Inventory → With Project → Deployed** — by scanning an NFC tag or typing the ID manually. Moving an ID to one state automatically removes it from the other two. Access is gated: only IDs listed in the sheet's `ACCESS` tab can get in. It works fully offline — scans save to the device instantly and sync automatically the moment a connection returns, with a visible pending-sync indicator the whole time.
-
-### 📦 Inventory
-Browse room inventory pulled live from a Google Sheet, with items tagged by physical location and color-coded for quick scanning. Add items to a cart and check out under **Borrow / Consume / Return**. If you open it offline, it falls back to the last successfully synced copy.
-
----
+- ID Operations Dashboard for Admin and Dashboard users.
+- Project Deployment Planner with project/member selection, filters, confirmation, atomic batch moves, and per-record results.
+- Interactive ID operation totals derived from one normalized tracker response.
+- Project Readiness Matrix with reusable readiness calculation and traffic-light status.
+- Data-quality Exceptions Inbox. Ambiguous records are review-only; the app never silently repairs them.
+- Dedicated cross-device Activity Log with a compact dashboard preview, incremental polling, cached offline fallback, visibility/online recovery, and exponential retry backoff.
+- Existing ID Tracker, inventory catalog, checkout, offline queues, installed PWA behavior, and dark-teal responsive design remain in place.
 
 ## Architecture
 
-This is a **static site** hosted on GitHub Pages — there's no traditional application server. All data lives in Google Sheets, reached through two independent Google Apps Script Web Apps, each deployed separately with its own URL:
+The frontend is static and deployable to GitHub Pages. Google Sheets remain the shared source of truth:
 
-| Backend | Purpose | Configured via |
-|---|---|---|
-| **ID Tracker script** | Reads/writes the ID Tracker sheet (`INVENTORY`, `W/Proj`, `DEPLOYED`, `ACCESS` tabs) | Home page → ⚙️ Setup |
-| **Inventory script** | Reads the Room Inventory sheet | Home page → ⚙️ Setup |
+| Source | Use |
+|---|---|
+| `[SUS] MEA ID tracker` | `MAIN`, `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, `ACCESS`, and new `ACTIVITY_LOG`/`IDEMPOTENCY_LOG` tabs |
+| `[2627] MEA Room Inventory` | Existing Catalog, order, and history backend |
 
-Both URLs are stored in the browser's `localStorage` and can be changed at any time from the Setup panel on the Home page — no rebuild or redeploy of the site required.
+The new Apps Script reference is [apps-script/sus-dashboard-reference.gs](apps-script/sus-dashboard-reference.gs). It contains no deployed URL or access token. The existing deployed script can be updated by merging its dashboard actions rather than replacing unrelated inventory/tracker actions.
 
-### Repo layout
+### Important files
 
+```text
+index.html                         PWA shell and Dashboard/Activity views
+inventory.js                       Existing app logic plus Dashboard navigation guard
+dashboard-rules.js                 Pure Needs deployment/readiness rules
+dashboard-model.js                 Pure normalization, totals, readiness, exceptions, activity merge
+dashboard.js                       Dashboard UI, API client, planner, polling, offline fallback
+dashboard.css                      Responsive Dashboard/Activity styling
+apps-script/sus-dashboard-reference.gs  Apps Script reference implementation
+tests/dashboard.test.js            Fixture-driven rule/model/backend-contract tests
+sw.js                              Network-first service worker, updated app shell and cache version
 ```
-index.html            Home page + Inventory/Cart/Checkout views
-inventory.js          Logic for the above (fetch calls, cart, checkout, offline cache)
-inventory.css         Shared styling — dark teal theme
-id-tracker.html       Standalone ID Tracker page (NFC + manual entry, own access gate)
-manifest.json         PWA manifest (installability, icons, theme color)
-sw.js                 Service worker — network-first caching for instant updates
-icons/                App icons for all PWA sizes, plus icons/ui/ interface SVGs
-brand/                Source logo assets
+
+## Dashboard data model and formulas
+
+The client normalizes one `dashboardData` response into member records, then derives all cards, readiness rows, filters, and exception views from that model. It does not calculate separate totals from separate UI components.
+
+**Needs deployment** is centralized in `dashboard-rules.js`:
+
+```text
+requiresId === true
+AND state is not DEPLOYED
+AND state is INVENTORY or WITH_PROJECT
 ```
 
----
+**Readiness percentage** is also centralized:
 
-## Setting up your own copy
+```text
+100%                                   when no assigned member requires an ID
+deployed required members / required members × 100, otherwise
+```
 
-### 1. Deploy the ID Tracker Apps Script
-1. Open your ID Tracker Google Sheet → **Extensions → Apps Script**
-2. Paste in the tracker script (handles `action=tracker`, `action=access`, `action=deets`) — the ID Tracker's Help & Setup page (step 2) has a hardened reference implementation of the sheet-write handler with an optional shared-secret token, a sheet whitelist, and per-sheet column matching
-3. **Deploy → New deployment → Web app** — execute as **Me**, access **Anyone**
-4. Copy the `/exec` URL
-5. **Recommended:** set a Script Property named `ACCESS_TOKEN` (Project Settings → Script Properties) with a value only your team knows, then paste that same value into the app's Settings → Access Token field. Without this, the deployed `/exec` URL has no authentication of its own — anyone who has it can call it directly, since Apps Script Web Apps don't support session-based auth. Apply the same token check to any `action=login` / `action=access` handlers in your full script, not just the write handler shown in Help & Setup.
+An available ID in Inventory or With Project counts under `IDs ready`, but not as deployed. Any missing/printing/unknown required ID or data blocker makes the project red; complete deployment is green; otherwise it is yellow.
 
-Required sheet tabs: `INVENTORY`, `W/Proj`, `DEPLOYED`, `ACCESS` (columns: ID Number, Name).
+MAIN project columns are detected dynamically. A non-reserved project column with a truthy value (`Yes`, `true`, `1`, or another non-empty value other than `No`/`false`/`0`) is treated as an assignment.
 
-### 2. Deploy the Inventory Apps Script
-1. Use a **separate** spreadsheet and **separate** script project
-2. Open your Room Inventory Sheet → **Extensions → Apps Script**
-3. Paste in the inventory script (handles `action=inventory`, `action=submitOrder`, `action=history`)
-4. Deploy the same way and copy its `/exec` URL
-5. **Recommended:** apply the same `ACCESS_TOKEN` script-property pattern as the ID Tracker script to `action=submitOrder` (the only endpoint here that writes data), and paste the value into Settings → Inventory Access Token. `action=submitOrder` payloads include a `clientId` field the client generates per order — check it against the last few written orders and skip the insert if it's already present, so a client retry after a dropped response can't create a duplicate order.
+## Apps Script setup and migration
 
-Expected sheet columns: `Type | Quantity | Location | Category | Notes` (the header row is auto-detected by matching "Type").
+1. Open the `[SUS] MEA ID tracker` spreadsheet and create the required tabs if they do not exist: `MAIN`, `INVENTORY`, `W/Proj`, `DEPLOYED`, `PRINTING`, and `ACCESS`.
+2. Add an `ACTIVITY_LOG` tab with exactly this header row:
 
-### 3. Configure the app
-1. Open the deployed site → Home → **⚙️ Setup**
-2. Paste both `/exec` URLs → Save
+   ```text
+   Event ID | Server timestamp | Actor ID | Actor name | Action type | Target ID | Target name | Project | Previous state | New state | Batch ID | Device/client ID | Result | Details
+   ```
 
-That's it — the site itself needs no further changes.
+3. Paste/merge `apps-script/sus-dashboard-reference.gs` into the tracker Apps Script project. It supports `login`, `access`, `meansList`, `dashboardData`, `activity`, `batchMove`, and a compatibility `tracker` bridge.
+4. Deploy a new Web App version, executing as the sheet owner. Keep the existing `/exec` URL configuration in the app; Apps Script changes require a new deployment version.
+5. Set the optional `ACCESS_TOKEN` Script Property and configure the same token in the existing ID Tracker settings. The Dashboard sends the logged-in actor ID and token; the backend verifies `ACCESS` levels server-side.
+6. The first state-changing request creates `IDEMPOTENCY_LOG` if necessary. Its schema is:
 
----
+   ```text
+   Idempotency key | Batch ID | Actor ID | Request hash | Server timestamp | Response JSON
+   ```
 
-## Notes & limitations
+7. Open the PWA, sign in with an `ACCESS` record, and open Dashboard. Do not use the batch action until the Activity Log tab is present and the read view succeeds.
 
-- **Web NFC** (tag scanning) only works in **Chrome on Android**. Manual ID entry works everywhere, including iOS and desktop browsers.
-- The service worker uses a **network-first** strategy on purpose, so a new deployment goes live on the next page load instead of getting stuck behind a stale cache.
-- All app data — config URLs, saved scan history, the offline sync queue — lives in each device's local storage. Nothing syncs directly between devices; the Google Sheets are the only shared source of truth.
-- Because both backends are Apps Script Web Apps, updating logic (not just data) means re-pasting the script and creating a **new deployment version** in that Sheet's Apps Script editor.
+The `[2627] MEA Room Inventory` Apps Script remains a separate backend and is configured through the existing Inventory Script URL field. No production Sheet data is modified by the repository test suite.
+
+## API contract
+
+Dashboard reads use the tracker endpoint with `action=dashboardData`, `actorId`, and optional `token`. The response is normalized from `members` plus `rawTabs` and includes `revision` and `generatedAt`.
+
+Activity reads use `action=activity&cursor=<last event ID>`. The response contains only events after the cursor, `nextCursor`, and the current revision. The Activity Log polls about every four seconds while visible; dashboard preview refreshes more slowly. Hidden tabs pause timers and visibility/online events refresh immediately.
+
+Batch writes use `POST ?action=batchMove` with a text/plain JSON body containing `actorId`, `actorName`, `project`, `destination` (`W/Proj` or `DEPLOYED`), `ids`, `batchId`, `idempotencyKey`, and `deviceId`.
+
+The reference write path acquires `LockService`, re-reads the state after acquiring the lock, validates every ID, and only then applies all changes and Activity Log rows. If any record is invalid or changed concurrently, the entire batch is rejected with per-record results and `BATCH_ATOMIC_ABORT`; no valid subset is applied. A repeated idempotency key returns the stored authoritative response and cannot create duplicate moves or events.
+
+## Permissions
+
+- `Admin`: Dashboard reads, deployment actions, exceptions, and full Activity Log.
+- `Dashboard`: read-only Dashboard and Activity Log.
+- `Tracker`: existing ID Tracker only.
+- Ordinary users: existing ordinary-user surfaces only.
+
+The UI hides/guards restricted navigation, but the Apps Script actions also require the actor ID to be present in `ACCESS` with the appropriate level. Hiding a button is not the authorization boundary.
+
+## Verification
+
+Run the repository tests with:
+
+```text
+node --test tests/dashboard.test.js tests/batch-simulator.test.js
+```
+
+The tests cover normal, missing, duplicate, conflicting, orphaned, printing, readiness, “Needs deployment”, activity de-duplication/order, and backend safeguard contracts. Apps Script execution itself requires the Google Apps Script runtime; use a copied test spreadsheet or fixtures and never the production tabs.
+
+For a deployment smoke test, verify these isolated scenarios against a test sheet: successful batch, partially invalid all-or-nothing batch, concurrent state conflict, duplicate idempotency key, activity added from a second browser/device, reconnect/visibility polling, cached offline display, and Admin/Dashboard/Tracker/ordinary-user access. Check both a narrow mobile viewport and a wide desktop viewport, then confirm the service worker cache version is updated and the app shell is served from the new deployment.
+
+## Existing limitations
+
+- Web NFC is supported only by Chrome on Android; manual ID entry works on other browsers.
+- Apps Script Web Apps do not provide persistent WebSockets, so cross-device activity is resilient cursor polling rather than a push channel.
+- Cached Dashboard/Activity data is device-local fallback only and is clearly labeled; the shared source of truth remains Google Sheets.
+- This first version intentionally offers review-only exception actions. Ambiguous data is never auto-fixed.

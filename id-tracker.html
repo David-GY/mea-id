@@ -1449,7 +1449,13 @@ function sheetColParams() {
   };
 }
 function authParams() {
-  return cfg.token ? { token: cfg.token } : {};
+  var params = cfg.token ? { token: cfg.token } : {};
+  var cached = getCachedAccess();
+  if (cached && cached.id) {
+    params.actorId = cached.id;
+    params.actorName = cached.name || '';
+  }
+  return params;
 }
 let activeTab     = 'INVENTORY';
 let isScanning    = false;
@@ -1507,7 +1513,7 @@ window.addEventListener('online', () => {
     || new URLSearchParams(window.location.search).get('id') || '';
   if (!idToVerify || !cfg.url) return;
 
-  fetch(cfg.url + '?' + new URLSearchParams({ action: 'access', id: idToVerify }).toString())
+  fetch(cfg.url + '?' + new URLSearchParams(Object.assign({ action: 'access', id: idToVerify }, authParams())).toString())
     .then(res => res.json())
     .then(json => {
       try { sessionStorage.removeItem('mea_offline_provisional'); } catch(e) {}
@@ -1538,7 +1544,7 @@ async function submitGate() {
   btn.textContent = 'Checking…';
 
   try {
-    const params = new URLSearchParams({ action: 'access', id });
+    const params = new URLSearchParams(Object.assign({ action: 'access', id }, authParams()));
     const res = await fetch(cfg.url + '?' + params.toString());
     const json = await res.json();
 
@@ -1580,7 +1586,7 @@ function loadMeansCacheIntoMemory() {
 async function refreshMeansList() {
   if (!cfg.url || !navigator.onLine) return;
   try {
-    const res = await fetch(cfg.url + '?' + new URLSearchParams({ action: 'meansList' }).toString());
+    const res = await fetch(cfg.url + '?' + new URLSearchParams(Object.assign({ action: 'meansList' }, authParams())).toString());
     const json = await res.json();
     if (json.ok && Array.isArray(json.members)) {
       localStorage.setItem(MEANS_CACHE_KEY, JSON.stringify({ members: json.members, syncedAt: Date.now() }));

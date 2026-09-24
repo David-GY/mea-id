@@ -391,7 +391,10 @@
     }
     let res, text;
     try {
-      res = await fetch(url + '?action=login&id=' + encodeURIComponent(idNumber));
+      const loginParams = new URLSearchParams({ action: 'login', id: idNumber });
+      const token = getTrackerToken();
+      if (token) loginParams.set('token', token);
+      res = await fetch(url + '?' + loginParams.toString());
       text = await res.text();
     } catch (networkErr) {
       console.error('[MEA Login] Network error during lookup:', networkErr);
@@ -445,6 +448,10 @@
     const dashOk = canOpenDashboard(state.lastId);
     trackerCard.classList.toggle('disabled', !trackerOk);
     dashCard.classList.toggle('disabled', !dashOk);
+    document.querySelectorAll('.restricted-dashboard-nav').forEach(btn => {
+      btn.classList.toggle('disabled', !dashOk);
+      btn.setAttribute('aria-hidden', dashOk ? 'false' : 'true');
+    });
 
     if (!getTrackerScriptUrl()) {
       trackerSub.textContent = 'Setup required — contact an admin';
@@ -538,9 +545,13 @@
 
   // Views that use the SUS/MEA identity header + the Home/Settings/Help
   // bottom nav instead of the standard app header + Catalog/Cart/Checkout nav.
-  const MAIN_VIEWS = ['home', 'settings', 'help', 'history'];
+  const MAIN_VIEWS = ['home', 'settings', 'help', 'history', 'dashboard', 'activity-log'];
 
   function showView(view) {
+    if ((view === 'dashboard' || view === 'activity-log') && !canOpenDashboard(state.lastId)) {
+      showToast('You don\'t have permission to open SUS Dashboard', true);
+      return;
+    }
     state.view = view;
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -568,6 +579,8 @@
 
     if (view === 'settings') {
       document.getElementById('settings-script-url').value = getTrackerScriptUrl();
+      const trackerTokenInput = document.getElementById('settings-tracker-token');
+      if (trackerTokenInput) trackerTokenInput.value = getTrackerToken();
       document.getElementById('settings-inventory-url').value = getInventoryScriptUrl();
       const tokenInput = document.getElementById('settings-inventory-token');
       if (tokenInput) tokenInput.value = getInventoryToken();
@@ -577,6 +590,7 @@
     if (view === 'cart') renderCart();
     if (view === 'checkout') renderCheckout();
     if (view === 'catalog') loadInventory();
+    document.dispatchEvent(new CustomEvent('mea:viewchange', { detail: { view: view } }));
   }
 
   // ── History view's Personal/Project tabs ──
@@ -888,7 +902,7 @@
         showToast('You don\'t have permission to open SUS Dashboard', true);
         return;
       }
-      showToast('SUS Dashboard is coming in a future update');
+      showView('dashboard');
     });
 
     const logoBtn = document.getElementById('logo-home-btn');
@@ -902,6 +916,7 @@
 
     document.getElementById('settings-save-btn').addEventListener('click', () => {
       const trackerUrl = document.getElementById('settings-script-url').value.trim();
+      const trackerToken = document.getElementById('settings-tracker-token').value.trim();
       const inventoryUrl = document.getElementById('settings-inventory-url').value.trim();
       const inventoryToken = document.getElementById('settings-inventory-token').value.trim();
       const status = document.getElementById('settingsStatus');
@@ -912,6 +927,7 @@
         return;
       }
       if (trackerUrl) saveTrackerScriptUrl(trackerUrl);
+      saveTrackerToken(trackerToken);
       if (inventoryUrl) saveInventoryScriptUrl(inventoryUrl);
       saveInventoryToken(inventoryToken);
 
@@ -1506,4 +1522,22 @@
   }
   function escapeAttr(str) {
     return String(str).replace(/'/g, "\\'");
+  }
+
+  function getTrackerToken() {
+    try {
+      const raw = localStorage.getItem(TRACKER_CFG_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return (parsed && parsed.token) ? String(parsed.token).trim() : '';
+    } catch(e) { return ''; }
+  }
+
+  function saveTrackerToken(token) {
+    let cfg = {};
+    try {
+      const raw = localStorage.getItem(TRACKER_CFG_KEY);
+      if (raw) cfg = JSON.parse(raw) || {};
+    } catch(e) {}
+    cfg.token = token || '';
+    localStorage.setItem(TRACKER_CFG_KEY, JSON.stringify(cfg));
   }

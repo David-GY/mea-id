@@ -16,6 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="inventory.css?v=3">
+<link rel="stylesheet" href="dashboard.css?v=1">
 </head>
 <body>
 <div class="desktop-frame">
@@ -123,6 +124,12 @@
           autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
       </div>
 
+      <div class="id-input-label" style="text-align:left;">ID TRACKER ACCESS TOKEN <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></div>
+      <div class="id-input-row">
+        <input type="password" id="settings-tracker-token" placeholder="Leave blank if your script doesn't require one"
+          autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
+      </div>
+
       <div class="id-input-label" style="text-align:left;">INVENTORY SCRIPT URL</div>
       <div class="id-input-row">
         <input type="url" id="settings-inventory-url" placeholder="https://script.google.com/macros/s/…/exec"
@@ -195,6 +202,94 @@
       <div class="history-list" id="history-total-list">
         <div class="history-empty">Nothing logged yet</div>
       </div>
+    </section>
+
+    <!-- ===================== View: SUS Dashboard ===================== -->
+    <section class="view dashboard-view" id="view-dashboard">
+      <div class="top-brand">
+        <img class="top-brand-mea" src="brand/mea-logo-lightgray.png" alt="MEA">
+        <img class="top-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
+      </div>
+      <div class="dashboard-title-row">
+        <div>
+          <div class="eyebrow">SUS OPERATIONS</div>
+          <h2 class="dashboard-title">ID Operations Dashboard</h2>
+          <p class="dashboard-subtitle">Deployment readiness, exceptions, and live activity.</p>
+        </div>
+        <div class="dashboard-connection" id="dashboard-connection-state" role="status" aria-live="polite">Not loaded</div>
+      </div>
+
+      <div class="dashboard-alert" id="dashboard-error" role="alert" hidden></div>
+      <div class="dashboard-loading" id="dashboard-loading" aria-label="Loading dashboard" hidden>
+        <div class="dashboard-skeleton-cards"><div class="skeleton dashboard-skeleton-card"></div><div class="skeleton dashboard-skeleton-card"></div><div class="skeleton dashboard-skeleton-card"></div></div>
+        <div class="skeleton dashboard-skeleton-panel"></div>
+        <div class="skeleton dashboard-skeleton-panel"></div>
+      </div>
+
+      <div id="dashboard-content" hidden>
+        <div class="dashboard-section-head compact-head">
+          <div><div class="eyebrow">AT A GLANCE</div><h3>Operations overview</h3></div>
+          <button type="button" class="text-button" id="dashboard-refresh-btn">Refresh</button>
+        </div>
+        <div class="dashboard-card-grid" id="dashboard-summary-cards" aria-label="ID operation totals"></div>
+
+        <div class="dashboard-panel">
+          <div class="dashboard-section-head"><div><div class="eyebrow">PROJECTS</div><h3>Project readiness</h3></div><span class="muted" id="readiness-formula-note">Deployment readiness</span></div>
+          <div class="readiness-list" id="dashboard-readiness-list"></div>
+        </div>
+
+        <div class="dashboard-panel">
+          <div class="dashboard-section-head"><div><div class="eyebrow">DATA QUALITY</div><h3>Exceptions inbox</h3></div><span class="muted" id="dashboard-exception-count">0 issues</span></div>
+          <div class="exceptions-list" id="dashboard-exceptions-list"></div>
+        </div>
+
+        <div class="dashboard-panel" id="deployment-planner-panel">
+          <div class="dashboard-section-head planner-head"><div><div class="eyebrow">CONTROLLED ACTIONS</div><h3>Project deployment planner</h3><p class="muted">Select a project, review the current state, then choose people to move.</p></div></div>
+          <div class="planner-controls">
+            <label class="dashboard-field">Project
+              <select id="dashboard-project-select" aria-label="Select a project"><option value="">Select a project</option></select>
+            </label>
+            <label class="dashboard-field">Destination
+              <select id="deployment-destination" aria-label="Deployment destination"><option value="W/Proj">With Project</option><option value="DEPLOYED">Deployed</option></select>
+            </label>
+          </div>
+          <div class="filter-chip-row" id="deployment-filters" role="group" aria-label="Deployment planner filters"></div>
+          <div class="selection-toolbar" id="deployment-selection-toolbar">
+            <span id="deployment-selection-count">0 selected</span>
+            <button type="button" class="btn-primary compact-action" id="deployment-move-btn" disabled>Move selected</button>
+          </div>
+          <div class="dashboard-result" id="deployment-result" role="status" aria-live="polite" hidden></div>
+          <div class="planner-list" id="deployment-list"></div>
+        </div>
+
+        <div class="dashboard-panel dashboard-preview-panel">
+          <div class="dashboard-section-head"><div><div class="eyebrow">AUDIT TRAIL</div><h3>Recent activity</h3></div><button type="button" class="text-button" id="view-all-activity-btn">View all activity</button></div>
+          <div class="activity-preview" id="dashboard-activity-preview"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== View: Activity Log ===================== -->
+    <section class="view dashboard-view activity-view" id="view-activity-log">
+      <div class="top-brand">
+        <img class="top-brand-mea" src="brand/mea-logo-lightgray.png" alt="MEA">
+        <img class="top-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
+      </div>
+      <div class="dashboard-title-row">
+        <div>
+          <div class="eyebrow">AUDIT TRAIL</div>
+          <h2 class="dashboard-title">Activity Log</h2>
+          <p class="dashboard-subtitle">Server-ordered ID operations shared across devices.</p>
+        </div>
+        <div class="dashboard-connection" id="activity-connection-state" role="status" aria-live="polite">Not loaded</div>
+      </div>
+      <div class="dashboard-alert" id="activity-error" role="alert" hidden></div>
+      <div class="activity-toolbar">
+        <span class="muted" id="activity-last-refresh">No successful refresh yet</span>
+        <button type="button" class="text-button" id="activity-refresh-btn">Refresh</button>
+      </div>
+      <div class="cached-note" id="activity-cached-note" hidden>Offline — showing cached activity from this device.</div>
+      <div class="activity-list" id="activity-list"></div>
     </section>
 
     <!-- ===================== View: Catalog ===================== -->
@@ -286,6 +381,8 @@
       <div class="nav-btn" data-mainview="home" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/home.svg" alt=""></span>Home</div>
       <div class="nav-btn" id="nav-slot-2" data-mainview="settings" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/cog.svg" alt=""></span>Settings</div>
       <div class="nav-btn" id="nav-slot-3" data-mainview="help" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/contact.svg" alt=""></span>Help</div>
+      <div class="nav-btn restricted-dashboard-nav" data-mainview="dashboard" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/chart-bar.svg" alt=""></span>Dashboard</div>
+      <div class="nav-btn restricted-dashboard-nav" data-mainview="activity-log" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/list.svg" alt=""></span>Activity</div>
     </div>
     <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a></div>
   </nav>
@@ -309,6 +406,19 @@
     </div>
   </div>
 
+  <!-- ===================== Deployment confirmation ===================== -->
+  <div class="modal-backdrop" id="deployment-confirm-backdrop" aria-hidden="true">
+    <div class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="deployment-confirm-title">
+      <h3 id="deployment-confirm-title">Confirm ID move</h3>
+      <div id="deployment-confirm-summary" class="deployment-confirm-summary"></div>
+      <div class="deployment-confirm-list" id="deployment-confirm-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="deployment-confirm-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="deployment-confirm-submit">Confirm move</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== Toast ===================== -->
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -325,6 +435,9 @@
   </div>
 
 </div>
-<script src="inventory.js?v=3"></script>
+<script src="dashboard-rules.js?v=1"></script>
+<script src="dashboard-model.js?v=1"></script>
+<script src="inventory.js?v=4"></script>
+<script src="dashboard.js?v=1"></script>
 </body>
 </html>
