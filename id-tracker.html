@@ -2228,7 +2228,7 @@ async function testConn() {
     const testToken = document.getElementById('s-token').value.trim();
     const params = new URLSearchParams(Object.assign(
       { action: 'tracker', sheet: 'INVENTORY', col: 'A', data: '000000' },
-      sheetColParams(), testToken ? { token: testToken } : {}
+      sheetColParams(), authParams(), testToken ? { token: testToken } : {}
     ));
     const res  = await fetch(url + '?' + params.toString());
     const text = await res.text();

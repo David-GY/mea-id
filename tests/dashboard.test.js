@@ -99,7 +99,14 @@ test('reference Apps Script includes locked re-read, idempotency, permissions, a
     'ACTIVITY_LOG',
     'BATCH_ATOMIC_ABORT',
     'dashboardData_',
-    'activity_'
+    'activity_',
+    "case 'deets'",
+    "case 'tracker'",
+    'function bulkMove()',
+    'function stateTable_('
   ]) assert.ok(source.includes(required), `missing backend safeguard: ${required}`);
   assert.equal(/AKfycb/.test(source), false);
+  assert.equal((source.match(/^function doGet\(/gm) || []).length, 1);
+  assert.equal((source.match(/^function doPost\(/gm) || []).length, 1);
+  assert.equal((source.match(/^function respond_\(/gm) || []).length, 1);
 });
