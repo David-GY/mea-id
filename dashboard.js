@@ -257,7 +257,7 @@
   function stateLabel(state) {
     return ({
       INVENTORY: 'Inventory', WITH_PROJECT: 'With Project', DEPLOYED: 'Deployed',
-      MISSING: 'Missing', NEEDS_PRINTING: 'Needs Printing', NOT_REQUIRED: 'No ID Required', UNKNOWN: 'Unknown'
+      MISSING: 'Missing', NEEDS_PRINTING: 'Needs Printing', NOT_REQUIRED: 'Missing', UNKNOWN: 'Unknown'
     })[state] || state;
   }
 
