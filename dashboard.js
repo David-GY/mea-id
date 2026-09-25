@@ -29,10 +29,7 @@
     ['all', 'All members'],
     ['inventory', 'In Inventory'],
     ['with-project', 'With Project'],
-    ['deployed', 'Deployed'],
-    ['needs-printing', 'Needs printing'],
-    ['missing', 'Missing ID'],
-    ['data-issues', 'Has data issues']
+    ['deployed', 'Deployed']
   ];
 
   function escapeHtml(value) {
@@ -187,7 +184,6 @@
     setLoading(false);
     renderSummaryCards(data);
     renderReadiness(data);
-    renderExceptions(data);
     renderProjectOptions(data);
     renderFilters();
     renderRoster();
@@ -200,10 +196,7 @@
       ['totalRegistered', 'Total registered MEAns', 'chart-bar.svg'],
       ['inventory', 'IDs in Inventory', 'archive-box.svg'],
       ['withProject', 'IDs With Project', 'folder.svg'],
-      ['deployed', 'IDs Deployed', 'check.svg'],
-      ['needsPrinting', 'IDs needing printing', 'warning.svg'],
-      ['requiredMissing', 'Required IDs missing', 'warning.svg'],
-      ['dataIssues', 'Duplicate or incomplete data', 'info.svg']
+      ['deployed', 'IDs Deployed', 'check.svg']
     ];
     const container = document.getElementById('dashboard-summary-cards');
     if (!container) return;
@@ -233,23 +226,6 @@
       </div>`).join('');
   }
 
-  function renderExceptions(data) {
-    const list = document.getElementById('dashboard-exceptions-list');
-    const count = document.getElementById('dashboard-exception-count');
-    if (!list) return;
-    const exceptions = Model.detectExceptions(data);
-    if (count) count.textContent = exceptions.length + (exceptions.length === 1 ? ' issue' : ' issues');
-    if (!exceptions.length) {
-      list.innerHTML = '<div class="dashboard-empty success-empty"><img class="svg-icon" src="icons/ui/check.svg" alt="">No exceptions detected.</div>';
-      return;
-    }
-    list.innerHTML = exceptions.slice(0, 20).map(issue => `
-      <div class="exception-row severity-${escapeAttr(issue.severity)}">
-        <span class="severity-dot" aria-hidden="true"></span>
-        <span class="exception-main"><strong>${escapeHtml(issue.type)}</strong><span>${escapeHtml(issue.explanation)}</span></span>
-      </div>`).join('') + (exceptions.length > 20 ? `<div class="muted exception-overflow">Showing 20 of ${exceptions.length} exceptions.</div>` : '');
-  }
-
   function renderProjectOptions(data) {
     const select = document.getElementById('dashboard-project-select');
     if (!select) return;
@@ -274,10 +250,6 @@
       case 'inventory': return member.state === 'INVENTORY';
       case 'with-project': return member.state === 'WITH_PROJECT';
       case 'deployed': return member.state === 'DEPLOYED';
-      case 'needs-printing': return member.state === 'NEEDS_PRINTING';
-      case 'missing': return member.state === 'MISSING' || (member.requiresId === true && member.state === 'UNKNOWN');
-      case 'not-required': return member.requiresId === false;
-      case 'data-issues': return (member.dataIssues || []).length > 0 || (member.warnings || []).length > 0;
       default: return true;
     }
   }
@@ -302,13 +274,10 @@
       list.innerHTML = `<div class="dashboard-empty">No members match “${escapeHtml(FILTERS.find(item => item[0] === dashboardState.filter)[1])}”.</div>`;
       return;
     }
-    list.innerHTML = members.map(member => {
-      const warnings = (member.dataIssues || []).concat(member.warnings || []);
-      return `<div class="planner-member-row${warnings.length ? ' has-issues' : ''}">
-        <div class="planner-member-main"><div class="planner-name"><strong>${escapeHtml(member.fullName || 'Unnamed member')}</strong>${member.nickname ? `<span class="nickname">“${escapeHtml(member.nickname)}”</span>` : ''}</div><div class="planner-meta">${escapeHtml(member.idNumber || 'No ID')} · ${escapeHtml(member.department || 'Department not set')}</div>${warnings.length ? `<div class="planner-warning"><img class="svg-icon" src="icons/ui/warning.svg" alt="">${escapeHtml(warnings.join(' · '))}</div>` : ''}</div>
+    list.innerHTML = members.map(member => `<div class="planner-member-row">
+        <div class="planner-member-main"><div class="planner-name"><strong>${escapeHtml(member.fullName || 'Unnamed member')}</strong>${member.nickname ? `<span class="nickname">“${escapeHtml(member.nickname)}”</span>` : ''}</div><div class="planner-meta">${escapeHtml(member.idNumber || 'No ID')} · ${escapeHtml(member.department || 'Department not set')}</div></div>
         <div class="planner-status"><span class="state-pill state-${member.state.toLowerCase()}">${escapeHtml(stateLabel(member.state))}</span></div>
-      </div>`;
-    }).join('');
+      </div>`).join('');
   }
 
   function focusRoster(filter) {

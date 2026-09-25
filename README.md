@@ -8,7 +8,6 @@ A mobile-first Progressive Web App for the Management Engineering Association. I
 - Read-only project roster with project/member selection and sheet-backed state filters.
 - Interactive ID operation totals derived from one normalized tracker response.
 - Project Readiness Matrix with reusable readiness calculation and traffic-light status.
-- Data-quality Exceptions Inbox. Ambiguous records are review-only; the app never silently repairs them.
 - Dedicated cross-device Activity Log with a compact dashboard preview, incremental polling, cached offline fallback, visibility/online recovery, and exponential retry backoff.
 - Existing ID Tracker, inventory catalog, checkout, offline queues, installed PWA behavior, and dark-teal responsive design remain in place.
 
@@ -29,7 +28,7 @@ The consolidated Apps Script is [apps-script/sus-dashboard-reference.gs](apps-sc
 index.html                         PWA shell and Dashboard/Activity views
 inventory.js                       Existing app logic plus Dashboard navigation guard
 dashboard-rules.js                 Pure Needs deployment/readiness rules
-dashboard-model.js                 Pure normalization, totals, readiness, exceptions, activity merge
+dashboard-model.js                 Pure normalization, totals, readiness, and activity merge
 dashboard.js                       Read-only Dashboard UI, API client, polling, offline fallback
 dashboard.css                      Responsive Dashboard/Activity styling
 apps-script/sus-dashboard-reference.gs  Apps Script reference implementation
@@ -39,7 +38,7 @@ sw.js                              Network-first service worker, updated app she
 
 ## Dashboard data model and formulas
 
-The client normalizes one `dashboardData` response into member records, then derives all cards, readiness rows, filters, and exception views from that model. It does not calculate separate totals from separate UI components.
+The client normalizes one `dashboardData` response into member records, then derives all cards, readiness rows, and roster filters from that model. It does not calculate separate totals from separate UI components.
 
 **Needs deployment** is centralized in `dashboard-rules.js`:
 
@@ -88,7 +87,7 @@ The Dashboard uses read-only `GET` requests for `dashboardData` and `activity`. 
 
 ## Permissions
 
-- `Admin`: Dashboard reads, exceptions, and full Activity Log.
+- `Admin`: Dashboard reads and full Activity Log.
 - `Dashboard`: read-only Dashboard and Activity Log.
 - `Tracker`: existing ID Tracker only.
 - Ordinary users: existing ordinary-user surfaces only.
@@ -112,4 +111,3 @@ For a deployment smoke test, verify the sheet snapshot, state-tab conflict detec
 - Web NFC is supported only by Chrome on Android; manual ID entry works on other browsers.
 - Apps Script Web Apps do not provide persistent WebSockets, so cross-device activity is resilient cursor polling rather than a push channel.
 - Cached Dashboard/Activity data is device-local fallback only and is clearly labeled; the shared source of truth remains Google Sheets.
-- This first version intentionally offers review-only exception actions. Ambiguous data is never auto-fixed.
