@@ -272,7 +272,7 @@
       getProjectOptions: () => [
         'Personal','STEPS', 'RWGA', 'ACTS', 'MEAMORE', 'FIESTA', 'PRIME', 'ACSC', 'LEADS',
         'ABM', 'MEA CARES', 'TEDx', 'CB', 'IMD', 'MCD', 'HR:TD', 'HR:MEM',
-        'YDC', 'EXT', 'FIN', 'SUS'
+        'YDC', 'EXT', 'FIN', 'SUS', 'COMEALEC'
       ],
       lookupIdNumber: (idNumber) => ({
         found: /^\d{6}$/.test(String(idNumber).trim()),
