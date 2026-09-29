@@ -267,13 +267,15 @@
     window.addEventListener('online', () => { flushPendingOrders(); });
     setInterval(() => { if (navigator.onLine) flushPendingOrders(); }, 20000);
 
+    const PROJECT_OPTIONS = [
+      'Personal','STEPS', 'RWGA', 'ACTS', 'MEAMORE', 'FIESTA', 'PRIME', 'ACSC', 'LEADS',
+      'ABM', 'MEA CARES', 'TEDx', 'CB', 'IMD', 'MCD', 'HR:TD', 'HR:MEM',
+      'YDC', 'EXT', 'FIN', 'SUS', 'COMEALEC'
+    ];
+
     const localMethods = {
       getInventory: () => fetchLiveInventory(),
-      getProjectOptions: () => [
-        'Personal','STEPS', 'RWGA', 'ACTS', 'MEAMORE', 'FIESTA', 'PRIME', 'ACSC', 'LEADS',
-        'ABM', 'MEA CARES', 'TEDx', 'CB', 'IMD', 'MCD', 'HR:TD', 'HR:MEM',
-        'YDC', 'EXT', 'FIN', 'SUS', 'COMEALEC'
-      ],
+      getProjectOptions: () => PROJECT_OPTIONS.slice(),
       lookupIdNumber: (idNumber) => ({
         found: /^\d{6}$/.test(String(idNumber).trim()),
         idNumber: String(idNumber).trim(), name: '', level: 'NONE',
@@ -563,6 +565,10 @@
 
     const isMain = MAIN_VIEWS.includes(view);
     const isLogin = view === 'login';
+
+    // The desktop sidebar is hidden on the login screen. Keep the wide-screen
+    // content centered in the viewport until the sidebar is actually visible.
+    document.body.classList.toggle('has-desktop-sidebar', !isLogin);
 
     // Login/Home/Settings/Help/History all use their own top brand block —
     // hide the shared app chrome so it isn't duplicated. Catalog/Cart/
@@ -1008,7 +1014,10 @@
   function loadProjectOptions() {
     google.script.run
       .withSuccessHandler(options => {
-        state.projectOptions = options || [];
+        // Keep required client-side options available even when an older
+        // Apps Script deployment returns its own, incomplete list.
+        const liveOptions = Array.isArray(options) ? options : [];
+        state.projectOptions = Array.from(new Set([...liveOptions, 'COMEALEC']));
         const select = document.getElementById('project-select');
         select.innerHTML = state.projectOptions
           .map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`)

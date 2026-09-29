@@ -1143,8 +1143,19 @@ select option:hover {
   #app {
     min-height: 100vh;
     max-width: 1400px;
-    margin: 0 0 0 272px;
+    margin: 0 auto;
     padding-bottom: 40px;
+  }
+
+  /* The sidebar is hidden on the initial login screen. Without this state
+     class, the desktop content keeps the sidebar's left offset and appears
+     shifted to the right on wide displays. */
+  body.has-desktop-sidebar #app {
+    /* Keep the content column centered in the space to the right of the
+       sidebar, including when the viewport is wider than the 1400px cap. */
+    width: min(1400px, calc(100% - 272px));
+    margin-left: max(272px, calc((100% + 272px - 1400px) / 2));
+    margin-right: 0;
   }
 
   .mea-header {
