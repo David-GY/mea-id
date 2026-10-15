@@ -1357,8 +1357,9 @@ select option:hover {
 .workflow-sheet fieldset { border: 0; margin: 24px 0; }
 .workflow-sheet legend, .sheet-location { color: var(--teal-pale); }
 .workflow-actions { display: flex; gap: 12px; margin-top: 12px; }
-.workflow-actions label { display: flex; align-items: center; gap: 10px; flex: 1; min-height: 48px; padding: 12px; border: 1px solid var(--teal-light); border-radius: var(--radius-sm); cursor: pointer; }
-.workflow-actions label:has(input:checked) { background: var(--teal-mid); }
+.workflow-actions label { position: relative; display: flex; align-items: center; justify-content: center; flex: 1; min-height: 44px; padding: 10px 16px; border: 1px solid var(--border-mid); border-radius: var(--radius-sm); cursor: pointer; font-weight: 600; text-align: center; transition: background .15s, border-color .15s; }
+.workflow-actions label:has(input:checked) { background: var(--teal-mid); border-color: var(--teal-light); }
+.workflow-actions label:has(input:focus-visible) { outline: 2px solid var(--teal-light); outline-offset: 3px; }
 .sheet-close { position: absolute; right: 12px; top: 12px; min-width: 48px; min-height: 48px; border: 0; border-radius: 50%; color: var(--white); background: var(--surface-hi); font-size: 26px; cursor: pointer; }
 .workflow-open { overflow: hidden; }
 #sheet-error, #return-error, .workflow-error { color: #ffb4b4; }
@@ -1379,7 +1380,13 @@ body:has(#cart-shortcut:not([hidden])) #catalog-container { padding-bottom: 80px
 .install-guide img { vertical-align: middle; margin-right: 8px; }
 .item-card[role=button], .item-row[role=button] { cursor: pointer; }
 .workflow-sheet button, .workflow-sheet input { min-height: 48px; font: inherit; }
-.workflow-sheet input[type=radio] { min-height: auto; width: 20px; height: 20px; accent-color: var(--teal-light); }
+/* Keep native radio semantics and arrow-key navigation without a visible circle. */
+.workflow-sheet .workflow-actions input[type=radio] { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.workflow-sheet .qty-stepper { display: inline-flex; gap: 0; padding: 2px; border: 1px solid var(--border-mid); border-radius: var(--radius-sm); background: var(--surface); }
+.workflow-sheet .qty-stepper .qty-btn { width: 44px; height: 44px; min-height: 44px; background: transparent; border-radius: 8px; font-size: 20px; }
+.workflow-sheet .qty-stepper .qty-btn:active { background: var(--surface-hi); transform: none; }
+.workflow-sheet .qty-stepper input { width: 52px; height: 36px; min-height: 36px; padding: 0 4px; border: 0; border-radius: 0; background: transparent; font-size: 16px; line-height: 1.25; appearance: textfield; -moz-appearance: textfield; }
+.workflow-sheet .qty-stepper input::-webkit-inner-spin-button, .workflow-sheet .qty-stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .workflow-sheet :focus-visible { outline: 2px solid var(--teal-light); outline-offset: 3px; }
 @media(min-width: 768px) { #workflow-dialog { max-width: 520px; margin: auto; border-radius: 22px; } .workflow-sheet { padding: 32px; } }
 @media(prefers-reduced-motion: reduce) { #workflow-dialog, #cart-shortcut { animation: none; transition: none; } }
