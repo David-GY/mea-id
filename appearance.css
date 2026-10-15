@@ -147,3 +147,10 @@ select option, select option:checked, select option:hover { background: var(--ca
 
 .catalog-toolbar { padding: 8px 10px; background: var(--card); border: 1px solid var(--border-dark); border-radius: 14px; gap: 12px; }
 #view-checkout > .btn-secondary, #view-cart > .btn-secondary { background: var(--card); }
+
+/* Pale transparent brand marks need dark ink on cream surfaces. */
+:root[data-appearance="coffee"] :is(.top-brand, .sidebar-brand, .login-logo) img,
+:root[data-appearance="garden"] :is(.top-brand, .sidebar-brand, .login-logo) img {
+  filter: brightness(0);
+  opacity: .82;
+}
