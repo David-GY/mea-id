@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MEA</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a3535">
@@ -15,8 +15,10 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="inventory.css?v=3">
+<link rel="stylesheet" href="inventory.css?v=4">
 <link rel="stylesheet" href="dashboard.css?v=1">
+<link rel="stylesheet" href="appearance.css">
+<script src="appearance.js"></script>
 </head>
 <body>
 <div class="desktop-frame">
@@ -55,7 +57,7 @@
           <input type="text" inputmode="numeric" id="login-id-input" placeholder="e.g. 212345" maxlength="6"
             style="text-align:center;flex:1 1 100%;" autocomplete="off" spellcheck="false" />
         </div>
-        <button class="btn-primary login-enter-btn" id="login-enter-btn">ENTER</button>
+        <button class="btn-primary login-enter-btn" id="login-enter-btn">ENTER</button><button type="button" class="btn-secondary" id="google-login">Continue with school Google account</button><p class="case-hint" id="google-login-status">Google is optional. Your ID still works.</p>
         <div class="login-error" id="login-error"></div>
       </div>
     </section>
@@ -109,6 +111,7 @@
 
     <!-- ===================== View: Settings ===================== -->
     <section class="view" id="view-settings">
+
       <div class="top-brand">
         <img class="top-brand-mea" src="brand/mea-logo-lightgray.png" alt="MEA">
         <img class="top-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
@@ -117,6 +120,8 @@
         <div class="identity-id" id="settings-identity-id">—</div>
         <div class="identity-name" id="settings-identity-name">—</div>
       </div>
+
+      <div class="appearance-setting"><label for="appearance-select">Appearance</label><select id="appearance-select"><option value="dark">MEA Green</option><option value="garden">Garden Green</option><option value="coffee">Coffee</option><option value="plum">Plum</option></select></div>
 
       <div class="id-input-label" style="text-align:left;margin-top:6px;">ID TRACKER SCRIPT URL</div>
       <div class="id-input-row">
@@ -145,7 +150,7 @@
       <div class="setup-status" id="settingsStatus"></div>
 
       <div class="home-nav-list home-nav-list-single" style="margin-top:22px;">
-        <div class="home-nav-card" id="settings-install-btn" role="button" tabindex="0">
+        <button type="button" class="btn-secondary" id="google-connect">Connect school Google account</button><p id="google-account-status" role="status"></p><div class="home-nav-card" id="settings-install-btn" role="button" tabindex="0">
           <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">Download MEA App</div>
@@ -193,12 +198,12 @@
         </select>
       </div>
 
-      <div class="history-section-label">Pending</div>
+      <div class="history-section-label">Outstanding borrows</div>
       <div class="history-list" id="history-pending-list">
         <div class="history-empty">No pending requests yet</div>
       </div>
 
-      <div class="history-section-label">Total</div>
+      <div class="history-section-label">Completed activity</div>
       <div class="history-list" id="history-total-list">
         <div class="history-empty">Nothing logged yet</div>
       </div>
@@ -308,7 +313,7 @@
     <!-- ===================== View: Cart ===================== -->
     <section class="view" id="view-cart">
       <h2 class="state-title" style="text-align:left;font-size:19px;">Your Cart</h2>
-      <div class="item-list" id="cart-list"></div>
+      <p id="cart-save-status" role="status"></p><div class="item-list" id="cart-list"></div><div id="cart-feedback" role="status"></div>
       <button class="btn-primary" id="cart-checkout-btn" onclick="showView('checkout')" disabled>CHECKOUT</button>
     </section>
 
@@ -317,18 +322,12 @@
       <span class="field-label">ID Number</span>
       <div class="field-static" id="checkout-id-display">Not scanned yet</div>
 
-      <span class="field-label">Case</span>
-      <div class="case-toggle" id="case-toggle">
-        <button type="button" class="case-btn active" data-case="BORROWING">Borrow</button>
-        <button type="button" class="case-btn" data-case="CONSUMING">Consume</button>
-        <button type="button" class="case-btn" data-case="RETURNING">Return</button>
-      </div>
-      <div class="case-hint" id="case-hint">Comment the quantity to be borrowed, project/department, and point person on the quantity column of the item.</div>
+      <p class="case-hint">Actions are chosen per item. Return borrowed items from History.</p>
 
-      <span class="field-label">Project</span>
+      <label class="field-label" for="project-select">Project / Department</label>
       <select id="project-select"></select>
 
-      <span class="field-label">Committee/Reason</span>
+      <label class="field-label" for="committee-input">Committee / Reason</label>
       <input type="text" class="text-field" id="committee-input" placeholder="Enter committee name" />
 
       <span class="field-label">Order Summary</span>
@@ -379,7 +378,7 @@
     <div class="install-banner-row">
       <div class="install-banner-icon"><img src="icons/icon-96.png" alt=""></div>
       <div class="install-banner-text">
-        <div class="install-banner-title" id="install-banner-title">Install the MEA app</div>
+        <div class="install-banner-title" id="install-banner-title">Install MEA App</div>
         <div class="install-banner-sub" id="install-banner-sub">Add it to your home screen for quick, full-screen access.</div>
       </div>
       <div class="install-banner-actions">
@@ -411,7 +410,12 @@
 </div>
 <script src="dashboard-rules.js?v=1"></script>
 <script src="dashboard-model.js?v=1"></script>
-<script src="inventory.js?v=4"></script>
+<script src="app-config.js"></script>
+<script src="cart-model.js"></script>
+<script src="inventory.js?v=5"></script>
+<script src="workflow.js"></script>
 <script src="dashboard.js?v=2"></script>
+<dialog id="workflow-dialog" aria-labelledby="workflow-title"><div class="workflow-sheet"><button type="button" class="sheet-close" aria-label="Close dialog">×</button><div id="workflow-body"></div></div></dialog>
+<button type="button" id="cart-shortcut" class="btn-primary" hidden>View cart</button>
 </body>
 </html>

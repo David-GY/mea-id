@@ -89,16 +89,17 @@
         console.log('[MEA Inventory] Loaded', json.items.length, 'items from the sheet.');
         window.__meaInventoryDebugError = null;
         const mapped = json.items.map((item, i) => {
-          const rawQty = String(item.qty || '').trim();
-          const numericQty = parseInt(rawQty, 10);
+          const rawQty = String(item.qty ?? '').trim();
+          const numericQty = MeaCart.availability(rawQty).value;
           return {
-            id: 'INV-' + i,
+            id: item.id || 'legacy:' + JSON.stringify([item.title, item.location, item.category]),
+            stableId: !!item.id,
             title: item.title || 'Untitled',
             category: item.category || 'Miscellaneous',
             location: item.location || '',
             notes: item.notes || '',
             qtyDisplay: rawQty || '—',
-            qtyAvailable: !isNaN(numericQty) ? numericQty : null // null = uncapped (e.g. "*", "2 packs")
+            qtyAvailable: numericQty // null = uncapped (e.g. "*", "2 packs")
           };
         });
         setCachedInventory(mapped); // remember this for the next time we're offline
@@ -126,8 +127,9 @@
     }
 
     function savePendingOrders(list) {
-      try { localStorage.setItem(PENDING_ORDERS_KEY, JSON.stringify(list)); } catch(e) {}
+      localStorage.setItem(PENDING_ORDERS_KEY, JSON.stringify(list));
       updateOrderSyncPill();
+      document.dispatchEvent(new Event('mea:queuechange'));
     }
 
     function getFailedOrders() {
@@ -136,7 +138,7 @@
     }
 
     function saveFailedOrders(list) {
-      try { localStorage.setItem(FAILED_ORDERS_KEY, JSON.stringify(list)); } catch(e) {}
+      localStorage.setItem(FAILED_ORDERS_KEY, JSON.stringify(list));
     }
 
     function enqueuePendingOrder(payload, clientId) {
@@ -152,8 +154,9 @@
     function updateOrderSyncPill() {
       const pill = document.getElementById('orderSyncPill');
       if (!pill) return;
-      const count = getPendingOrders().length;
-      const failedCount = getFailedOrders().length;
+      const owner = getSavedLogin()?.idNumber;
+      const count = getPendingOrders().filter(x => x.payload.idNumber === owner).length;
+      const failedCount = getFailedOrders().filter(x => x.payload.idNumber === owner).length;
       if (count === 0 && failedCount === 0) {
         pill.classList.remove('show');
         return;
@@ -198,7 +201,9 @@
       catch (parseErr) { throw new Error('Script returned an unexpected response.'); }
 
       if (!json || !json.ok) {
-        throw new Error((json && json.error) ? json.error : 'Script reported an error.');
+        const error = new Error((json && json.error) ? json.error : 'Script reported an error.');
+        error.permanent = !!(json && json.retryable === false);
+        throw error;
       }
       return json;
     }
@@ -288,17 +293,17 @@
         orders.unshift({ ...payload, createdAt: new Date().toISOString() });
         localStorage.setItem('mea_inventory_orders', JSON.stringify(orders));
 
-        const clientId = crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
+        const clientId = payload.clientId || crypto.randomUUID();
 
         // No URL configured yet — nothing to sync to, but don't lose the order.
         if (!getMeaInventoryScriptUrl()) {
-          enqueuePendingOrder(payload);
+          enqueuePendingOrder(payload, clientId);
           return { success: true, queued: true, reason: 'not-configured' };
         }
 
         // Offline — skip straight to the queue, no point trying the network.
         if (!navigator.onLine) {
-          enqueuePendingOrder(payload);
+          enqueuePendingOrder(payload, clientId);
           return { success: true, queued: true, reason: 'offline' };
         }
 
@@ -309,6 +314,7 @@
           const json = await trySubmitOrderToSheet(payload, clientId);
           return { success: true, queued: false, orderId: 'ORD-' + Date.now(), logged: json.logged };
         } catch(err) {
+          if (err.permanent) throw err;
           enqueuePendingOrder(payload, clientId);
           return { success: true, queued: true, reason: 'error', message: err.message };
         }
@@ -643,22 +649,23 @@
   // ── History data: fetched from the Inventory Apps Script (action=history),
   // cached locally so History still shows the last-known data offline,
   // exactly like the Catalog's inventory cache.
-  const HISTORY_CACHE_KEY = 'mea_history_cache';
+  function historyCacheKey() { return 'mea_history_cache_v2:' + (state.lastId?.idNumber || 'anonymous'); }
 
   function getCachedHistory() {
     try {
-      const raw = localStorage.getItem(HISTORY_CACHE_KEY);
+      const raw = localStorage.getItem(historyCacheKey());
       return raw ? JSON.parse(raw) : null; // { records, syncedAt }
     } catch(e) { return null; }
   }
 
   function setCachedHistory(records) {
     try {
-      localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify({ records, syncedAt: Date.now() }));
+      localStorage.setItem(historyCacheKey(), JSON.stringify({ records, syncedAt: Date.now() }));
     } catch(e) {}
   }
 
   async function fetchHistoryRecords() {
+    const ownerKey = historyCacheKey();
     const url = getInventoryScriptUrl();
     if (!url) return { records: [], offline: false, error: 'No Inventory Script URL configured yet.' };
 
@@ -668,9 +675,12 @@
     }
 
     try {
-      const res = await fetch(url + '?action=history');
+      const params = new URLSearchParams({action: 'history'});
+      if (getInventoryToken()) params.set('token', getInventoryToken());
+      const res = await fetch(url + '?' + params);
       const json = await res.json();
       if (json && json.ok && Array.isArray(json.records)) {
+        if (ownerKey !== historyCacheKey()) return {records: [], offline: false};
         setCachedHistory(json.records);
         return { records: json.records, offline: false };
       }
@@ -688,7 +698,8 @@
 
   function historyRowHtml(rec) {
     const when = rec.time ? new Date(rec.time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-    const caseLabel = rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : 'Borrowed');
+    const caseLabel = rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
+    const canReturn = state.historyTab === 'personal' && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false;
     return `
       <div class="history-item">
         <div class="history-item-main">
@@ -698,6 +709,9 @@
         <div class="history-item-side">
           <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>
           <div class="history-item-date">${when}</div>
+          ${rec.caseType === 'BORROWING' ? `<div>${MeaCart.outstanding(rec)} remaining</div>` : ''}
+          ${canReturn ? `<button type="button" class="btn-secondary history-return" data-return-id="${escapeHtml(rec.recordId)}">Return items</button>` : ''}
+          ${rec.caseType === 'BORROWING' && !rec.resolved && !canReturn && state.historyTab === 'personal' ? '<small>Contact SUS to reconcile this legacy borrow.</small>' : ''}
         </div>
       </div>`;
   }
@@ -731,8 +745,9 @@
       scoped = records.filter(r => r.project === chosen);
     }
 
-    const pending = scoped.filter(r => !r.resolved);
-    const total = scoped.filter(r => r.resolved);
+    window.meaHistoryRecords = records;
+    const pending = scoped.filter(r => r.caseType === 'BORROWING' && !r.resolved);
+    const total = scoped.filter(r => r.caseType !== 'BORROWING' || r.resolved);
 
     const offlineNote = offline
       ? `<div class="history-offline-note"><img class="svg-icon icon-inline" src="icons/ui/wifi.svg" alt="">${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
@@ -862,6 +877,7 @@
 
       state.lastId = result;
       saveLogin(result);
+      window.meaSwitchAccount?.();
       renderIdentity();
       input.value = '';
       showView('home');
@@ -951,8 +967,13 @@
    * page link (mobile) or either sidebar's pinned "Log out" (desktop).
    */
   function performLogout() {
+    window.meaBeforeLogout?.();
+    historyLoadToken++;
     clearLogin();
     state.lastId = null;
+    state.cart = {};
+    window.meaSwitchAccount?.();
+    hideInstallBanner();
     const loginInput = document.getElementById('login-id-input');
     const loginErr = document.getElementById('login-error');
     if (loginInput) loginInput.value = '';
@@ -978,6 +999,7 @@
     google.script.run
       .withSuccessHandler(items => {
         state.inventory = items || [];
+        window.meaReconcileCart?.();
         renderCategoryChips();
         renderCatalog();
       })
@@ -1022,6 +1044,7 @@
         select.innerHTML = state.projectOptions
           .map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`)
           .join('');
+        window.meaRestoreFields?.();
 
         const historySelect = document.getElementById('history-project-select');
         if (historySelect) {
@@ -1110,7 +1133,7 @@
 
     if (!state.inventory.length) {
       container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
-      if (countEl) countEl.textContent = 'Tap an item to add it to your cart';
+      if (countEl) countEl.textContent = 'Tap an item to borrow or consume';
       return;
     }
 
@@ -1120,7 +1143,7 @@
     if (countEl) {
       countEl.textContent = filtered
         ? visible.length + (visible.length === 1 ? ' item found' : ' items found')
-        : 'Tap an item to add it to your cart';
+        : 'Tap an item to borrow or consume';
     }
 
     if (!visible.length) {
@@ -1137,20 +1160,21 @@
     if (state.catalogFormat === 'grid') {
       container.className = 'item-grid';
       container.innerHTML = debugHtml + visible.map(item => `
-        <div class="item-card" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb">${locationTag(item.location)}</div>
+        <div class="item-card" role="button" tabindex="0" onclick="openItemSheet('${escapeAttr(item.id)}')">
           <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="item-qty">${escapeHtml(item.qtyDisplay != null ? item.qtyDisplay : item.qtyAvailable)}</div>
+          <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</div>
+          <div class="item-location">${escapeHtml(item.location || 'Location unassigned')}</div>
+          ${cartQty(item.id) ? `<span class="in-cart-badge">${cartQty(item.id)} in cart</span>` : ''}
         </div>
       `).join('');
     } else {
       container.className = 'item-list';
       container.innerHTML = debugHtml + visible.map(item => `
-        <div class="item-row" onclick="addToCart('${escapeAttr(item.id)}')">
-          <div class="item-thumb">${locationTag(item.location)}</div>
+        <div class="item-row" role="button" tabindex="0" onclick="openItemSheet('${escapeAttr(item.id)}')">
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-qty">${item.notes ? escapeHtml(item.notes) : '<span style="opacity:0.5">No notes</span>'}</div>
+            <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</div>
+            <div class="item-location">${escapeHtml(item.location || 'Location unassigned')}</div>
           </div>
           ${cartQty(item.id) > 0 ? `<div class="in-cart-badge">${cartQty(item.id)} in cart</div>` : ''}
         </div>
@@ -1167,186 +1191,6 @@
     if (clearBtn) clearBtn.style.display = 'none';
     renderCategoryChips();
     renderCatalog();
-  }
-
-  function cartQty(itemId) {
-    return state.cart[itemId] ? state.cart[itemId].qty : 0;
-  }
-
-  function addToCart(itemId) {
-    const item = state.inventory.find(i => i.id === itemId);
-    if (!item) return;
-    const current = state.cart[itemId] || { item: item, qty: 0 };
-    current.qty += 1;
-    state.cart[itemId] = current;
-    updateCartBadge();
-    showToast(item.title + ' added to cart');
-  }
-
-  function stepQty(itemId, delta) {
-    const item = state.inventory.find(i => i.id === itemId);
-    if (!item) return;
-    const current = state.cart[itemId] || { item: item, qty: 0 };
-    current.qty = Math.max(0, current.qty + delta);
-    if (current.qty === 0) {
-      delete state.cart[itemId];
-    } else {
-      state.cart[itemId] = current;
-    }
-    updateCartBadge();
-    renderCatalog();
-    if (state.view === 'cart') renderCart();
-  }
-
-  function setQty(itemId, value) {
-    const item = state.inventory.find(i => i.id === itemId);
-    if (!item) return;
-    const qty = Math.max(0, parseInt(value, 10) || 0);
-    if (qty === 0) {
-      delete state.cart[itemId];
-    } else {
-      state.cart[itemId] = { item: item, qty: qty };
-    }
-    updateCartBadge();
-    if (state.view === 'cart') renderCart();
-  }
-
-  function updateCartBadge() {
-    const count = Object.values(state.cart).reduce((sum, c) => sum + c.qty, 0);
-    const badge = document.getElementById('cart-badge');
-    if (count > 0) {
-      badge.textContent = count;
-      badge.style.display = 'flex';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
-
-  /* ---------------- Cart view ---------------- */
-
-  function renderCart() {
-    const container = document.getElementById('cart-list');
-    const entries = Object.values(state.cart);
-    const checkoutBtn = document.getElementById('cart-checkout-btn');
-
-    if (!entries.length) {
-      container.innerHTML = '<div class="empty-state"><img class="svg-icon" src="icons/ui/shopping-basket.svg" alt="">Your cart is empty</div>';
-      checkoutBtn.disabled = true;
-      return;
-    }
-    checkoutBtn.disabled = false;
-
-    container.innerHTML = entries.map(({ item, qty }) => `
-      <div class="item-row">
-        <div class="item-thumb">${locationTag(item.location)}</div>
-        <div class="item-info">
-          <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="item-qty">${item.notes ? escapeHtml(item.notes) : '<span style="opacity:0.5">No notes</span>'}</div>
-        </div>
-        <div class="qty-stepper">
-          <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', -1)" aria-label="Decrease quantity"><img class="svg-icon" src="icons/ui/minus.svg" alt=""></button>
-          <input type="number" min="0" value="${qty}" aria-label="Quantity"
-                 onchange="setQty('${escapeAttr(item.id)}', this.value)" />
-          <button class="qty-btn" onclick="stepQty('${escapeAttr(item.id)}', 1)" aria-label="Increase quantity"><img class="svg-icon" src="icons/ui/plus.svg" alt=""></button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  /* ---------------- Checkout view ---------------- */
-
-  const CASE_HINTS = {
-    BORROWING: 'Comment the quantity to be borrowed, project/department, and point person on the quantity column of the item.',
-    CONSUMING: 'Comment the quantity to be consumed, project/department, and point person on the quantity column of the item.',
-    RETURNING: 'Resolve your comment on the quantity column once borrowed materials have been returned.'
-  };
-
-  function renderCheckout() {
-    document.getElementById('checkout-id-display').textContent =
-      state.lastId && state.lastId.idNumber ? state.lastId.idNumber : 'Not scanned yet';
-
-    if (state.lastId && state.lastId.committee) {
-      document.getElementById('committee-input').value = state.lastId.committee;
-    }
-
-    const entries = Object.values(state.cart);
-    const tbody = document.getElementById('checkout-summary-body');
-    if (!entries.length) {
-      tbody.innerHTML = '<tr><td colspan="2">No items selected</td></tr>';
-    } else {
-      tbody.innerHTML = entries.map(({ item, qty }) => `
-        <tr><td>${escapeHtml(item.title)}</td><td>${qty}x</td></tr>
-      `).join('');
-    }
-  }
-
-  function bindCheckoutForm() {
-    document.getElementById('submit-order-btn').addEventListener('click', submitOrder);
-
-    document.querySelectorAll('.case-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.case-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        state.checkoutCase = btn.dataset.case;
-        document.getElementById('case-hint').textContent = CASE_HINTS[state.checkoutCase];
-      });
-    });
-  }
-
-  function submitOrder() {
-    const entries = Object.values(state.cart);
-    if (!state.lastId || !state.lastId.idNumber) {
-      showToast('Enter your ID number on the Home page first', true);
-      showView('home');
-      return;
-    }
-    if (!entries.length) {
-      showToast('Your cart is empty', true);
-      return;
-    }
-
-    const committee = document.getElementById('committee-input').value;
-    const project = document.getElementById('project-select').value;
-    const pointPerson = (state.lastId && state.lastId.name) ? state.lastId.name : state.lastId.idNumber;
-
-    const payload = {
-      idNumber: state.lastId.idNumber,
-      caseType: state.checkoutCase, // BORROWING | CONSUMING | RETURNING
-      project: project,
-      committee: committee,
-      items: entries.map(({ item, qty }) => ({
-        id: item.id,
-        title: item.title,
-        qty: qty,
-        location: item.location || '',
-        // Matches the sheet's own comment convention, e.g. "[BORROWING] - 24 ACTS, Renzo Gutierrez"
-        comment: `[${state.checkoutCase}] - ${qty} ${committee || project}, ${pointPerson}`
-      }))
-    };
-
-    const btn = document.getElementById('submit-order-btn');
-    btn.disabled = true;
-    btn.textContent = 'SUBMITTING…';
-
-    google.script.run
-      .withSuccessHandler((result) => {
-        if (result && result.queued) {
-          showToast('Saved offline — will sync automatically');
-        } else {
-          showToast('Order submitted');
-        }
-        state.cart = {};
-        updateCartBadge();
-        btn.disabled = false;
-        btn.textContent = 'SUBMIT ORDER';
-        showView('home');
-      })
-      .withFailureHandler(err => {
-        showToast(err.message || 'Could not submit order', true);
-        btn.disabled = false;
-        btn.textContent = 'SUBMIT ORDER';
-      })
-      .submitOrder(payload);
   }
 
   /* ---------------- Contacts (shared by the Help view and the Contact modal) ----------------
@@ -1410,17 +1254,14 @@
   });
 
   async function triggerInstall() {
-    if (!deferredInstallPrompt) {
-      showToast('App may already be installed, or your browser doesn\'t support installing yet');
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (choice.outcome === 'accepted') hideInstallBanner();
       return;
     }
-    deferredInstallPrompt.prompt();
-    const choice = await deferredInstallPrompt.userChoice;
-    if (choice.outcome === 'accepted') {
-      showToast('Installing MEA App…');
-      hideInstallBanner();
-    }
-    deferredInstallPrompt = null;
+    window.meaInstallHelp();
   }
 
   /* ---------------- Install banner ----------------
@@ -1438,7 +1279,7 @@
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   }
   function isIOS() {
-    return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
   function isMobileViewport() {
     return window.matchMedia('(max-width: 767px)').matches;
@@ -1451,13 +1292,14 @@
   }
 
   function maybeShowInstallBanner() {
-    if (!isMobileViewport() || isStandalonePwa() || wasInstallBannerRecentlyDismissed()) return;
+    if (!state.lastId || !isMobileViewport() || isStandalonePwa() || wasInstallBannerRecentlyDismissed()) return;
     const ios = isIOS();
-    if (!ios && !deferredInstallPrompt) return; // Android/Chrome with nothing to prompt yet
+    // Unsupported browsers still get manual installation help. // Android/Chrome with nothing to prompt yet
     const banner = document.getElementById('install-banner');
     if (!banner) return;
 
-    document.getElementById('install-banner-btn').style.display = ios ? 'none' : '';
+    document.getElementById('install-banner-btn').style.display = '';
+    document.getElementById('install-banner-btn').textContent = ios || !deferredInstallPrompt ? 'Show steps' : 'Install';
     document.getElementById('install-banner-steps').style.display = ios ? 'flex' : 'none';
     document.getElementById('install-banner-sub').textContent = ios
       ? 'Add it to your home screen for quick, full-screen access.'
@@ -1483,7 +1325,7 @@
 
     // iOS never fires beforeinstallprompt, so it's the only case checked
     // eagerly on load; Android waits for that event (handled above).
-    if (isIOS()) setTimeout(maybeShowInstallBanner, 1200);
+    document.addEventListener('mea:viewchange', () => setTimeout(maybeShowInstallBanner, 1200));
   }
 
   /* ---------------- Toast ---------------- */

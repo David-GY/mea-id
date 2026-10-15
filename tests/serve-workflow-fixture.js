@@ -1,0 +1,40 @@
+// Local-only UI fixture. All Google requests are intercepted; never writes production data.
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const fixture = `<script>
+localStorage.setItem('mea_inventory_url','https://script.google.com/fixture/exec');
+localStorage.setItem('mea_cfg2',JSON.stringify({url:'https://script.google.com/tracker-fixture/exec'}));
+let records = [{recordId:'borrow-1',item:'Whiteboard Markers',qty:4,borrowedQty:4,returnedQty:1,outstandingQty:3,idNum:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',resolved:false,returnable:true,time:'2026-10-15T12:00:00Z'}];
+window.fetch = async (url, options={}) => {
+ const action = new URL(url,location.href).searchParams.get('action');
+ const payload = options.body ? JSON.parse(options.body) : {};
+ let data;
+ if(action==='login') data={ok:true,found:true,idNumber:new URL(url).searchParams.get('id'),name:'Test Member',level:'NONE'};
+ else if(action==='inventory') data={ok:true,items:[{id:'item-1',title:'Whiteboard Markers',qty:'8',location:'Steel Cabinet A',category:'Stationery',notes:'Return reusable markers.'},{id:'item-2',title:'Binder Clips',qty:'2 packs',location:'Steel Cabinet B',category:'Stationery',notes:''}]};
+ else if(action==='history') data={ok:true,records};
+ else if(action==='submitOrder') data=payload.caseType==='CONSUMING' && sessionStorage.getItem('fixture-fail-consume') ? {ok:false,retryable:false,error:'Fixture: consume rejected'} : {ok:true,logged:payload.items.length};
+ else if(action==='returnItems') { const r=records.find(r=>r.recordId===payload.borrowId); r.returnedQty+=payload.qty; r.resolved=r.returnedQty>=r.borrowedQty; data={ok:true}; }
+ else if(action==='googleMember') data={ok:true,member:{idNumber:'100001',name:'Test Member'}};
+ else if(action==='cartRead') data={ok:true,revision:1,draft:{cart:{},project:'SUS',committee:'Cloud draft'}};
+ else if(action==='cartWrite') data={ok:true,revision:2};
+ else throw new Error('Fixture blocked request '+url);
+ return {ok:true,json:async()=>data,text:async()=>JSON.stringify(data)};
+};
+window.MEA_CONFIG={firebase:{apiKey:'fixture',authDomain:'fixture',projectId:'fixture'}};
+const fixtureUser={uid:'test-uid',getIdToken:async()=>'fixture'};
+window.firebase={apps:[{}],auth:Object.assign(()=>({currentUser:fixtureUser,signInWithPopup:async()=>({user:fixtureUser}),signOut:async()=>{},onAuthStateChanged:()=>{}}),{GoogleAuthProvider:class {setCustomParameters(){}}})};
+</script>`;
+http.createServer((req,res)=>{
+ const pathname = decodeURIComponent(new URL(req.url,'http://localhost').pathname);
+ if(pathname==='/sw.js') {res.writeHead(404);return res.end();}
+ const target=path.resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
+ if(!target.startsWith(root+path.sep)) {res.writeHead(403);return res.end();}
+ try {
+ let bytes=fs.readFileSync(target);
+ if(path.extname(target)==='.html') bytes=Buffer.from(bytes.toString().replace('<script src="app-config.js"></script>',fixture+'<script src="app-config.js"></script>'));
+ const type={'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'}[path.extname(target)]||'text/plain';
+ res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(bytes);
+ } catch(_) {res.writeHead(404);res.end();}
+}).listen(8765,'127.0.0.1',()=>console.log('Isolated fixture at http://127.0.0.1:8765'));

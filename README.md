@@ -111,3 +111,9 @@ For a deployment smoke test, verify the sheet snapshot, state-tab conflict detec
 - Web NFC is supported only by Chrome on Android; manual ID entry works on other browsers.
 - Apps Script Web Apps do not provide persistent WebSockets, so cross-device activity is resilient cursor polling rather than a push channel.
 - Cached Dashboard/Activity data is device-local fallback only and is clearly labeled; the shared source of truth remains Google Sheets.
+
+## SUSCart workflow update
+
+SUSCart supports per-item Borrow/Consume selection, mixed-action checkout, account-specific saved carts, and partial/full returns from Personal History. Optional school Google connection adds private cross-device cart sync; ID-only submissions remain available. See [DEPLOYMENT-SUSCART.md](DEPLOYMENT-SUSCART.md) for backend migration, Firebase configuration, verification, and rollback. Deploy the v2 room-inventory backend before releasing these frontend changes.
+
+Run all local tests with `node --test tests/*.test.js`. The separate `tests/serve-workflow-fixture.js` provides a local preview with sample data and intercepted requests; it never writes production data.
