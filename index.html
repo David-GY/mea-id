@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MEA</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a3535">
@@ -17,6 +17,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="inventory.css?v=4">
 <link rel="stylesheet" href="dashboard.css?v=1">
+<link rel="stylesheet" href="appearance.css">
+<script src="appearance.js"></script>
 </head>
 <body>
 <div class="desktop-frame">
@@ -109,6 +111,7 @@
 
     <!-- ===================== View: Settings ===================== -->
     <section class="view" id="view-settings">
+
       <div class="top-brand">
         <img class="top-brand-mea" src="brand/mea-logo-lightgray.png" alt="MEA">
         <img class="top-brand-sus" src="brand/sus-logo-white.png" alt="SUS">
@@ -117,6 +120,8 @@
         <div class="identity-id" id="settings-identity-id">—</div>
         <div class="identity-name" id="settings-identity-name">—</div>
       </div>
+
+      <div class="appearance-setting"><label for="appearance-select">Appearance</label><select id="appearance-select"><option value="dark">MEA Green</option><option value="garden">Garden Green</option><option value="coffee">Coffee</option><option value="plum">Plum</option></select></div>
 
       <div class="id-input-label" style="text-align:left;margin-top:6px;">ID TRACKER SCRIPT URL</div>
       <div class="id-input-row">

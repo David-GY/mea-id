@@ -51,3 +51,11 @@ Transaction API: POST `submitOrder` with immutable `clientId`, `idNumber`, `case
 ## Rollback
 
 Restore the previous frontend release and Apps Script deployment version together. Preserve added columns and journal tabs to retain audit data. Do not delete them or undo confirmed returns by clearing their rows. Existing cached clients may need one refresh after the service-worker upgrade.
+
+## UI refresh included in this draft
+
+Deploy appearance.css and appearance.js with the existing app shell. The default appearance is MEA Green, with browser-saved Garden Green (sage), Coffee, and Plum options in Settings. Earlier light preferences migrate to Garden Green. The catalog uses two mobile columns and item-first cards; details use facts, notes, segmented actions and a compact quantity row. Existing MEA SVG icons and logos are reused. Cache version is mea-app-v9.
+
+Validation: all 31 Node tests pass. Browser fixture checks cover mobile catalog/detail, saved dark appearance, centered larger-screen dialog, cart and checkout. Real-device installation and copied-sheet integration remain rollout checks. No production data or deployment was changed.
+
+Cart entries include direct Borrow/Consume switches. Quantities persist when switching. Collisions require explicit confirmation before combining; retry identifiers are invalidated for both action groups. 31 Node tests pass, including switching, persistence, collision confirmation and account-switch isolation.

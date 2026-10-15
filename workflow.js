@@ -86,7 +86,7 @@ function updateCartBadge() {
   badge.style.display = count ? 'flex' : 'none';
   const shortcut = document.getElementById('cart-shortcut');
   shortcut.hidden = !draftOwner || !count || !['catalog', 'home'].includes(state.view);
-  shortcut.textContent = `View cart · ${count} units`;
+  shortcut.textContent = `View cart · ${count} ${count === 1 ? 'unit' : 'units'}`;
 }
 function openWorkflow(html) {
   const dialog = document.getElementById('workflow-dialog');
@@ -120,11 +120,11 @@ function openItemSheet(itemId, selectedAction) {
   let action = selectedAction || (lines.length === 1 ? lines[0].action : '');
   const line = action ? state.cart[MeaCart.key(itemId, action)] : null;
   openWorkflow(`<h2 id="workflow-title">${esc(item.title)}</h2>
-    <p class="sheet-location">${esc(item.location || 'Location unassigned')}</p>
-    <p>${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</p>
-    <p>${esc(item.notes || 'No notes')}</p>
+    <p class="sheet-availability">${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</p>
+    <dl class="sheet-facts"><div><dt>Location</dt><dd>${esc(item.location || 'Location unassigned')}</dd></div></dl>
+    ${item.notes ? `<div class="sheet-notes">${esc(item.notes)}</div>` : ''}
     <fieldset><legend>What are you doing?</legend><div class="workflow-actions">${MeaCart.actions.map(a => `<label><input type="radio" name="item-action" value="${a}" ${a === action ? 'checked' : ''}> ${ACTION_LABEL[a]}</label>`).join('')}</div></fieldset>
-    <label class="field-label" for="sheet-quantity">How many?</label>${quantityControls(line?.qty || 1)}
+    <div class="sheet-quantity-row"><label for="sheet-quantity">Quantity</label>${quantityControls(line?.qty || 1)}</div>
     <p id="sheet-warning" role="status"></p><p id="sheet-error" role="alert"></p>
     <button type="button" class="btn-primary" id="sheet-save">${line ? 'Update cart' : 'Add to cart'}</button>`);
   bindQuantity();
@@ -149,17 +149,42 @@ function openItemSheet(itemId, selectedAction) {
     } catch (e) { document.getElementById('sheet-error').textContent = e.message; }
   };
 }
+function changeCartAction(key, action, combine = false) {
+  const line = state.cart[key];
+  if (submitBusy || !line || line.unavailable || action === line.action) return;
+  const targetKey = MeaCart.key(line.item.id, action);
+  const target = state.cart[targetKey];
+  if (target && !combine) {
+    const epoch = accountEpoch;
+    openWorkflow(`<h2 id="workflow-title">Combine cart entries?</h2><p>${esc(line.item.title)} already has ${target.qty} under ${ACTION_LABEL[action]}. Move these ${line.qty} too, for a total of ${target.qty + line.qty}?</p><button type="button" class="btn-primary" id="combine-cart">Combine as ${ACTION_LABEL[action]}</button><button type="button" class="btn-secondary" id="cancel-combine">Keep separate</button>`);
+    document.getElementById('combine-cart').onclick = () => { closeWorkflow(); if (epoch === accountEpoch) changeCartAction(key, action, true); };
+    document.getElementById('cancel-combine').onclick = closeWorkflow;
+    return;
+  }
+  let qty;
+  try { qty = MeaCart.quantity(line.qty + (target?.qty || 0)); }
+  catch (error) { showToast(error.message, true); return; }
+  invalidateAction(line.action); invalidateAction(action);
+  delete state.cart[key];
+  state.cart[targetKey] = {...line, qty, action, changed: line.changed || target?.changed};
+  delete state.cart[targetKey].clientId;
+  saveCart(); updateCartBadge(); renderCart();
+  document.querySelector(`[data-cart-index="${Object.keys(state.cart).indexOf(targetKey)}"] [data-cart-action="${action}"]`)?.focus();
+  showToast(`${line.item.title}: ${ACTION_LABEL[action]} · ${qty}`);
+}
 function renderCart() {
   const entries = Object.entries(state.cart);
   const container = document.getElementById('cart-list');
   document.getElementById('cart-checkout-btn').disabled = !entries.length;
   container.innerHTML = entries.length ? entries.map(([key, l], index) => `<article class="cart-entry" data-cart-index="${index}">
-    <div><h3>${esc(l.item.title)}</h3><p>${ACTION_LABEL[l.action]} · ${l.qty} ${l.qty === 1 ? 'unit' : 'units'}</p><p>${esc(l.item.location || 'Location unassigned')}</p>
+    <div class="cart-entry-main"><h3>${esc(l.item.title)}</h3><p>${l.qty} ${l.qty === 1 ? 'unit' : 'units'} · ${esc(l.item.location || 'Location unassigned')}</p>
+    <div class="cart-action-toggle" role="group" aria-label="Action for ${esc(l.item.title)}">${MeaCart.actions.map(action => `<button type="button" data-cart-action="${action}" aria-pressed="${action === l.action}" ${l.unavailable || submitBusy ? 'disabled' : ''}>${ACTION_LABEL[action]}</button>`).join('')}</div>
     ${l.unavailable ? '<p class="workflow-error">No longer in the catalog. Remove this entry to continue.</p>' : ''}
     ${l.changed ? '<p class="workflow-warning">Quantity changed since you selected this item. Review before submitting.</p>' : ''}</div>
-    <div class="cart-entry-actions"><button type="button" class="btn-secondary" data-edit ${l.unavailable ? 'disabled' : ''}>Edit</button><button type="button" class="btn-secondary" data-remove>Remove</button></div></article>`).join('') : '<div class="empty-state">Your cart is empty. Choose items to borrow or consume.</div>';
+    <div class="cart-entry-actions"><button type="button" class="btn-secondary" data-edit ${l.unavailable ? 'disabled' : ''}>Edit</button><button type="button" class="btn-secondary" data-remove>Remove</button></div></article>`).join('') : '<div class="empty-state"><img class="svg-icon" src="icons/ui/shopping-basket.svg" alt=""><strong>Your cart is empty</strong><p>Choose items to borrow or consume.</p></div>';
   container.querySelectorAll('[data-cart-index]').forEach(row => {
     const [key, line] = entries[Number(row.dataset.cartIndex)];
+    row.querySelectorAll('[data-cart-action]').forEach(button => { button.onclick = () => changeCartAction(key, button.dataset.cartAction); });
     row.querySelector('[data-edit]').onclick = () => openItemSheet(line.item.id, line.action);
     row.querySelector('[data-remove]').onclick = () => {
       if (submitBusy) return;

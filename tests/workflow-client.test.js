@@ -63,3 +63,23 @@ test('late cloud response cannot load previous account cart into a newly selecte
  resolve({json:async()=>({ok:true,revision:3,draft:{cart:{},committee:'Previous owner'}})});await pending;
  assert.equal(c.element('committee-input').value,'');assert.equal(c.run('cloudLoaded'),false);
 });
+
+
+test('cart action switch preserves quantity, saves the draft and invalidates both retry groups',()=>{
+ const c=client();c.run("state.lastId={idNumber:'100001'}; meaSwitchAccount(); state.cart[MeaCart.key('a','CONSUMING')]={item:{id:'a',title:'A'},qty:3,action:'CONSUMING',clientId:'old'}; state.cart[MeaCart.key('b','BORROWING')]={item:{id:'b',title:'B'},qty:1,action:'BORROWING',clientId:'other'}; changeCartAction(MeaCart.key('a','CONSUMING'),'BORROWING');");
+ assert.equal(c.run("state.cart[MeaCart.key('a','CONSUMING')]"),undefined);
+ assert.equal(c.run("state.cart[MeaCart.key('a','BORROWING')].qty"),3);
+ assert.equal(c.run('Object.values(state.cart).some(l=>l.clientId)'),false);
+ assert.equal(Object.values(JSON.parse(c.data.get('mea_cart_v3:100001')).cart).find(l=>l.item.id==='a').action,'BORROWING');
+ c.run("changeCartAction(MeaCart.key('a','BORROWING'),'CONSUMING')");
+ assert.equal(c.run("state.cart[MeaCart.key('a','CONSUMING')].qty"),3);
+});
+test('cart action collision requires confirmation and cannot combine into another account',()=>{
+ const c=client();c.run("state.lastId={idNumber:'100001'}; meaSwitchAccount(); for(const action of MeaCart.actions)state.cart[MeaCart.key('a',action)]={item:{id:'a',title:'A'},qty:2,action}; changeCartAction(MeaCart.key('a','CONSUMING'),'BORROWING');");
+ assert.equal(c.run('Object.keys(state.cart).length'),2);
+ c.element('cancel-combine').onclick();assert.equal(c.run('Object.keys(state.cart).length'),2);
+ c.run("changeCartAction(MeaCart.key('a','CONSUMING'),'BORROWING')");c.element('combine-cart').onclick();
+ assert.equal(c.run('Object.keys(state.cart).length'),1);assert.equal(c.run('Object.values(state.cart)[0].qty'),4);
+ c.run("state.cart[MeaCart.key('a','CONSUMING')]={item:{id:'a',title:'A'},qty:1,action:'CONSUMING'}; changeCartAction(MeaCart.key('a','CONSUMING'),'BORROWING'); state.lastId={idNumber:'100002'}; meaSwitchAccount();");
+ c.element('combine-cart').onclick();assert.equal(c.run('Object.keys(state.cart).length'),0);
+});

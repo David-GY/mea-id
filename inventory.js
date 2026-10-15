@@ -1161,9 +1161,9 @@
       container.className = 'item-grid';
       container.innerHTML = debugHtml + visible.map(item => `
         <div class="item-card" role="button" tabindex="0" onclick="openItemSheet('${escapeAttr(item.id)}')">
-          <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-title">${escapeHtml(item.title)}</div>
           <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</div>
+          <div class="item-location">${escapeHtml(item.location || 'Location unassigned')}</div>
           ${cartQty(item.id) ? `<span class="in-cart-badge">${cartQty(item.id)} in cart</span>` : ''}
         </div>
       `).join('');
@@ -1171,10 +1171,10 @@
       container.className = 'item-list';
       container.innerHTML = debugHtml + visible.map(item => `
         <div class="item-row" role="button" tabindex="0" onclick="openItemSheet('${escapeAttr(item.id)}')">
-          <div class="item-thumb">${locationTag(item.location)}</div>
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-qty">${item.notes ? escapeHtml(item.notes) : '<span style="opacity:0.5">No notes</span>'}</div>
+            <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</div>
+            <div class="item-location">${escapeHtml(item.location || 'Location unassigned')}</div>
           </div>
           ${cartQty(item.id) > 0 ? `<div class="in-cart-badge">${cartQty(item.id)} in cart</div>` : ''}
         </div>
