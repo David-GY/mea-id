@@ -1348,3 +1348,38 @@ select option:hover {
 
   .identity-block { padding-top: 8px; }
 }
+/* SUSCart additions use the established MEA teal tokens. */
+#workflow-dialog { border: 1px solid var(--border-mid); color: var(--white); background: var(--teal-dark); border-radius: 22px 22px 0 0; width: 100%; max-width: 100%; max-height: 88dvh; margin: auto 0 0; padding: 0; box-shadow: var(--shadow-lg); }
+#workflow-dialog::backdrop { background: rgba(0,15,15,.75); }
+.workflow-sheet { position: relative; padding: 28px 20px max(24px, env(safe-area-inset-bottom)); overflow-wrap: anywhere; }
+.workflow-sheet h2 { padding-right: 40px; font-size: 22px; margin-bottom: 12px; }
+.workflow-sheet p { margin: 12px 0; line-height: 1.6; }
+.workflow-sheet fieldset { border: 0; margin: 24px 0; }
+.workflow-sheet legend, .sheet-location { color: var(--teal-pale); }
+.workflow-actions { display: flex; gap: 12px; margin-top: 12px; }
+.workflow-actions label { display: flex; align-items: center; gap: 10px; flex: 1; min-height: 48px; padding: 12px; border: 1px solid var(--teal-light); border-radius: var(--radius-sm); cursor: pointer; }
+.workflow-actions label:has(input:checked) { background: var(--teal-mid); }
+.sheet-close { position: absolute; right: 12px; top: 12px; min-width: 48px; min-height: 48px; border: 0; border-radius: 50%; color: var(--white); background: var(--surface-hi); font-size: 26px; cursor: pointer; }
+.workflow-open { overflow: hidden; }
+#sheet-error, #return-error, .workflow-error { color: #ffb4b4; }
+.workflow-warning, #sheet-warning { color: var(--warn); }
+.cart-entry { display: flex; align-items: center; gap: 16px; justify-content: space-between; width: 100%; padding: 18px; border: 1px solid var(--border-mid); border-radius: var(--radius-md); background: var(--surface); }
+.cart-entry h3 { font-size: 16px; }
+.cart-entry p { line-height: 1.6; margin-top: 6px; }
+.cart-entry-actions { display: flex; flex-direction: column; gap: 8px; }
+.cart-entry-actions button { margin: 0; min-width: 76px; }
+#cart-save-status, #google-account-status, #cart-feedback { line-height: 1.6; margin: 12px 0; color: var(--teal-pale); }
+#cart-shortcut { position: fixed; bottom: calc(82px + env(safe-area-inset-bottom)); right: 16px; width: auto; z-index: 80; box-shadow: var(--shadow-md); }
+#cart-shortcut[hidden] { display: none; }
+body:has(#cart-shortcut:not([hidden])) #catalog-container { padding-bottom: 80px; }
+.history-return { min-height: 44px; margin-top: 8px; }
+.checkout-group th { text-align: left; padding-top: 20px; color: var(--teal-light); }
+.install-guide { padding-left: 24px; line-height: 1.8; }
+.install-guide li { margin: 14px 0; }
+.install-guide img { vertical-align: middle; margin-right: 8px; }
+.item-card[role=button], .item-row[role=button] { cursor: pointer; }
+.workflow-sheet button, .workflow-sheet input { min-height: 48px; font: inherit; }
+.workflow-sheet input[type=radio] { min-height: auto; width: 20px; height: 20px; accent-color: var(--teal-light); }
+.workflow-sheet :focus-visible { outline: 2px solid var(--teal-light); outline-offset: 3px; }
+@media(min-width: 768px) { #workflow-dialog { max-width: 520px; margin: auto; border-radius: 22px; } .workflow-sheet { padding: 32px; } }
+@media(prefers-reduced-motion: reduce) { #workflow-dialog, #cart-shortcut { animation: none; transition: none; } }
