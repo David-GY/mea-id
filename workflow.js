@@ -306,7 +306,7 @@ async function connectGoogle() {
     await auth.signInWithPopup(provider);
     const data = await inventoryRequest('googleMember', {}, true);
     if (epoch !== accountEpoch) return;
-    if (draftOwner && String(data.member.idNumber) !== draftOwner) { await auth.signOut(); throw new Error('This Google account belongs to a different member. Log out first to switch accounts.'); }
+    if (draftOwner && String(data.member.idNumber) !== draftOwner) { verifiedMember = null; cloudLoaded = false; document.getElementById('google-account-status').textContent = 'Google disconnected · cart remains on this device'; await auth.signOut(); throw new Error('This Google account belongs to a different member. Log out first to switch accounts.'); }
     if (!draftOwner) {
       // Email verification grants ordinary access only. Officer access still uses the established tracker gate.
       state.lastId = {...data.member, level: 'NONE', found: true}; saveLogin(state.lastId); window.meaSwitchAccount(); renderIdentity(); showView('home');
@@ -353,7 +353,7 @@ async function syncCloudDraft() {
   } catch (e) {
     if (epoch !== accountEpoch) return;
     saveStatus('Saved on this device · waiting to sync');
-    if (e.code === 'CONFLICT') { try { resolveDraftConflict(await inventoryRequest('cartRead', {}, true)); } catch (_) {} }
+    if (e.code === 'CONFLICT') { try { const latest = await inventoryRequest('cartRead', {}, true); if (epoch === accountEpoch && verifiedMember) resolveDraftConflict(latest); } catch (_) {} }
   } finally { cloudBusy = false; if (epoch === accountEpoch && draftDirty && !cloudConflict && navigator.onLine) { clearTimeout(draftTimer); draftTimer = setTimeout(syncCloudDraft, 10000); } }
 }
 window.meaInstallHelp = function() {
