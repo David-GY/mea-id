@@ -93,7 +93,7 @@
           const numericQty = MeaCart.availability(rawQty).value;
           return {
             id: item.id || 'legacy:' + JSON.stringify([item.title, item.location, item.category]),
-            stableId: !!item.id,
+            stableId: !!item.id, itemCode: item.itemCode || '',
             title: item.title || 'Untitled',
             category: item.category || 'Miscellaneous',
             location: item.location || '',
@@ -375,12 +375,12 @@
        (anything else / not listed) → neither
      ========================================================= */
   function canOpenTracker(loginResult) {
-    if (!loginResult) return false;
+    if (!loginResult || loginResult.accountKind === 'GUEST') return false;
     const level = String(loginResult.level || '').trim().toUpperCase();
     return level === 'ADMIN' || level === 'TRACKER';
   }
   function canOpenDashboard(loginResult) {
-    if (!loginResult) return false;
+    if (!loginResult || loginResult.accountKind === 'GUEST') return false;
     const level = String(loginResult.level || '').trim().toUpperCase();
     return level === 'ADMIN' || level === 'DASHBOARD';
   }
@@ -435,7 +435,7 @@
 
   function renderIdentity() {
     const r = state.lastId;
-    const idText = r ? r.idNumber : '—';
+    const idText = r ? (r.accountKind === 'GUEST' ? 'Guest · ' + r.guestCode : r.idNumber + (r.verified ? ' · Verified member' : ' · ID-only')) : '—';
     const nameText = (r && r.name) ? r.name : (r ? 'Unknown Member' : '—');
     ['home', 'settings', 'help', 'history'].forEach(v => {
       const idEl = document.getElementById(v + '-identity-id');
@@ -649,7 +649,7 @@
   // ── History data: fetched from the Inventory Apps Script (action=history),
   // cached locally so History still shows the last-known data offline,
   // exactly like the Catalog's inventory cache.
-  function historyCacheKey() { return 'mea_history_cache_v2:' + (state.lastId?.idNumber || 'anonymous'); }
+  function historyCacheKey() { return 'mea_history_cache_v3:' + (state.lastId?.googleUid ? 'google:' + state.lastId.googleUid : 'id:' + (state.lastId?.idNumber || 'anonymous')) + ':' + state.historyTab + ':' + (state.historyTab === 'project' ? document.getElementById('history-project-select')?.value || '' : ''); }
 
   function getCachedHistory() {
     try {
@@ -675,10 +675,7 @@
     }
 
     try {
-      const params = new URLSearchParams({action: 'history'});
-      if (getInventoryToken()) params.set('token', getInventoryToken());
-      const res = await fetch(url + '?' + params);
-      const json = await res.json();
+      const json = await window.meaHistoryRequest(state.historyTab, document.getElementById('history-project-select')?.value || '');
       if (json && json.ok && Array.isArray(json.records)) {
         if (ownerKey !== historyCacheKey()) return {records: [], offline: false};
         setCachedHistory(json.records);
@@ -704,7 +701,7 @@
       <div class="history-item">
         <div class="history-item-main">
           <div class="history-item-title">${escapeHtml(rec.item)}${rec.qty ? ' × ' + escapeHtml(rec.qty) : ''}</div>
-          <div class="history-item-meta">${escapeHtml(rec.project || '—')}${rec.committee ? ' · ' + escapeHtml(rec.committee) : ''}${state.historyTab === 'project' && rec.name ? ' · ' + escapeHtml(rec.name) : ''}</div>
+          <div class="history-item-meta">${escapeHtml(rec.reference || '')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''} · ${escapeHtml(rec.project || '—')}${rec.committee ? ' · ' + escapeHtml(rec.committee) : ''}${state.historyTab === 'project' && rec.name ? ' · ' + escapeHtml(rec.name) : ''}</div>
         </div>
         <div class="history-item-side">
           <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>

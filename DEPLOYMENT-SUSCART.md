@@ -59,3 +59,20 @@ Deploy appearance.css and appearance.js with the existing app shell. The default
 Validation: all 31 Node tests pass. Browser fixture checks cover mobile catalog/detail, saved dark appearance, centered larger-screen dialog, cart and checkout. Real-device installation and copied-sheet integration remain rollout checks. No production data or deployment was changed.
 
 Cart entries include direct Borrow/Consume switches. Quantities persist when switching. Collisions require explicit confirmation before combining; retry identifiers are invalidated for both action groups. 31 Node tests pass, including switching, persistence, collision confirmation and account-switch isolation.
+
+## Readable IDs and school accounts (October 16)
+
+Canonical IDs are retained. Setup adds Inventory/Special Inventory H (`IT-001`), transaction M (`BR-001`, `CO-001`, `RT-001`), and Return N (original borrow). G and J:L are hidden. `_MEA_REFERENCES` stores permanent mappings; never delete or renumber it. Sorting must include the hidden columns. Codes expand beyond 999.
+
+Before migration, run `repairLegacyMetadata()` for a dry run. Boolean checkbox placeholders in J:L are repaired by setup; unexpected strings and duplicate record IDs stop migration. Original A:I, including resolved checkboxes, are retained. Repeat setup is safe. Legacy unresolved loans still require reconciliation before return actions.
+
+School accounts use MAIN A:C with headers on row 2 and member data starting row 4. The server verifies Google provider, verified email, and the exact student.ateneo.edu domain. One roster match is a member; no match is a guest. Ambiguous matches or unavailable roster fail closed. Hidden Accounts stores verified UID, email, name, kind, member ID or G-code, timestamps and prior guest ownership. Guests are never added to MAIN. Guest-to-member promotion retains earlier loans and the UID cloud draft; conflicting local drafts require a choice.
+
+Guests may borrow, consume and return their own confirmed loans. They cannot open tracker/dashboard or project history. Inventory personal history is scoped server-side. Verified records cannot be accessed or returned through ID-only impersonation. ID-only legacy records retain the existing unverified-ID limitation.
+
+Configure `OFFICER_EMAILS` in inventory script properties as an explicit comma-separated allowlist for verified member project history. Default is empty. Google sign-in does not grant officer status. Tracker backend permissions are unchanged.
+
+The matching Firebase public configuration and `FIREBASE_WEB_API_KEY` remain required. Without them, ID-only entry remains available and Google sign-in explains the missing configuration. Test real member and guest accounts, expired sessions and browser/device restore after configuring Firebase. Never put tokens or service-account credentials in app-config.js. Guest submissions use the current token and never enter the ID-only offline queue; pending returns retain only retry metadata and wait for reauthentication.
+
+This release uses service-worker cache mea-app-v12. Automated validation: 40 tests cover metadata repair, stable aliases, account ownership, exact-domain classification, promotion, drafts, returns and client isolation. Mocked authentication tests do not substitute for real Firebase verification.
+

@@ -83,3 +83,18 @@ test('cart action collision requires confirmation and cannot combine into anothe
  c.run("state.cart[MeaCart.key('a','CONSUMING')]={item:{id:'a',title:'A'},qty:1,action:'CONSUMING'}; changeCartAction(MeaCart.key('a','CONSUMING'),'BORROWING'); state.lastId={idNumber:'100002'}; meaSwitchAccount();");
  c.element('combine-cart').onclick();assert.equal(c.run('Object.keys(state.cart).length'),0);
 });
+
+test('guest submits use current Google token without persisting it in an order queue',async()=>{
+ const c=client();c.data.set('mea_inventory_url','https://example.test');
+ c.run("state.lastId={idNumber:'guest:one',name:'Guest',accountKind:'GUEST',guestCode:'G-001',verified:true};meaSwitchAccount();verifiedMember={uid:'one'};firebaseAuth={currentUser:{getIdToken:async()=> 'private-token'}};state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'A'},qty:1,action:'BORROWING'};");
+ let sent;c.context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {json:async()=>({ok:true,logged:1})};};
+ await c.context.submitOrder();assert.equal(sent.idToken,'private-token');assert.equal(sent.idNumber,'guest:one');
+ assert.equal(c.run('Object.keys(state.cart).length'),0);
+ for(const value of c.data.values())assert.equal(value.includes('private-token'),false);
+});
+test('guest cannot silently fall back to ID-only submissions and history',async()=>{
+ const c=client();c.data.set('mea_inventory_url','https://example.test');
+ c.run("state.lastId={idNumber:'guest:one',accountKind:'GUEST',verified:true};meaSwitchAccount();state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'A'},qty:1,action:'BORROWING'};");
+ await c.context.submitOrder();assert.equal(c.run('Object.keys(state.cart).length'),1);assert.match(c.element('cart-feedback').textContent,/Reconnect/);
+ await assert.rejects(c.context.meaHistoryRequest('personal',''),/Reconnect/);
+});

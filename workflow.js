@@ -121,7 +121,7 @@ function openItemSheet(itemId, selectedAction) {
   const line = action ? state.cart[MeaCart.key(itemId, action)] : null;
   openWorkflow(`<h2 id="workflow-title">${esc(item.title)}</h2>
     <p class="sheet-availability">${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</p>
-    <dl class="sheet-facts"><div><dt>Location</dt><dd>${esc(item.location || 'Location unassigned')}</dd></div></dl>
+    <dl class="sheet-facts">${item.itemCode ? `<div><dt>Item code</dt><dd>${esc(item.itemCode)}</dd></div>` : ''}<div><dt>Location</dt><dd>${esc(item.location || 'Location unassigned')}</dd></div></dl>
     ${item.notes ? `<div class="sheet-notes">${esc(item.notes)}</div>` : ''}
     <fieldset><legend>What are you doing?</legend><div class="workflow-actions">${MeaCart.actions.map(a => `<label><input type="radio" name="item-action" value="${a}" ${a === action ? 'checked' : ''}> ${ACTION_LABEL[a]}</label>`).join('')}</div></fieldset>
     <div class="sheet-quantity-row"><label for="sheet-quantity">Quantity</label>${quantityControls(line?.qty || 1)}</div>
@@ -204,7 +204,7 @@ function renderCart() {
 }
 function renderCheckout() {
   window.meaRestoreFields();
-  document.getElementById('checkout-id-display').textContent = state.lastId?.idNumber || 'Enter your ID first';
+  document.getElementById('checkout-id-display').textContent = (state.lastId?.accountKind === 'GUEST' ? 'Guest · ' + state.lastId.guestCode : state.lastId?.idNumber) || 'Enter your ID first';
   document.getElementById('checkout-summary-body').innerHTML = MeaCart.groups(state.cart).map(g => `<tr class="checkout-group"><th colspan="2">${ACTION_LABEL[g.action]}</th></tr>${g.lines.map(l => `<tr><td>${esc(l.item.title)}${l.unavailable ? ' · unavailable' : ''}</td><td>${l.qty}</td></tr>`).join('')}`).join('') || '<tr><td colspan="2">No items selected</td></tr>';
 }
 function bindCheckoutForm() {
@@ -213,6 +213,8 @@ function bindCheckoutForm() {
   document.getElementById('committee-input').addEventListener('input', () => { invalidateAction(); saveCart(); });
 }
 function submitGroup(payload) {
+  if (verifiedMember) return inventoryRequest('submitOrder', payload, true);
+  if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') return Promise.reject(new Error('Reconnect school Google before submitting. Your cart stays saved.'));
   return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).submitOrder(payload));
 }
 async function submitOrder() {
@@ -267,12 +269,12 @@ function openReturnSheet(recordId) {
   const pending = pendingReturns().find(r => r.borrowId === recordId);
   if (pending) return showToast(pending.failed ? 'Return failed. Use Retry in History.' : 'This return is waiting to sync.', true);
   const remaining = MeaCart.outstanding(rec);
-  openWorkflow(`<h2 id="workflow-title">Return ${esc(rec.item)}</h2><p>${esc(rec.project || 'Personal')}</p><p>Borrowed: ${rec.borrowedQty ?? rec.qty} · Returned: ${rec.returnedQty || 0} · Remaining: ${remaining}</p><label class="field-label" for="sheet-quantity">Quantity to return</label>${quantityControls(remaining)}<p id="return-error" role="alert"></p><button type="button" class="btn-primary" id="return-confirm">Confirm return</button>`);
+  openWorkflow(`<h2 id="workflow-title">Return ${esc(rec.item)}</h2><p>${esc(rec.reference || '')} · ${esc(rec.project || 'Personal')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''}</p><p>Borrowed: ${rec.borrowedQty ?? rec.qty} · Returned: ${rec.returnedQty || 0} · Remaining: ${remaining}</p><label class="field-label" for="sheet-quantity">Quantity to return</label>${quantityControls(remaining)}<p id="return-error" role="alert"></p><button type="button" class="btn-primary" id="return-confirm">Confirm return</button>`);
   bindQuantity(); document.getElementById('sheet-quantity').max = remaining;
   document.getElementById('return-confirm').onclick = async () => {
     try {
       const qty = MeaCart.validateReturn(rec, document.getElementById('sheet-quantity').value, draftOwner);
-      const queue = pendingReturns(); queue.push({clientId: uuid(), borrowId: rec.recordId, qty, idNumber: draftOwner});
+      const queue = pendingReturns(); queue.push({clientId: uuid(), borrowId: rec.recordId, qty, idNumber: draftOwner, requiresGoogle: !!verifiedMember || !!state.lastId?.verified});
       if (!writeLocal(returnKey(), queue)) throw new Error('Could not save return. Free device storage and try again.');
       closeWorkflow(); showToast('Return saved · waiting to sync'); renderReturnQueue(); flushReturns();
     } catch (e) { document.getElementById('return-error').textContent = e.message; }
@@ -300,7 +302,8 @@ async function flushReturns() {
     for (const entry of pendingReturns().filter(r => !r.failed)) {
       if (epoch !== accountEpoch) break;
       try {
-        await inventoryRequest('returnItems', entry);
+        if ((entry.requiresGoogle || state.lastId?.verified) && !verifiedMember) throw new Error('Reconnect school Google to sync this return.');
+        await inventoryRequest('returnItems', entry, !!verifiedMember);
         writeLocal(key, readLocal(key, []).filter(r => r.clientId !== entry.clientId));
         if (epoch === accountEpoch && state.view === 'history') await renderHistory();
       } catch (e) {
@@ -331,13 +334,7 @@ async function connectGoogle() {
     await auth.signInWithPopup(provider);
     const data = await inventoryRequest('googleMember', {}, true);
     if (epoch !== accountEpoch) return;
-    if (draftOwner && String(data.member.idNumber) !== draftOwner) { verifiedMember = null; cloudLoaded = false; document.getElementById('google-account-status').textContent = 'Google disconnected · cart remains on this device'; await auth.signOut(); throw new Error('This Google account belongs to a different member. Log out first to switch accounts.'); }
-    if (!draftOwner) {
-      // Email verification grants ordinary access only. Officer access still uses the established tracker gate.
-      state.lastId = {...data.member, level: 'NONE', found: true}; saveLogin(state.lastId); window.meaSwitchAccount(); renderIdentity(); showView('home');
-    }
-    verifiedMember = {uid: auth.currentUser.uid, idNumber: data.member.idNumber};
-    document.getElementById('google-account-status').textContent = 'School Google connected · cart sync enabled';
+    await acceptGoogleAccount(data, auth.currentUser);
     await loadCloudDraft();
   } catch (e) { showToast(e.message, true); document.getElementById('google-login-status').textContent = e.message; if (verifiedMember) saveStatus('Saved on this device · cloud sync unavailable'); }
 }
@@ -389,13 +386,12 @@ window.meaInstallHelp = function() {
 document.addEventListener('DOMContentLoaded', () => {
   window.meaSwitchAccount();
   if (window.MEA_CONFIG?.firebase?.apiKey) loadFirebase().then(auth => auth.onAuthStateChanged(async user => {
-    if (!user || !draftOwner || verifiedMember) return;
+    if (!user || verifiedMember) return;
     const epoch = accountEpoch;
     try {
       const data = await inventoryRequest('googleMember', {}, true);
-      if (epoch !== accountEpoch || String(data.member.idNumber) !== draftOwner) return;
-      verifiedMember = {uid: user.uid, idNumber: draftOwner};
-      document.getElementById('google-account-status').textContent = 'School Google connected · cart sync enabled';
+      if (epoch !== accountEpoch) return;
+      await acceptGoogleAccount(data, user);
       await loadCloudDraft();
     } catch (_) { saveStatus('Saved on this device · reconnect Google to sync'); }
   })).catch(() => {});
@@ -414,3 +410,45 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === draftKey()) { const saved = readLocal(draftKey(), {}); state.cart = MeaCart.normalize(saved.cart); draftDirty = !!saved.dirty; window.meaRestoreFields(); updateCartBadge(); if (state.view === 'cart') renderCart(); }
   });
 });
+
+async function acceptGoogleAccount(data, user) {
+  const member = data.member, account = data.account || {uid:user.uid};
+  const nextOwner = String(member.idNumber);
+  if (draftOwner && draftOwner !== nextOwner && state.lastId?.googleUid !== user.uid) {
+    verifiedMember = null; cloudLoaded = false;
+    await firebaseAuth.signOut();
+    throw new Error('This Google account belongs to another account. Log out first to switch.');
+  }
+  let chosen;
+  const epoch = accountEpoch;
+  const priorReturns = draftOwner && draftOwner !== nextOwner ? pendingReturns() : [];
+  if (draftOwner && draftOwner !== nextOwner) {
+    const guestDraft = draftSnapshot(), memberDraft = readLocal('mea_cart_v3:' + nextOwner, {cart:{},project:'',committee:''});
+    if (!MeaCart.sameDraft(guestDraft, memberDraft) && (Object.keys(guestDraft.cart).length || Object.keys(memberDraft.cart || {}).length)) {
+      chosen = await new Promise((resolve, reject) => {
+        openWorkflow('<h2 id="workflow-title">Keep which local cart?</h2><p>Your guest account now matches the member roster. Choose a cart before connecting.</p><button class="btn-primary" id="keep-guest-draft">Keep guest cart</button><button class="btn-secondary" id="keep-member-draft">Use saved member cart</button>');
+        document.getElementById('workflow-dialog').addEventListener('close',()=>reject(new Error('Account connection cancelled. Both local carts are preserved.')),{once:true});
+        document.getElementById('keep-guest-draft').onclick=()=>{resolve(guestDraft);closeWorkflow();};
+        document.getElementById('keep-member-draft').onclick=()=>{resolve(memberDraft);closeWorkflow();};
+      });
+      if (epoch !== accountEpoch) return;
+    }
+  }
+  state.lastId = {...member, googleUid:user.uid, verified:true, found:true};
+  saveLogin(state.lastId);
+  if (draftOwner !== nextOwner) window.meaSwitchAccount();
+  verifiedMember = {...account, uid:user.uid, idNumber:nextOwner};
+  if (priorReturns.length) {
+    const byId = new Map(pendingReturns().concat(priorReturns).map(r=>[r.clientId,{...r,requiresGoogle:true}]));
+    writeLocal(returnKey(),[...byId.values()]);
+  }
+  if (chosen) {state.cart=MeaCart.normalize(chosen.cart); writeLocal(draftKey(),{...chosen,cart:state.cart,dirty:true}); window.meaRestoreFields(); draftDirty=true;}
+  renderIdentity(); updateHomeCardStates();
+  document.getElementById('google-account-status').textContent=(member.accountKind==='GUEST' ? 'Guest · ' + member.guestCode : 'Verified member') + ' · school Google connected';
+  if (state.view==='login') showView('home');
+}
+window.meaHistoryRequest = function(scope, project) {
+  if ((state.lastId?.verified || state.lastId?.accountKind==='GUEST') && !verifiedMember) return Promise.reject(new Error('Reconnect school Google to refresh your history.'));
+  if (scope==='project' && !verifiedMember?.officer) return Promise.reject(new Error('Verified officer access is required for project history.'));
+  return inventoryRequest('history', {idNumber:draftOwner,scope,project},!!verifiedMember);
+};
