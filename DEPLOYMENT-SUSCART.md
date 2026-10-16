@@ -38,7 +38,7 @@ Old unresolved loans with ambiguous historical returns remain blocked until SUS 
 
 ## Rollout and rollback
 
-Deploy apps-script/inventory-v2.gs to the existing inventory project, preserving execute-as and access settings. No new setup/migration is required on an already migrated Version 9 workbook. Run integration tests on a copy with receipts suppressed. Publish backend before frontend; service-worker cache is mea-app-v14.
+Deploy apps-script/inventory-v2.gs to the existing inventory project, preserving execute-as and access settings. No new setup/migration is required on an already migrated Version 9 workbook. Run integration tests on a copy with receipts suppressed. Publish backend before frontend; service-worker cache is mea-app-v15.
 
 Run node --test tests/*.test.js and node tests/serve-workflow-fixture.js. The fixture intercepts service calls and must never be deployed.
 

@@ -34,7 +34,7 @@ http.createServer((req,res)=>{
  if(!target.startsWith(root+path.sep)) {res.writeHead(403);return res.end();}
  try {
  let bytes=fs.readFileSync(target);
- if(path.extname(target)==='.html') bytes=Buffer.from(bytes.toString().replace('<script src="app-config.js"></script>',fixture+'<script src="app-config.js"></script>'));
+ if(path.extname(target)==='.html') bytes=Buffer.from(bytes.toString().replace('<script src="app-config.js?v=15"></script>',fixture+'<script src="app-config.js?v=15"></script>'));
  const type={'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'}[path.extname(target)]||'text/plain';
  res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(bytes);
  } catch(_) {res.writeHead(404);res.end();}
