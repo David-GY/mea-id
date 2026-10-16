@@ -17,7 +17,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="inventory.css?v=4">
 <link rel="stylesheet" href="dashboard.css?v=1">
-<link rel="stylesheet" href="appearance.css?v=11">
+<link rel="stylesheet" href="appearance.css?v=13">
 <script src="appearance.js"></script>
 </head>
 <body>
@@ -54,7 +54,7 @@
           <input type="text" inputmode="numeric" id="login-id-input" placeholder="e.g. 212345" maxlength="6"
             style="text-align:center;flex:1 1 100%;" autocomplete="off" spellcheck="false" />
         </div>
-        <button class="btn-primary login-enter-btn" id="login-enter-btn">ENTER</button><button type="button" class="btn-secondary" id="google-login">Continue with school Google account</button><p class="case-hint" id="google-login-status">Google verifies your school account. Students outside the MEA roster enter as guests; we record their name and school email for inventory accountability. ID-only entry remains available.</p>
+        <button class="btn-primary login-enter-btn" id="login-enter-btn">ENTER</button><button type="button" class="btn-secondary" id="google-login">Continue with school email or Google</button><p class="case-hint" id="google-login-status">Verify your school email by link, code, or Google. Students outside the MEA roster enter as guests; we record their name and school email for inventory accountability. ID-only entry remains available.</p>
         <div class="login-error" id="login-error"></div>
       </div>
     </section>
@@ -147,7 +147,7 @@
       <div class="setup-status" id="settingsStatus"></div>
 
       <div class="home-nav-list home-nav-list-single" style="margin-top:22px;">
-        <button type="button" class="btn-secondary" id="google-connect">Connect school Google account</button><p id="google-account-status" role="status"></p><div class="home-nav-card" id="settings-install-btn" role="button" tabindex="0">
+        <button type="button" class="btn-secondary" id="google-connect">Connect school account</button><p id="google-account-status" role="status"></p><div class="home-nav-card" id="settings-install-btn" role="button" tabindex="0">
           <div class="home-nav-icon"><img class="svg-icon" src="icons/ui/arrow-down-to-line.svg" alt=""></div>
           <div class="home-nav-text">
             <div class="home-nav-title">Download MEA App</div>
@@ -189,7 +189,7 @@
       </div>
 
       <div class="history-head">
-        <div class="history-title">History</div>
+        <div class="history-title">History</div><button type="button" class="btn-secondary" id="history-deleted-toggle" aria-pressed="false">Deleted records</button>
         <select id="history-project-select" class="history-project-select" style="display:none;">
           <option value="">Project/Dept</option>
         </select>
@@ -408,9 +408,10 @@
 <script src="dashboard-rules.js?v=1"></script>
 <script src="dashboard-model.js?v=1"></script>
 <script src="app-config.js"></script>
-<script src="cart-model.js?v=12"></script>
-<script src="inventory.js?v=12"></script>
-<script src="workflow.js?v=12"></script>
+<script src="cart-model.js?v=13"></script>
+<script src="inventory.js?v=13"></script>
+<script src="school-auth.js?v=13"></script>
+<script src="workflow.js?v=13"></script>
 <script src="dashboard.js?v=2"></script>
 <dialog id="workflow-dialog" aria-labelledby="workflow-title"><div class="workflow-sheet"><button type="button" class="sheet-close" aria-label="Close dialog">×</button><div id="workflow-body"></div></div></dialog>
 <button type="button" id="cart-shortcut" class="btn-primary" hidden>View cart</button>

@@ -6,7 +6,7 @@ const cart = require('../cart-model');
 const source = fs.readFileSync(require.resolve('../apps-script/inventory-v2.gs'), 'utf8');
 function fixture() {
   let serial = 0, held = false, mail = 0;
-  const properties = {INVENTORY_SPREADSHEET_ID: 'test', TRACKER_SPREADSHEET_ID: 'roster', FIREBASE_WEB_API_KEY: 'test-key'};
+  const properties = {INVENTORY_SPREADSHEET_ID: 'test', TRACKER_SPREADSHEET_ID: 'roster', SUPABASE_PUBLISHABLE_KEY: 'test-key'};
   const books = {};
   class Sheet {
     constructor(rows = [], width = 12) { this.rows = rows; this.width = width; }
@@ -33,8 +33,9 @@ function fixture() {
     Return: new Sheet([['Time','Item','Qty','Project','Committee','ID Num','Name','Email']])
   };
   const book = {getSheetByName: name => tabs[name], insertSheet: name => tabs[name] = new Sheet()};
-  const roster = new Sheet([[],['Email','ID','Full Name'],['SET'], ['one@student.ateneo.edu','100001','One'], ['two@student.ateneo.edu','100002','Two']]);
-  books.test = book; books.roster = {getSheetByName: () => roster};
+  const roster = new Sheet([[],['Email','ID','Full Name','','','','','','SUS'],['SET'], ['one@student.ateneo.edu','100001','One','','','','','',true], ['two@student.ateneo.edu','100002','Two','','','','','',false]]);
+  const trackerTabs={MAIN:roster,ACCESS:new Sheet([['ID Number','Name','Level']])};
+  books.test = book; books.roster = {getSheetByName: name => trackerTabs[name]};
   const context = vm.createContext({console, Date, JSON, Number, Object, Array, String,
     PropertiesService: {getScriptProperties: () => ({getProperty: key => properties[key]})},
     SpreadsheetApp: {openById: id => books[id], flush: () => {}},
@@ -42,14 +43,14 @@ function fixture() {
     LockService: {getScriptLock: () => ({waitLock: () => { assert.equal(held,false); held = true; }, releaseLock: () => { held = false; }})},
     GmailApp: {sendEmail: () => { mail++; }},
     ContentService: {MimeType:{JSON:'json'}, createTextOutput: text => ({setMimeType: () => JSON.parse(text)})},
-    UrlFetchApp: {fetch: (_, options) => { const token = JSON.parse(options.payload).idToken; return {getResponseCode: () => token === 'invalid' ? 400 : 200, getContentText: () => JSON.stringify({users:[{localId:token, email: token === 'two' ? 'two@student.ateneo.edu' : 'one@student.ateneo.edu', emailVerified: token !== 'unverified', providerUserInfo:[{providerId:'google.com'}]}]})}; }}
+    UrlFetchApp: {fetch: (_, options) => { const token = options.headers.Authorization.slice(7), email = token === 'two' ? 'two@student.ateneo.edu' : 'one@student.ateneo.edu'; return {getResponseCode: () => token === 'invalid' ? 400 : 200, getContentText: () => JSON.stringify({id:token, email, email_confirmed_at: token !== 'unverified' ? '2026-10-16' : null, identities:[{provider:'google',identity_data:{email,email_verified:true,full_name:'Test Member'}}]})}; }}
   });
   vm.runInContext(source, context);
   context.setupInventoryV2();
   const request = (action,p={}) => context.doPost({parameter:{action},postData:{contents:JSON.stringify(p)}});
   const item = () => context.invCatalog_()[0];
   const order = (overrides={}) => ({clientId:'client-1000001',idNumber:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',items:[{id:item().id,title:item().title,location:item().location,qty:3}],...overrides});
-  return {context,tabs,request,item,order,roster,properties,mail:()=>mail};
+  return {context,tabs,request,item,order,roster,trackerTabs,properties,mail:()=>mail};
 }
 test('cart keeps independent actions for one item and rejects malformed quantities', () => {
   const item = {id:'stable-a'};
@@ -189,17 +190,85 @@ test('guest promotion keeps previous loans and UID draft with explicit conflict 
   assert.equal(f.request('returnItems',{idToken:'valid',borrowId:created.recordIds[0],qty:3,clientId:'promote-return'}).remaining,0);
 });
 
-test('Google identity lookup rejects expired, disabled, unverified and non-Google accounts',()=>{
+test('Supabase verifies current tokens, confirmed Google identity email, provider and ban status',()=>{
   const f=fixture();
-  const valid={localId:'verified',email:'one@student.ateneo.edu',emailVerified:true,providerUserInfo:[{providerId:'google.com'}]};
+  const valid={id:'verified',email:'one@student.ateneo.edu',email_confirmed_at:'2026-10-16',identities:[{provider:'google',identity_data:{email:'one@student.ateneo.edu',email_verified:true}}]};
   let status=200, user=valid;
-  f.context.UrlFetchApp.fetch=(_,options)=>{
-    assert.equal(JSON.parse(options.payload).idToken,'current-token');
-    return {getResponseCode:()=>status,getContentText:()=>JSON.stringify({users:user?[user]:[]})};
+  f.context.UrlFetchApp.fetch=(url,options)=>{
+    assert.equal(url,'https://gxffeavbefmmycmvccsm.supabase.co/auth/v1/user');
+    assert.equal(options.headers.Authorization,'Bearer current-token'); assert.equal(options.headers.apikey,'test-key');
+    return {getResponseCode:()=>status,getContentText:()=>JSON.stringify(user)};
   };
   assert.equal(f.context.invGoogleUser_('current-token').localId,'verified');
-  for(const rejected of [{...valid,disabled:true},{...valid,emailVerified:false},{...valid,providerUserInfo:[{providerId:'password'}]},null]) {
+  for(const rejected of [{...valid,banned_until:'2099-01-01'},{...valid,email_confirmed_at:null},{...valid,identities:[{provider:'email'}]},{...valid,email:'different@student.ateneo.edu'},null]) {
     user=rejected;assert.throws(()=>f.context.invGoogleUser_('current-token'),/Verify your school/);
   }
-  user=valid;status=400;assert.throws(()=>f.context.invGoogleUser_('current-token'),/Verify your school/);
+  user=valid;status=401;assert.throws(()=>f.context.invGoogleUser_('current-token'),/Verify your school/);
+});
+
+test('shared department history normalizes labels and allows only own or verified officer returns',()=>{
+  const f=fixture(); const loan=f.request('submitOrder',f.order({project:'  SUS  Operations  '}));
+  f.roster.rows[1].push('SUS Operations'); f.roster.rows[3].push(true);
+  const scope={idNumber:'100001',scope:'project',project:'sus operations'};
+  const shared=f.request('history',scope); assert.equal(shared.ok,true);assert.equal(shared.records.length,1);
+  assert.equal(shared.records[0].canReturn,true);
+  assert.equal(f.request('history',{...scope,idNumber:'100002'}).code,'FORBIDDEN');assert.equal('email' in shared.records[0],false);assert.equal('ownerKey' in shared.records[0],false);
+  const own=f.request('history',{...scope,idNumber:'100001'});assert.equal(own.records[0].canReturn,true);
+  assert.equal(f.request('returnItems',{idNumber:'100002',borrowId:loan.recordIds[0],qty:1,clientId:'other-return-1',officer:true}).ok,false);
+  googleUser(f,'officer','two@student.ateneo.edu');f.trackerTabs.ACCESS.rows.push(['100002','Two','Admin']);
+  const view=f.request('history',{...scope,idToken:'valid'});assert.equal(view.records[0].canReturn,true);
+  const ret={idToken:'valid',borrowId:loan.recordIds[0],qty:1,clientId:'officer-return-1'};
+  assert.equal(f.request('returnItems',ret).remaining,2);assert.equal(f.request('returnItems',ret).remaining,2);
+  const event=f.context.invEvents_().find(e=>e.type==='RETURN');assert.equal(event.idNumber,'100002');assert.equal(event.onBehalfOf,'100001');
+  assert.equal(f.request('history',{...scope,project:'Personal'}).code,'FORBIDDEN');
+  assert.equal(f.request('history',{...scope,idNumber:'999999'}).code,'UNAUTHORIZED');
+});
+
+test('shared history never exposes another guest UID and consumed or legacy rows cannot be returned',()=>{
+  const f=fixture();googleUser(f,'private-guest','guest@student.ateneo.edu');
+  f.request('submitOrder',f.order({idToken:'valid',caseType:'CONSUMING'}));
+  const shared=f.request('history',{idNumber:'100001',scope:'project',project:'SUS'});
+  const guest=shared.records.find(r=>r.accountKind==='GUEST');assert.match(guest.idNum,/^G-/);assert.equal(guest.canReturn,false);
+  assert.equal(JSON.stringify(shared).includes('private-guest'),false);
+  assert.equal(f.request('history',{idNumber:'100001',scope:'officer'}).code,'FORBIDDEN');
+});
+
+test('verified project membership permits delegated returns and reversible deletion with revision checks',()=>{
+ const f=fixture(); const loan=f.request('submitOrder',f.order({idNumber:'100002'}));
+ assert.equal(f.request('returnItems',{idNumber:'100001',borrowId:loan.recordIds[0],qty:1,clientId:'id-delegation'}).ok,false);
+ googleUser(f,'one','one@student.ateneo.edu');
+ assert.equal(f.request('returnItems',{idToken:'valid',borrowId:loan.recordIds[0],qty:1,clientId:'team-delegation'}).remaining,2);
+ const change={idToken:'valid',recordId:loan.recordIds[0],expectedRevision:0,clientId:'delete-team-row'};
+ assert.equal(f.request('recordDelete',change).ok,true);assert.equal(f.request('recordDelete',change).ok,true);
+ let record=f.context.invHistory_().find(r=>r.recordId===loan.recordIds[0]);assert.equal(record.deleted,true);assert.equal(record.outstandingQty,2);assert.equal(record.recordRevision,1);
+ assert.equal(f.request('returnItems',{idToken:'valid',borrowId:record.recordId,qty:1,clientId:'deleted-return'}).ok,false);
+ assert.equal(f.request('recordRestore',{...change,clientId:'stale-restore'}).code,'CONFLICT');
+ assert.equal(f.request('recordRestore',{...change,expectedRevision:1,clientId:'restore-team-row'}).ok,true);
+ assert.equal(f.request('recordEdit',{...change,expectedRevision:2,clientId:'unauthorized-edit',changes:{qty:5,project:'SUS'}}).code,'FORBIDDEN');
+ f.roster.rows[3][8]=false;
+ assert.equal(f.request('recordDelete',{...change,expectedRevision:2,clientId:'revoked-delete'}).code,'FORBIDDEN');
+});
+test('Access Admin controls all projects and audit edits cannot reduce quantity below confirmed returns',()=>{
+ const f=fixture(); const loan=f.request('submitOrder',f.order({project:'Unassigned Project'}));
+ googleUser(f,'two','two@student.ateneo.edu');f.trackerTabs.ACCESS.rows.push(['100002','Two','Admin']);
+ const account=f.request('googleMember',{idToken:'valid'}).account;assert.equal(account.admin,true);
+ assert.equal(f.request('history',{idToken:'valid',scope:'officer'}).records.length,2);
+ f.request('returnItems',{idToken:'valid',borrowId:loan.recordIds[0],qty:2,clientId:'admin-returns'});
+ const change={idToken:'valid',recordId:loan.recordIds[0],expectedRevision:0,clientId:'admin-edit-row',changes:{qty:1,project:'SUS',committee:'A'}};
+ assert.equal(f.request('recordEdit',change).ok,false);
+ change.changes.qty=4;assert.equal(f.request('recordEdit',change).ok,true);assert.equal(f.request('recordEdit',change).ok,true);
+ const r=f.context.invHistory_().find(r=>r.recordId===loan.recordIds[0]);assert.equal(r.qty,4);assert.equal(r.outstandingQty,2);assert.equal(r.project,'SUS');
+ assert.equal(f.tabs.Borrow.rows[2][2],4);assert.equal(f.tabs.Borrow.rows[2][3],'SUS');
+ f.trackerTabs.ACCESS.rows[1][2]='Dashboard';
+ assert.equal(f.request('recordDelete',{...change,expectedRevision:1,clientId:'not-admin-now'}).code,'FORBIDDEN');
+});
+test('CBAB membership is read from its explicit roster and duplicate Access records fail closed',()=>{
+ const f=fixture();f.trackerTabs.CBAB={getDataRange:()=>({getDisplayValues:()=>[['','','ID num','Full name'],['','','SET'],['','','100002','Two']]})};
+ googleUser(f,'two','two@student.ateneo.edu');assert.equal(f.request('googleMember',{idToken:'valid'}).account.projects.includes('CBAB'),true);
+ f.trackerTabs.ACCESS.rows.push(['100002','Two','Admin'],['100002','Two','None']);assert.equal(f.request('googleMember',{idToken:'valid'}).code,'ROSTER_MISMATCH');
+});
+
+test('Supabase confirmed email identity supports email sign-in without trusting client roles',()=>{
+ const f=fixture();f.context.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify({id:'email-user',email:'one@student.ateneo.edu',email_confirmed_at:'2026-10-16',identities:[{provider:'email',identity_data:{email:'one@student.ateneo.edu'}}],user_metadata:{admin:true,full_name:'Claimed Admin'}})});
+ const account=f.request('googleMember',{idToken:'valid'}).account;assert.equal(account.memberId,'100001');assert.equal(account.admin,false);
 });

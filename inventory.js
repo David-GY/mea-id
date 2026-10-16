@@ -649,6 +649,7 @@
   // ── History data: fetched from the Inventory Apps Script (action=history),
   // cached locally so History still shows the last-known data offline,
   // exactly like the Catalog's inventory cache.
+  function historyProjectKey(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
   function historyCacheKey() { return 'mea_history_cache_v3:' + (state.lastId?.googleUid ? 'google:' + state.lastId.googleUid : 'id:' + (state.lastId?.idNumber || 'anonymous')) + ':' + state.historyTab + ':' + (state.historyTab === 'project' ? document.getElementById('history-project-select')?.value || '' : ''); }
 
   function getCachedHistory() {
@@ -678,6 +679,14 @@
       const json = await window.meaHistoryRequest(state.historyTab, document.getElementById('history-project-select')?.value || '');
       if (json && json.ok && Array.isArray(json.records)) {
         if (ownerKey !== historyCacheKey()) return {records: [], offline: false};
+        if (Array.isArray(json.projects)) {
+          const select = document.getElementById('history-project-select'), chosen = select.value;
+          const seen = new Set();
+          const labels = json.projects.filter(label => { const key = historyProjectKey(label); if(!key || seen.has(key))return false; seen.add(key);return true; });
+          if(json.admin)labels.unshift('__ALL__');
+          select.innerHTML = '<option value="">Project/Dept</option>' + labels.map(label=>`<option value="${escapeHtml(label)}">${label==='__ALL__'?'All records (Admin)':escapeHtml(label)}</option>`).join('');
+          select.value = chosen==='__ALL__'?chosen:labels.find(label=>historyProjectKey(label)===historyProjectKey(chosen)) || '';
+        }
         setCachedHistory(json.records);
         return { records: json.records, offline: false };
       }
@@ -685,8 +694,8 @@
     } catch(err) {
       const cache = getCachedHistory();
       return {
-        records: cache ? cache.records : [],
-        offline: true,
+        records: !err.code && (err instanceof TypeError || !navigator.onLine) && cache ? cache.records : [],
+        offline: !err.code && (err instanceof TypeError || !navigator.onLine),
         syncedAt: cache ? cache.syncedAt : null,
         error: err.message
       };
@@ -695,8 +704,8 @@
 
   function historyRowHtml(rec) {
     const when = rec.time ? new Date(rec.time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-    const caseLabel = rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
-    const canReturn = state.historyTab === 'personal' && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false;
+    const caseLabel = rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
+    const canReturn = !rec.deleted && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false && (rec.canReturn === true || rec.canReturn === undefined && String(rec.idNum) === String(state.lastId?.idNumber));
     return `
       <div class="history-item">
         <div class="history-item-main">
@@ -707,8 +716,10 @@
           <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>
           <div class="history-item-date">${when}</div>
           ${rec.caseType === 'BORROWING' ? `<div>${MeaCart.outstanding(rec)} remaining</div>` : ''}
+          ${rec.canEdit && !rec.deleted ? `<button type="button" class="btn-secondary" data-record-action="edit" data-record-id="${escapeHtml(rec.recordId)}">Edit record</button>` : ''}
+          ${rec.canDelete ? `<button type="button" class="btn-secondary" data-record-action="${rec.deleted?'restore':'delete'}" data-record-id="${escapeHtml(rec.recordId)}">${rec.deleted?'Restore':'Delete'}</button>` : ''}
           ${canReturn ? `<button type="button" class="btn-secondary history-return" data-return-id="${escapeHtml(rec.recordId)}">Return items</button>` : ''}
-          ${rec.caseType === 'BORROWING' && !rec.resolved && !canReturn && state.historyTab === 'personal' ? '<small>Contact SUS to reconcile this legacy borrow.</small>' : ''}
+          ${rec.caseType === 'BORROWING' && !rec.resolved && !canReturn && rec.returnable === false ? '<small>Contact SUS to reconcile this legacy borrow.</small>' : ''}
         </div>
       </div>`;
   }
@@ -719,14 +730,20 @@
     const totalList = document.getElementById('history-total-list');
     if (!pendingList || !totalList) return;
 
+    document.getElementById('history-deleted-toggle')?.setAttribute('aria-pressed',String(!!state.historyShowDeleted));
     const myToken = ++historyLoadToken; // avoids a slow older fetch overwriting a newer render
     const skeletonRow = '<div class="history-item skeleton-row skeleton" style="height:52px;"></div>';
     pendingList.innerHTML = skeletonRow.repeat(2);
     totalList.innerHTML = skeletonRow.repeat(3);
 
+    window.meaHistoryRecords = [];
     const { records, offline, error, syncedAt } = await fetchHistoryRecords();
     if (myToken !== historyLoadToken) return; // a newer call already took over
 
+    if (error && !offline) {
+      pendingList.innerHTML = `<div class="history-empty" role="alert">${escapeHtml(error)}</div>`;
+      totalList.innerHTML = ''; return;
+    }
     let scoped = records;
     if (state.historyTab === 'personal') {
       const myId = state.lastId && state.lastId.idNumber ? String(state.lastId.idNumber).trim() : '';
@@ -739,10 +756,11 @@
         totalList.innerHTML = '<div class="history-empty">Select a Project/Dept above</div>';
         return;
       }
-      scoped = records.filter(r => r.project === chosen);
+      scoped = chosen==='__ALL__'?records:records.filter(r => historyProjectKey(r.project) === historyProjectKey(chosen));
     }
 
     window.meaHistoryRecords = records;
+    scoped=scoped.filter(r=>!!r.deleted===!!state.historyShowDeleted);
     const pending = scoped.filter(r => r.caseType === 'BORROWING' && !r.resolved);
     const total = scoped.filter(r => r.caseType !== 'BORROWING' || r.resolved);
 

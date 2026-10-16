@@ -154,3 +154,10 @@ select option, select option:checked, select option:hover { background: var(--ca
   filter: brightness(0);
   opacity: .82;
 }
+/* Compact history controls retain 44px touch targets and wrap on narrow screens. */
+.history-head { flex-wrap: wrap; }
+#history-deleted-toggle { width: auto; min-height: 44px; padding: 8px 12px; font-size: 12px; margin: 0; }
+#history-deleted-toggle[aria-pressed="true"] { background: var(--surface-2, var(--surface)); outline: 2px solid var(--accent, var(--ink)); }
+.history-item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 42%; }
+.history-item-side .btn-secondary { width: auto; min-height: 44px; padding: 8px 12px; margin: 0; font-size: 12px; }
+#workflow-body input:not([type="radio"]):not([type="checkbox"]):not(#sheet-quantity) { max-width: 100%; min-height: 44px; }

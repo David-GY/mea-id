@@ -13,18 +13,19 @@ window.fetch = async (url, options={}) => {
  let data;
  if(action==='login') data={ok:true,found:true,idNumber:new URL(url).searchParams.get('id'),name:'Test Member',level:'NONE'};
  else if(action==='inventory') data={ok:true,items:[{id:'item-1',title:'Whiteboard Markers',qty:'8',location:'Steel Cabinet A',category:'Stationery',notes:'Return reusable markers.'},{id:'item-2',title:'Binder Clips',qty:'2 packs',location:'Steel Cabinet B',category:'Stationery',notes:''}]};
- else if(action==='history') data={ok:true,records};
+ else if(action==='history') data={ok:true,records,projects:['SUS'],admin:true};
  else if(action==='submitOrder') data=payload.caseType==='CONSUMING' && sessionStorage.getItem('fixture-fail-consume') ? {ok:false,retryable:false,error:'Fixture: consume rejected'} : {ok:true,logged:payload.items.length};
  else if(action==='returnItems') { const r=records.find(r=>r.recordId===payload.borrowId); r.returnedQty+=payload.qty; r.resolved=r.returnedQty>=r.borrowedQty; data={ok:true}; }
- else if(action==='googleMember') data={ok:true,member:{idNumber:'100001',name:'Test Member'}};
+ else if(action==='googleMember') {records.forEach(r=>{r.canReturn=true;r.canDelete=true;r.canEdit=true;});data={ok:true,member:{idNumber:'100001',name:'Test Member',level:'ADMIN',verified:true},account:{uid:'test-uid',admin:true,officer:true,projects:['SUS']}};}
+ else if(['recordDelete','recordRestore','recordEdit'].includes(action)){const r=records.find(r=>r.recordId===payload.recordId);if(action==='recordEdit')Object.assign(r,payload.changes);else r.deleted=action==='recordDelete';r.recordRevision=(r.recordRevision||0)+1;data={ok:true};}
  else if(action==='cartRead') data={ok:true,revision:1,draft:{cart:{},project:'SUS',committee:'Cloud draft'}};
  else if(action==='cartWrite') data={ok:true,revision:2};
  else throw new Error('Fixture blocked request '+url);
  return {ok:true,json:async()=>data,text:async()=>JSON.stringify(data)};
 };
-window.MEA_CONFIG={firebase:{apiKey:'fixture',authDomain:'fixture',projectId:'fixture'}};
-const fixtureUser={uid:'test-uid',getIdToken:async()=>'fixture'};
-window.firebase={apps:[{}],auth:Object.assign(()=>({currentUser:fixtureUser,signInWithPopup:async()=>({user:fixtureUser}),signOut:async()=>{},onAuthStateChanged:()=>{}}),{GoogleAuthProvider:class {setCustomParameters(){}}})};
+window.MEA_CONFIG={supabase:{url:'https://gxffeavbefmmycmvccsm.supabase.co',publishableKey:'fixture'}};
+window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:{user:{id:'test-uid'},access_token:'fixture'}}}),signInWithOAuth:async()=>({}),signInWithOtp:async()=>({}),verifyOtp:async()=>({data:{session:{user:{id:'test-uid'},access_token:'fixture'}}}),signOut:async()=>({}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}})};
+
 </script>`;
 http.createServer((req,res)=>{
  const pathname = decodeURIComponent(new URL(req.url,'http://localhost').pathname);

@@ -1,78 +1,45 @@
-# SUSCart workflow deployment
+# SUSCart current deployment
 
-The frontend changes are implemented, with a separate versioned room-inventory Apps Script. The live app, deployed Apps Script, and production workbook have not been changed by this implementation.
+The app remains static on GitHub Pages, with transactions and drafts in the existing inventory Sheets journal. The ID Tracker workbook is read-only for inventory permissions.
 
-## Run and verify locally
+## School authentication
 
-No build step or package installation is required. From this checkout:
+Supabase project: https://gxffeavbefmmycmvccsm.supabase.co. Public configuration lives in app-config.js. The inventory backend validates each access token through the fixed project's /auth/v1/user endpoint; SUPABASE_PUBLISHABLE_KEY optionally overrides the embedded public key. Never use a service-role/secret key. Firebase is no longer used.
 
-```
-node --test tests/*.test.js
-node tests/serve-workflow-fixture.js
-```
+The app offers Google OAuth with PKCE and email link/code verification. School domain is checked on the server after Supabase confirms the email. MAIN A:C (row 2 headers, row 4 data) classifies roster members; other verified student.ateneo.edu accounts are recorded as guests. Mutable names never determine membership or privileges. UID owns the cloud cart; account switching and explicit conflict choices preserve drafts. A logout suppresses automatic session restoration even offline.
 
-Open http://127.0.0.1:8765 and use sample ID `100001` or `100002`. This isolated fixture intercepts Google requests and uses sample records. It never submits to the production spreadsheet. The fixture's Google connection is simulated, not real authentication. Do not deploy the fixture server.
+Required dashboard setup:
 
-Verified with 27 Node tests and an isolated Chromium preview: explicit Borrow/Consume selection, both actions for one item, cart restoration after reload, grouped checkout, and partial return from History. Backend tests mock Apps Script services. Physical iPhone/Android installation, real Google authentication, and Apps Script execution against a copied workbook still require deployment verification.
+1. Site URL and the exact MEA redirect have been saved. Set Site URL and allowed redirect to https://david-gy.github.io/mea-id/ (the trailing path matters). Add localhost only for development.
+2. Enable Google provider with the project's Google OAuth client. Its authorized callback is https://gxffeavbefmmycmvccsm.supabase.co/auth/v1/callback. Enter Google client secrets only in the Supabase console, never this repository.
+3. Configure the passwordless email template to include {{ .Token }} for codes. Include a supported confirmation link for link sign-in. For a custom PKCE token-hash template, use the deployed app's confirmation handling or standard Supabase confirmation URL; do not copy a server-only /auth/confirm route onto static hosting.
+4. Configure production SMTP/delivery if the default Supabase sender restricts recipients. Test a real roster member and a non-roster school guest; no synthetic emails are sent by the automated tests.
 
-## Backend deployment order
+The supplied public key was verified against /auth/v1/settings. Google was disabled at inspection. The console requires custom SMTP before email templates can be edited. app-config.js emailReady is false so students receive an honest setup message; set it true only after SMTP/templates and a controlled sign-in are verified. No real authentication success is claimed until dashboard setup and end-to-end sign-in are verified.
 
-1. Copy the inventory workbook and keep its existing data, formats, and validation. Copy the existing Apps Script project or create a separate staging project. Preserve its original `Code.gs` and deployment version for rollback.
-2. Replace the staging inventory code with `apps-script/inventory-v2.gs`. Do not paste it into the ID Tracker project, and do not keep two files defining `doGet`/`doPost`.
-3. Set `INVENTORY_SPREADSHEET_ID` to the COPY's ID before running any function. Set `TRACKER_SPREADSHEET_ID` to the existing roster ID. The code's production defaults are documented constants; never run setup with defaults while testing.
-4. Run `setupInventoryV2()` in staging. This preserves inventory A:F and transaction A:I, adds inventory permanent IDs in G, transaction references in J:L, and three hidden tabs (`_MEA_EVENTS`, `_MEA_DRAFTS`, `_MEA_LEGACY`). Existing names, emails, return checkboxes, and rows remain intact. Repeat setup after adding new inventory rows without IDs; retain IDs when sorting entire rows.
-5. Deploy the staging script as a web app under the existing access policy. Set the preview's Inventory Script URL to the staging `/exec` URL. Test submission, identical retries, partial/full returns, and projection repair against the copied workbook. Receipts are sent to roster emails, as in the old script; use a test roster with test recipients for staging.
-6. After staging passes, apply the same code/setup to the production inventory project and workbook, publish a new version on the existing deployment, and verify `?action=inventory` returns `version: 2` and permanent `id` values. Keep the existing `/exec` URL. Then deploy the frontend files and service worker together. Never release the frontend's return feature against the old backend.
+## Inventory permissions
 
-### Existing requests and history
+MAIN I:AB contains project/department membership flags. False/no/0/blank do not grant access. CBAB membership is read from the explicit CBAB roster (ID num header). ACCESS A:C controls global administration: only a unique row with Level Admin grants admin rights. Duplicate or changed permission schemas fail closed. OFFICER_EMAILS is superseded.
 
-Legacy Borrow and Consume rows receive stable record references. Existing resolved Borrow checkboxes remain resolved. Unresolved legacy borrows are displayed but are not returnable until an officer inspects the old Return rows and runs `reconcileLegacyBorrow(recordId, confirmedReturnedQty)` from the script editor. This utility is not available through the public endpoint. No title-based guess links historical returns to borrows.
+- ID-only members may view their assigned project histories and keep existing unverified own-return behavior. Knowing an ID is not proof of identity.
+- Verified project members may record returns for their project, delete and restore its history records.
+- Verified ACCESS Admin accounts may view all records and edit quantity, project and committee across projects.
+- Guests see and return their own eligible loans; no tracker/admin/project membership privileges are inferred from the school domain.
 
-The journal is authoritative for NEW submissions and returns. Borrow/Consume/Return tabs remain visible projections. If a projection write fails, `repairInventoryProjections()` restores missing rows without duplicating journal events. New full returns update the Borrow tab's existing resolved checkbox. Edit/correct new transactions through a reviewed backend change rather than editing journal JSON by hand.
+Permissions are re-read for each server operation. Client flags only control presentation. Returned balances and duplicate retry identifiers remain protected under the script lock.
 
-Quantities are advisory, as in the current logging backend; submitting a request does not reserve stock or automatically deduct catalog quantities. `*` and unit-bearing quantities are displayed as unknown exact counts. No due dates or reminder policy is introduced.
+## History corrections
 
-Pre-upgrade device drafts with legacy identifiers may need item reselection after permanent IDs arrive. Removed or unmatched items stay flagged in the cart until removed; they are never rebound by row position. Old queued submissions with obsolete IDs must be reviewed rather than silently mapped to an ambiguous item.
+Project names match after trimming, collapsing whitespace and ignoring case. The server supplies allowed project options, including old recorded labels. Personal history stays personal; Admin may choose All records. Authorization errors are explicit and do not masquerade as offline caches.
 
-## Optional Google connection
+Delete is reversible: RECORD_DELETE/RECORD_RESTORE events hide or restore records without removing original orders, returns or balances. Deleted records have a dedicated view. Restore an outstanding borrowing record before recording another return. Admin edits use RECORD_EDIT events and cannot reduce borrowed quantity below confirmed returns. Record revision checks reject concurrent changes; fixed retry IDs prevent duplicates. Actor identity and prior values are retained in the journal. Visible projections receive History status in column O only when such an action occurs.
 
-ID-only login and inventory submission continue to work. Their carts stay on that device. ID numbers are identifiers rather than proof of identity; ID-only transactions and return ownership checks cannot prevent someone who knows another member's ID from impersonating that ID. Verified cloud drafts are separately protected.
+Old unresolved loans with ambiguous historical returns remain blocked until SUS reviews and reconciles them with reconcileLegacyBorrow in the editor. Never infer a historical return from its item title alone.
 
-1. In an MEA-owned Firebase project, enable Authentication > Google and authorize the deployed app's domain (and localhost for development). No Firestore database is needed; drafts live in Sheets behind Apps Script.
-2. Put the project's public web-app configuration in `app-config.js` under `MEA_CONFIG.firebase` (`apiKey`, `authDomain`, `projectId`, `appId`, and other supplied public fields). Put the matching API key in the inventory script property `FIREBASE_WEB_API_KEY`. Never add service-account keys or tokens to this repository.
-3. Verify the member roster has labeled ID and school-email columns. The backend validates the Firebase token with Google's accounts lookup API, requires a verified Google provider, and matches the email to exactly one member. It ignores client-supplied account IDs for cloud authorization.
-4. Test a matching school account, an unknown email, duplicate roster emails, an expired session, popup cancellation, and a different member's connected Google account. School Workspace policy may require administrator approval; ID-only entry remains available.
-5. Test local/cloud version choice on first connection, a simultaneous edit from another device, offline edits/reconnection, and logout/account switching. Firebase remembers a valid sign-in; after reload the app verifies its roster match before restoring sync. Google sign-in alone grants no officer privileges.
+## Rollout and rollback
 
-Cloud draft API: POST `googleMember`, `cartRead`, `cartWrite`, with Firebase `idToken` in the JSON body. `cartWrite` requires `expectedRevision`; a stale revision returns `code: CONFLICT` without changing the draft. The UI asks which version to retain. Cloud sync failures retain the local copy.
+Deploy apps-script/inventory-v2.gs to the existing inventory project, preserving execute-as and access settings. No new setup/migration is required on an already migrated Version 9 workbook. Run integration tests on a copy with receipts suppressed. Publish backend before frontend; service-worker cache is mea-app-v13.
 
-Transaction API: POST `submitOrder` with immutable `clientId`, `idNumber`, `caseType`, `project`, `committee`, and item entries; POST `returnItems` with immutable `clientId`, `idNumber`, `borrowId`, and `qty`. Server validation and script locks protect journal writes and outstanding balances. Permanent validation failures return `retryable: false`; transport/server failures remain retryable. Retried committed operations do not create another row or receipt. Receipt failures do not undo transactions; receipts are best effort.
+Run node --test tests/*.test.js and node tests/serve-workflow-fixture.js. The fixture intercepts service calls and must never be deployed.
 
-## Rollback
-
-Restore the previous frontend release and Apps Script deployment version together. Preserve added columns and journal tabs to retain audit data. Do not delete them or undo confirmed returns by clearing their rows. Existing cached clients may need one refresh after the service-worker upgrade.
-
-## UI refresh included in this draft
-
-Deploy appearance.css and appearance.js with the existing app shell. The default appearance is MEA Green, with browser-saved Garden Green (sage), Coffee, and Plum options in Settings. Earlier light preferences migrate to Garden Green. The catalog uses two mobile columns and item-first cards; details use facts, notes, segmented actions and a compact quantity row. Existing MEA SVG icons and logos are reused. Cache version is mea-app-v9.
-
-Validation: all 31 Node tests pass. Browser fixture checks cover mobile catalog/detail, saved dark appearance, centered larger-screen dialog, cart and checkout. Real-device installation and copied-sheet integration remain rollout checks. No production data or deployment was changed.
-
-Cart entries include direct Borrow/Consume switches. Quantities persist when switching. Collisions require explicit confirmation before combining; retry identifiers are invalidated for both action groups. 31 Node tests pass, including switching, persistence, collision confirmation and account-switch isolation.
-
-## Readable IDs and school accounts (October 16)
-
-Canonical IDs are retained. Setup adds Inventory/Special Inventory H (`IT-001`), transaction M (`BR-001`, `CO-001`, `RT-001`), and Return N (original borrow). G and J:L are hidden. `_MEA_REFERENCES` stores permanent mappings; never delete or renumber it. Sorting must include the hidden columns. Codes expand beyond 999.
-
-Before migration, run `repairLegacyMetadata()` for a dry run. Boolean checkbox placeholders in J:L are repaired by setup; unexpected strings and duplicate record IDs stop migration. Original A:I, including resolved checkboxes, are retained. Repeat setup is safe. Legacy unresolved loans still require reconciliation before return actions.
-
-School accounts use MAIN A:C with headers on row 2 and member data starting row 4. The server verifies Google provider, verified email, and the exact student.ateneo.edu domain. One roster match is a member; no match is a guest. Ambiguous matches or unavailable roster fail closed. Hidden Accounts stores verified UID, email, name, kind, member ID or G-code, timestamps and prior guest ownership. Guests are never added to MAIN. Guest-to-member promotion retains earlier loans and the UID cloud draft; conflicting local drafts require a choice.
-
-Guests may borrow, consume and return their own confirmed loans. They cannot open tracker/dashboard or project history. Inventory personal history is scoped server-side. Verified records cannot be accessed or returned through ID-only impersonation. ID-only legacy records retain the existing unverified-ID limitation.
-
-Configure `OFFICER_EMAILS` in inventory script properties as an explicit comma-separated allowlist for verified member project history. Default is empty. Google sign-in does not grant officer status. Tracker backend permissions are unchanged.
-
-The matching Firebase public configuration and `FIREBASE_WEB_API_KEY` remain required. Without them, ID-only entry remains available and Google sign-in explains the missing configuration. Test real member and guest accounts, expired sessions and browser/device restore after configuring Firebase. Never put tokens or service-account credentials in app-config.js. Guest submissions use the current token and never enter the ID-only offline queue; pending returns retain only retry metadata and wait for reauthentication.
-
-This release uses service-worker cache mea-app-v12. Automated validation: 40 tests cover metadata repair, stable aliases, account ownership, exact-domain classification, promotion, drafts, returns and client isolation. Mocked authentication tests do not substitute for real Firebase verification.
-
+Rollback to the previous frontend commit and backend Version 9 together. Retain journal events and added columns; never overwrite newer real transactions with a workbook backup. Reverting code does not undo confirmed real returns or edits.

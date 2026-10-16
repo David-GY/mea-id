@@ -36,9 +36,9 @@
     }));
   }
   function outstanding(rec) { return Math.max(0, Number(rec.borrowedQty ?? rec.qty) - Number(rec.returnedQty || 0)); }
-  function validateReturn(rec, qty, id) {
+  function validateReturn(rec, qty, id, serverAuthorized = false) {
     qty = quantity(qty);
-    if (rec.caseType !== 'BORROWING' || !rec.recordId || rec.returnable === false || String(rec.idNum) !== String(id)) throw new Error('This borrowing record cannot be returned by this account.');
+    if (rec.caseType !== 'BORROWING' || !rec.recordId || rec.returnable === false || (!serverAuthorized && String(rec.idNum) !== String(id))) throw new Error('This borrowing record cannot be returned by this account.');
     if (qty > outstanding(rec)) throw new Error('Quantity exceeds the outstanding balance.');
     return qty;
   }

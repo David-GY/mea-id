@@ -6,7 +6,7 @@ let draftTimer;
 let cloudBusy = false;
 let cloudConflict = false;
 let accountEpoch = 0;
-let firebaseAuth = null;
+let schoolAuth = null;
 let verifiedMember = null;
 let submitBusy = false;
 let returnBusy = false;
@@ -32,7 +32,7 @@ function saveCart() {
   if (!draftOwner) return;
   draftDirty = true;
   const saved = writeLocal(draftKey(), {...draftSnapshot(), dirty: true});
-  saveStatus(saved ? (verifiedMember ? 'Saved on this device · waiting to sync' : 'Saved on this device · connect Google to sync across devices') : 'Not saved · device storage unavailable');
+  saveStatus(saved ? (verifiedMember ? 'Saved on this device · waiting to sync' : 'Saved on this device · connect your school account to sync across devices') : 'Not saved · device storage unavailable');
   clearTimeout(draftTimer);
   if (verifiedMember && !cloudConflict) draftTimer = setTimeout(syncCloudDraft, 700);
 }
@@ -64,14 +64,16 @@ window.meaSwitchAccount = function() {
   document.getElementById('history-total-list').replaceChildren();
   document.getElementById('cart-feedback').replaceChildren();
   window.meaHistoryRecords = [];
+  state.historyShowDeleted=false;
   window.meaRestoreFields();
-  saveStatus('Saved on this device · connect Google to sync across devices');
+  saveStatus('Saved on this device · connect your school account to sync across devices');
   updateCartBadge();
   if (document.getElementById('workflow-dialog').open) closeWorkflow();
 };
 window.meaBeforeLogout = function() {
   if (draftOwner) writeLocal(draftKey(), {...draftSnapshot(), dirty: draftDirty});
-  if (firebaseAuth) firebaseAuth.signOut().catch(() => {});
+  writeLocal('mea_google_signed_out', true);
+  if (schoolAuth) schoolAuth.signOut().catch(() => {});
 };
 window.meaReconcileCart = function() {
   if (!draftOwner) return;
@@ -214,7 +216,7 @@ function bindCheckoutForm() {
 }
 function submitGroup(payload) {
   if (verifiedMember) return inventoryRequest('submitOrder', payload, true);
-  if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') return Promise.reject(new Error('Reconnect school Google before submitting. Your cart stays saved.'));
+  if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') return Promise.reject(new Error('Reconnect your school account before submitting. Your cart stays saved.'));
   return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).submitOrder(payload));
 }
 async function submitOrder() {
@@ -253,9 +255,9 @@ async function inventoryRequest(action, payload = {}, token = false) {
   const url = getInventoryScriptUrl();
   if (!url) throw new Error('Set up the Inventory Script URL in Settings first.');
   const epoch = accountEpoch;
-  const idToken = token ? await firebaseAuth?.currentUser?.getIdToken() : undefined;
+  const idToken = token ? await schoolAuth?.currentUser?.getIdToken() : undefined;
   if (epoch !== accountEpoch) throw new Error('Account changed. Try again.');
-  if (token && !idToken) throw new Error('Connect your school Google account first.');
+  if (token && !idToken) throw new Error('Connect your school account first.');
   const res = await fetch(url + '?action=' + encodeURIComponent(action), {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({...payload, token: getInventoryToken(), idToken})});
   const json = await res.json();
   if (!json.ok) { const e = new Error(json.error || 'Request failed.'); e.code = json.code; e.permanent = json.retryable === false; throw e; }
@@ -265,19 +267,37 @@ function returnKey() { return 'mea_returns_v1:' + draftOwner; }
 function pendingReturns() { return draftOwner ? readLocal(returnKey(), []) : []; }
 function openReturnSheet(recordId) {
   const rec = window.meaHistoryRecords?.find(r => r.recordId === recordId);
-  try { MeaCart.validateReturn(rec || {}, 1, draftOwner); } catch (e) { return showToast(e.message, true); }
+  try { MeaCart.validateReturn(rec || {}, 1, draftOwner, rec?.canReturn === true); } catch (e) { return showToast(e.message, true); }
   const pending = pendingReturns().find(r => r.borrowId === recordId);
   if (pending) return showToast(pending.failed ? 'Return failed. Use Retry in History.' : 'This return is waiting to sync.', true);
   const remaining = MeaCart.outstanding(rec);
-  openWorkflow(`<h2 id="workflow-title">Return ${esc(rec.item)}</h2><p>${esc(rec.reference || '')} · ${esc(rec.project || 'Personal')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''}</p><p>Borrowed: ${rec.borrowedQty ?? rec.qty} · Returned: ${rec.returnedQty || 0} · Remaining: ${remaining}</p><label class="field-label" for="sheet-quantity">Quantity to return</label>${quantityControls(remaining)}<p id="return-error" role="alert"></p><button type="button" class="btn-primary" id="return-confirm">Confirm return</button>`);
+  openWorkflow(`<h2 id="workflow-title">Return ${esc(rec.item)}</h2><p>${esc(rec.reference || '')} · ${esc(rec.project || 'Personal')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''}</p><p>Borrower: ${esc(rec.name || rec.idNum || 'Member')}</p><p>Borrowed: ${rec.borrowedQty ?? rec.qty} · Returned: ${rec.returnedQty || 0} · Remaining: ${remaining}</p><label class="field-label" for="sheet-quantity">Quantity to return</label>${quantityControls(remaining)}<p id="return-error" role="alert"></p><button type="button" class="btn-primary" id="return-confirm">Confirm return</button>`);
   bindQuantity(); document.getElementById('sheet-quantity').max = remaining;
   document.getElementById('return-confirm').onclick = async () => {
     try {
-      const qty = MeaCart.validateReturn(rec, document.getElementById('sheet-quantity').value, draftOwner);
+      const qty = MeaCart.validateReturn(rec, document.getElementById('sheet-quantity').value, draftOwner, rec.canReturn === true);
       const queue = pendingReturns(); queue.push({clientId: uuid(), borrowId: rec.recordId, qty, idNumber: draftOwner, requiresGoogle: !!verifiedMember || !!state.lastId?.verified});
       if (!writeLocal(returnKey(), queue)) throw new Error('Could not save return. Free device storage and try again.');
       closeWorkflow(); showToast('Return saved · waiting to sync'); renderReturnQueue(); flushReturns();
     } catch (e) { document.getElementById('return-error').textContent = e.message; }
+  };
+}
+function openRecordChange(action,recordId) {
+  const epoch=accountEpoch;
+  const rec=window.meaHistoryRecords?.find(r=>r.recordId===recordId);if(!rec)return;
+  const edit=action==='edit'; if(edit ? !rec.canEdit : !rec.canDelete)return showToast('You do not have permission to change this record.',true);
+  openWorkflow(`<h2 id="workflow-title">${edit?'Edit':action==='restore'?'Restore':'Delete'} ${esc(rec.reference || rec.item)}</h2><p>${esc(rec.item)} · ${esc(rec.project)}</p>${edit?`<label class="field-label">Quantity</label>${quantityControls(rec.qty)}<label class="field-label" for="record-project">Project / Department</label><input class="text-field" id="record-project" value="${esc(rec.project || '')}"><label class="field-label" for="record-committee">Committee</label><input class="text-field" id="record-committee" value="${esc(rec.committee || '')}">`:'<p>Deletion hides this record from normal History. Its audit trail and outstanding balance are retained. Restore it from Deleted records.</p>'}<p id="record-error" role="alert"></p><button type="button" class="btn-primary" id="record-confirm">${edit?'Save changes':action==='restore'?'Restore record':'Delete record'}</button>`);
+  if(edit)bindQuantity();let payload;
+  document.getElementById('record-confirm').onclick=async()=>{
+    const button=document.getElementById('record-confirm');button.disabled=true;
+    try {
+      if(epoch!==accountEpoch)return;
+      if(!navigator.onLine)throw new Error('Connect to the internet to change records.');
+      if(!payload){payload={recordId,expectedRevision:rec.recordRevision || 0,clientId:uuid()};if(edit)payload.changes={qty:MeaCart.quantity(document.getElementById('sheet-quantity').value),project:document.getElementById('record-project').value,committee:document.getElementById('record-committee').value};}
+      await inventoryRequest(edit?'recordEdit':action==='restore'?'recordRestore':'recordDelete',payload,true);
+      if(epoch!==accountEpoch)return;
+      closeWorkflow();showToast(edit?'Record updated':action==='restore'?'Record restored':'Record deleted · restore it from Deleted records');renderHistory();
+    }catch(e){document.getElementById('record-error').textContent=e.message;button.disabled=false;}
   };
 }
 function renderReturnQueue() {
@@ -302,7 +322,7 @@ async function flushReturns() {
     for (const entry of pendingReturns().filter(r => !r.failed)) {
       if (epoch !== accountEpoch) break;
       try {
-        if ((entry.requiresGoogle || state.lastId?.verified) && !verifiedMember) throw new Error('Reconnect school Google to sync this return.');
+        if ((entry.requiresGoogle || state.lastId?.verified) && !verifiedMember) throw new Error('Reconnect your school account to sync this return.');
         await inventoryRequest('returnItems', entry, !!verifiedMember);
         writeLocal(key, readLocal(key, []).filter(r => r.clientId !== entry.clientId));
         if (epoch === accountEpoch && state.view === 'history') await renderHistory();
@@ -314,29 +334,46 @@ async function flushReturns() {
     }
   } finally { returnBusy = false; if (epoch === accountEpoch) renderReturnQueue(); }
 }
-async function loadFirebase() {
-  if (firebaseAuth) return firebaseAuth;
-  const config = window.MEA_CONFIG?.firebase;
-  if (!config?.apiKey || !config?.authDomain || !config?.projectId) throw new Error('School Google connection is not configured yet. Continue with your ID.');
-  for (const file of ['firebase-app-compat.js', 'firebase-auth-compat.js']) {
-    if (file.includes('auth') && window.firebase?.auth || file.includes('app-') && window.firebase?.initializeApp) continue;
-    await new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = 'https://www.gstatic.com/firebasejs/12.4.0/' + file; s.onload = resolve; s.onerror = () => { s.remove(); reject(new Error('Could not load Google sign-in. Check your connection.')); }; document.head.append(s); });
-  }
-  if (!firebase.apps.length) firebase.initializeApp(config);
-  firebaseAuth = firebase.auth();
-  return firebaseAuth;
+async function loadSchoolAuth() {
+  if (schoolAuth) return schoolAuth;
+  schoolAuth = await MeaSchoolAuth.load(window.MEA_CONFIG?.supabase);
+  return schoolAuth;
+}
+async function finishSchoolConnection() {
+  const epoch=accountEpoch, auth=await loadSchoolAuth();
+  const data=await inventoryRequest('googleMember',{},true);if(epoch!==accountEpoch)return;
+  await acceptGoogleAccount(data,auth.currentUser);await loadCloudDraft();
 }
 async function connectGoogle() {
+  try {
+    const auth=await loadSchoolAuth();
+    openWorkflow(`<h2 id="workflow-title">Connect school account</h2><p>Use your student.ateneo.edu account. Your email determines member or guest access.</p><button type="button" class="btn-secondary" id="school-google">Continue with Google</button><label class="field-label" for="school-email">School email</label><input type="email" class="text-field" id="school-email" autocomplete="email" placeholder="name@student.ateneo.edu"><button type="button" class="btn-primary" id="school-send-code">Email me a sign-in link or code</button><div id="school-code-step" hidden><label class="field-label" for="school-code">Verification code</label><input class="text-field" id="school-code" inputmode="numeric" autocomplete="one-time-code"><button type="button" class="btn-primary" id="school-verify-code">Verify code</button></div><p id="school-auth-message" role="status"></p>`);
+    document.getElementById('school-google').onclick=startGoogleOAuth;
+    const status=await auth.providerStatus().catch(()=>({google:null,email:null}));
+    if(status.google===false){document.getElementById('school-google').disabled=true;document.getElementById('school-google').textContent='Google sign-in · setup pending';}
+    if(window.MEA_CONFIG?.supabase?.emailReady===false){document.getElementById('school-send-code').disabled=true;document.getElementById('school-auth-message').textContent='School email sign-in is awaiting administrator setup. Continue using your MEA ID.';}
+    let requestedEmail='';
+    document.getElementById('school-send-code').onclick=async()=>{
+      const button=document.getElementById('school-send-code');button.disabled=true;
+      try {requestedEmail=document.getElementById('school-email').value.trim().toLowerCase();writeLocal('mea_google_signed_out',false);await auth.requestEmailCode(requestedEmail);document.getElementById('school-email').disabled=true;document.getElementById('school-code-step').hidden=false;document.getElementById('school-auth-message').textContent='Check your school email. Open the sign-in link, or enter its code here. Resend is available after 60 seconds.';setTimeout(()=>{button.disabled=false;},60000);}
+      catch(e){document.getElementById('school-auth-message').textContent=e.message;button.disabled=false;}
+    };
+    document.getElementById('school-verify-code').onclick=async()=>{
+      const button=document.getElementById('school-verify-code');button.disabled=true;
+      try {await auth.verifyEmailCode(requestedEmail,document.getElementById('school-code').value);closeWorkflow();if(!verifiedMember)await finishSchoolConnection();}
+      catch(e){document.getElementById('school-auth-message').textContent=e.message;button.disabled=false;}
+    };
+  }catch(e){showToast(e.message,true);document.getElementById('google-login-status').textContent=e.message;}
+}
+async function startGoogleOAuth() {
   const epoch = accountEpoch;
   try {
-    const auth = await loadFirebase();
-    const provider = new firebase.auth.GoogleAuthProvider(); provider.setCustomParameters({prompt: 'select_account'});
-    await auth.signInWithPopup(provider);
-    const data = await inventoryRequest('googleMember', {}, true);
-    if (epoch !== accountEpoch) return;
-    await acceptGoogleAccount(data, auth.currentUser);
-    await loadCloudDraft();
-  } catch (e) { showToast(e.message, true); document.getElementById('google-login-status').textContent = e.message; if (verifiedMember) saveStatus('Saved on this device · cloud sync unavailable'); }
+    const auth = await loadSchoolAuth();
+    writeLocal('mea_google_signed_out', false);
+    const result = await auth.startSignIn();
+    if (result?.redirecting) return;
+    if(epoch!==accountEpoch)return; await finishSchoolConnection();
+  } catch (e) { showToast(e.message, true); document.getElementById('google-login-status').textContent = e.message; if(document.getElementById('school-auth-message'))document.getElementById('school-auth-message').textContent=e.message; if (verifiedMember) saveStatus('Saved on this device · cloud sync unavailable'); }
 }
 function applyCloudDraft(data) {
   const draft = data.draft || {};
@@ -385,23 +422,26 @@ window.meaInstallHelp = function() {
 };
 document.addEventListener('DOMContentLoaded', () => {
   window.meaSwitchAccount();
-  if (window.MEA_CONFIG?.firebase?.apiKey) loadFirebase().then(auth => auth.onAuthStateChanged(async user => {
-    if (!user || verifiedMember) return;
+  if (window.MEA_CONFIG?.supabase?.publishableKey && !readLocal('mea_google_signed_out', false)) loadSchoolAuth().then(auth => auth.onAuthStateChanged(async user => {
+    if (readLocal('mea_google_signed_out', false)) return;
+    if (!user) { verifiedMember=null; cloudLoaded=false; if(state.lastId?.verified) saveStatus('Saved on this device · reconnect your school account to sync'); return; }
+    if (verifiedMember?.uid===user.uid) return;
     const epoch = accountEpoch;
     try {
       const data = await inventoryRequest('googleMember', {}, true);
       if (epoch !== accountEpoch) return;
       await acceptGoogleAccount(data, user);
       await loadCloudDraft();
-    } catch (_) { saveStatus('Saved on this device · reconnect Google to sync'); }
-  })).catch(() => {});
+    } catch (_) { saveStatus('Saved on this device · reconnect your school account to sync'); }
+  })).catch(e => { document.getElementById('google-login-status').textContent=e.message; });
   document.getElementById('workflow-dialog').querySelector('.sheet-close').onclick = closeWorkflow;
   document.getElementById('workflow-dialog').addEventListener('cancel', e => { e.preventDefault(); closeWorkflow(); });
   document.getElementById('workflow-dialog').addEventListener('click', e => { if (e.target === e.currentTarget) closeWorkflow(); });
   document.getElementById('cart-shortcut').onclick = () => showView('cart');
   document.getElementById('google-login').onclick = connectGoogle;
   document.getElementById('google-connect').onclick = connectGoogle;
-  document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); });
+  document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); const a=e.target.closest('[data-record-action]');if(a)openRecordChange(a.dataset.recordAction,a.dataset.recordId); });
+  document.getElementById('history-deleted-toggle').onclick=()=>{state.historyShowDeleted=!state.historyShowDeleted;document.getElementById('history-deleted-toggle').setAttribute('aria-pressed',String(state.historyShowDeleted));renderHistory();};
   document.addEventListener('mea:viewchange', () => { updateCartBadge(); if (state.view === 'history') { renderReturnQueue(); flushReturns(); } });
   window.addEventListener('online', () => { flushReturns(); if (verifiedMember) loadCloudDraft().catch(() => {}); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && verifiedMember) loadCloudDraft().catch(() => {}); });
@@ -416,8 +456,8 @@ async function acceptGoogleAccount(data, user) {
   const nextOwner = String(member.idNumber);
   if (draftOwner && draftOwner !== nextOwner && state.lastId?.googleUid !== user.uid) {
     verifiedMember = null; cloudLoaded = false;
-    await firebaseAuth.signOut();
-    throw new Error('This Google account belongs to another account. Log out first to switch.');
+    await schoolAuth.signOut();
+    throw new Error('This school account belongs to another account. Log out first to switch.');
   }
   let chosen;
   const epoch = accountEpoch;
@@ -444,11 +484,10 @@ async function acceptGoogleAccount(data, user) {
   }
   if (chosen) {state.cart=MeaCart.normalize(chosen.cart); writeLocal(draftKey(),{...chosen,cart:state.cart,dirty:true}); window.meaRestoreFields(); draftDirty=true;}
   renderIdentity(); updateHomeCardStates();
-  document.getElementById('google-account-status').textContent=(member.accountKind==='GUEST' ? 'Guest · ' + member.guestCode : 'Verified member') + ' · school Google connected';
+  document.getElementById('google-account-status').textContent=(member.accountKind==='GUEST' ? 'Guest · ' + member.guestCode : 'Verified member') + ' · school account connected';
   if (state.view==='login') showView('home');
 }
 window.meaHistoryRequest = function(scope, project) {
-  if ((state.lastId?.verified || state.lastId?.accountKind==='GUEST') && !verifiedMember) return Promise.reject(new Error('Reconnect school Google to refresh your history.'));
-  if (scope==='project' && !verifiedMember?.officer) return Promise.reject(new Error('Verified officer access is required for project history.'));
-  return inventoryRequest('history', {idNumber:draftOwner,scope,project},!!verifiedMember);
+  if ((state.lastId?.verified || state.lastId?.accountKind==='GUEST') && !verifiedMember) return Promise.reject(new Error('Reconnect your school account to refresh your history.'));
+  return inventoryRequest('history', {idNumber:draftOwner,scope:project==='__ALL__'?'officer':scope,project},!!verifiedMember);
 };
