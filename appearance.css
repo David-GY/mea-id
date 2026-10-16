@@ -162,11 +162,10 @@ select option, select option:checked, select option:hover { background: var(--ca
 .history-item-side .btn-secondary { width: auto; min-height: 44px; padding: 8px 12px; margin: 0; font-size: 12px; }
 #workflow-body input:not([type="radio"]):not([type="checkbox"]):not(#sheet-quantity) { max-width: 100%; min-height: 44px; }
 
-/* The thin layout uses cream behind the dark Garden/Coffee brand marks. */
+/* Cream brand marks on the continuous Garden/Coffee mobile canvas. */
 @media (max-width: 1099px) {
-  :root:is([data-appearance="garden"], [data-appearance="coffee"]) .top-brand {
-    background: var(--card);
-    margin: -18px -18px 0;
-    padding: calc(24px + env(safe-area-inset-top)) 38px 24px;
+  :root:is([data-appearance="garden"], [data-appearance="coffee"]) .top-brand img {
+    filter: brightness(0) saturate(100%) invert(96%) sepia(10%) saturate(530%) hue-rotate(342deg) brightness(99%) contrast(93%);
+    opacity: 1;
   }
 }
