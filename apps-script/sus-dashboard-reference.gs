@@ -9,6 +9,7 @@
  *   tracker                   legacy single-ID move used by id-tracker.html
  *   dashboardData             normalized MAIN + state-tab snapshot
  *   activity                  incremental ACTIVITY_LOG read
+ *   batchMove                 locked, all-or-nothing Dashboard move
  *   deets                     optional MEA Digital Card lookup
  *
  * Required tracker tabs:
@@ -103,13 +104,16 @@ function route_(e, body) {
       case 'activity':
         requireLevel_(p, ['ADMIN', 'DASHBOARD']);
         return activity_(p);
+      case 'batchMove':
+        requireLevel_(p, ['ADMIN']);
+        return batchMove_(p);
       case 'tracker':
         requireLevel_(p, ['ADMIN', 'TRACKER']);
         return legacyTracker_(p);
       default:
         return respond_({
           ok: false,
-          error: 'Unknown action. Use login, access, meansList, tracker, dashboardData, activity, or deets.'
+          error: 'Unknown action. Use login, access, meansList, tracker, dashboardData, activity, batchMove, or deets.'
         });
     }
   } catch (err) {
@@ -820,24 +824,17 @@ function removeIdRows_(sheet, id, preferred) {
 function appendStateRow_(sheet, id, member, project, preferred) {
   var table = stateTable_(sheet);
   var targetColumn = trackedColumn_(sheet, preferred);
-  var width = Math.max(1, sheet.getLastColumn() || 1, table.headers.length, targetColumn);
-  var values = [];
-  for (var i = 0; i < width; i++) values.push('');
-
-  var idIndex = table.headerRow
-    ? columnIndex_(table.headers, ['ID Number', 'Student ID', 'ID'], targetColumn - 1)
-    : targetColumn - 1;
-  values[idIndex] = id;
-
-  if (table.headerRow) {
-    var nameIndex = columnIndex_(table.headers, ['Name', 'Full Name'], -1);
-    var projectIndex = columnIndex_(table.headers, ['Project', 'Project Assignment'], -1);
-    if (nameIndex >= 0) values[nameIndex] = member && member.fullName || '';
-    if (projectIndex >= 0) values[projectIndex] = project || '';
-  }
-
-  var rowNumber = Math.max(sheet.getLastRow() + 1, table.headerRow ? 2 : 1);
-  sheet.getRange(rowNumber, 1, 1, width).setValues([values]);
+  // State tabs own the lookup formulas. Write only the tracked ID cell;
+  // even blank values in a full-row write can block an ARRAYFORMULA spill.
+  var firstDataRow = table.headerRow ? 2 : 1;
+  var last = Math.max(sheet.getLastRow(), firstDataRow);
+  var ids = sheet.getRange(firstDataRow, targetColumn, last - firstDataRow + 1, 1).getDisplayValues();
+  var rowNumber = firstDataRow;
+  ids.forEach(function(row, i) {
+    if (normalizeId_(row[0])) rowNumber = firstDataRow + i + 1;
+  });
+  if (rowNumber > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), rowNumber - sheet.getMaxRows());
+  sheet.getRange(rowNumber, targetColumn).setValue(id);
   return rowNumber;
 }
 

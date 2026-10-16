@@ -62,3 +62,36 @@ test('canonical backend states and sheet location labels retain their meaning', 
   assert.deepEqual(data.members.map(m => m.state), ['WITH_PROJECT', 'NEEDS_PRINTING', 'INVENTORY']);
   assert.ok(data.members.every(m => !m.dataIssues.includes('Location/state conflict')));
 });
+
+
+test('ID moves write one cell, preserve spill formulas, and ignore derived trailing rows', () => {
+  const writes = [], rows = [['', 'Full name', 'Nickname'], ['SET', '=ARRAYFORMULA(...)'], ['100001'], ['', 'derived text'], ['', 'derived text']];
+  const sheet = {
+    getLastRow: () => rows.length, getLastColumn: () => 3, getMaxRows: () => 5,
+    getDataRange: () => ({getDisplayValues: () => rows}),
+    getRange: (r,c,n=1,m=1) => ({
+      getDisplayValues: () => Array.from({length:n}, (_,i) => Array.from({length:m}, (_,j) => rows[r+i-1]?.[c+j-1] || '')),
+      setValue: value => { writes.push([r,c,value]); rows[r-1] ||= []; rows[r-1][c-1] = value; }
+    })
+  };
+  const context = vm.createContext({});
+  vm.runInContext(fs.readFileSync(require.resolve('../apps-script/sus-dashboard-reference.gs'), 'utf8'), context);
+  assert.equal(context.appendStateRow_(sheet, '100002', {fullName:'Do not write'}, 'SUS', 'A'), 4);
+  assert.deepEqual(writes, [[4,1,'100002']]);
+  assert.equal(rows[1][1], '=ARRAYFORMULA(...)');
+  assert.equal(rows[3][1], 'derived text');
+});
+
+test('ID append expands a full sheet without touching lookup columns', () => {
+  const writes = [], insertions = [];
+  const sheet = {
+    getLastRow: () => 2, getLastColumn: () => 2, getMaxRows: () => 2,
+    getDataRange: () => ({getDisplayValues: () => [['ID Number','Full name'],['100001','One']]}),
+    getRange: () => ({getDisplayValues: () => [['100001']], setValue: v => writes.push(v)}),
+    insertRowsAfter: (r,n) => insertions.push([r,n])
+  };
+  const context = vm.createContext({});
+  vm.runInContext(fs.readFileSync(require.resolve('../apps-script/sus-dashboard-reference.gs'), 'utf8'), context);
+  assert.equal(context.appendStateRow_(sheet, '100002', null, '', 'A'), 3);
+  assert.deepEqual(insertions, [[2,1]]); assert.deepEqual(writes, ['100002']);
+});

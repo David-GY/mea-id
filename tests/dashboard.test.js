@@ -114,7 +114,7 @@ test('CBAB roster rows become project assignments without becoming state sources
   assert.equal(model.detectExceptions(data).filter(e => e.type === 'ID appears in multiple state tabs').length, 0);
 });
 
-test('reference Apps Script includes permissions, activity paths, and a read-only Dashboard route', () => {
+test('reference Apps Script includes permissions, activity paths, and an admin-only batch route', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'sus-dashboard-reference.gs'), 'utf8');
   for (const required of [
     'LockService.getScriptLock()',
@@ -136,5 +136,5 @@ test('reference Apps Script includes permissions, activity paths, and a read-onl
   assert.equal((source.match(/^function doGet\(/gm) || []).length, 1);
   assert.equal((source.match(/^function doPost\(/gm) || []).length, 1);
   assert.equal((source.match(/^function respond_\(/gm) || []).length, 1);
-  assert.equal(source.includes("case 'batchMove'"), false, 'Dashboard write route must remain disabled');
+  assert.match(source, /case 'batchMove':\s+requireLevel_\(p, \['ADMIN'\]\);\s+return batchMove_\(p\);/, 'Preserve the deployed admin-only batch route');
 });
