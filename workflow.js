@@ -347,22 +347,10 @@ async function finishSchoolConnection() {
 async function connectGoogle() {
   try {
     const auth=await loadSchoolAuth();
-    openWorkflow(`<h2 id="workflow-title">Connect school account</h2><p>Use your student.ateneo.edu account. Your email determines member or guest access.</p><button type="button" class="btn-secondary" id="school-google">Continue with Google</button><label class="field-label" for="school-email">School email</label><input type="email" class="text-field" id="school-email" autocomplete="email" placeholder="name@student.ateneo.edu"><button type="button" class="btn-primary" id="school-send-code">Email me a sign-in link or code</button><div id="school-code-step" hidden><label class="field-label" for="school-code">Verification code</label><input class="text-field" id="school-code" inputmode="numeric" autocomplete="one-time-code"><button type="button" class="btn-primary" id="school-verify-code">Verify code</button></div><p id="school-auth-message" role="status"></p>`);
+    openWorkflow(`<h2 id="workflow-title">Connect school account</h2><p>Use your student.ateneo.edu Google account. Your email determines member or guest access.</p><button type="button" class="btn-primary" id="school-google">Continue with Google</button><p id="school-auth-message" role="status"></p>`);
     document.getElementById('school-google').onclick=startGoogleOAuth;
-    const status=await auth.providerStatus().catch(()=>({google:null,email:null}));
-    if(status.google===false){document.getElementById('school-google').disabled=true;document.getElementById('school-google').textContent='Google sign-in · setup pending';}
-    if(window.MEA_CONFIG?.supabase?.emailReady===false){document.getElementById('school-send-code').disabled=true;document.getElementById('school-auth-message').textContent='School email sign-in is awaiting administrator setup. Continue using your MEA ID.';}
-    let requestedEmail='';
-    document.getElementById('school-send-code').onclick=async()=>{
-      const button=document.getElementById('school-send-code');button.disabled=true;
-      try {requestedEmail=document.getElementById('school-email').value.trim().toLowerCase();writeLocal('mea_google_signed_out',false);await auth.requestEmailCode(requestedEmail);document.getElementById('school-email').disabled=true;document.getElementById('school-code-step').hidden=false;document.getElementById('school-auth-message').textContent='Check your school email. Open the sign-in link, or enter its code here. Resend is available after 60 seconds.';setTimeout(()=>{button.disabled=false;},60000);}
-      catch(e){document.getElementById('school-auth-message').textContent=e.message;button.disabled=false;}
-    };
-    document.getElementById('school-verify-code').onclick=async()=>{
-      const button=document.getElementById('school-verify-code');button.disabled=true;
-      try {await auth.verifyEmailCode(requestedEmail,document.getElementById('school-code').value);closeWorkflow();if(!verifiedMember)await finishSchoolConnection();}
-      catch(e){document.getElementById('school-auth-message').textContent=e.message;button.disabled=false;}
-    };
+    const status=await auth.providerStatus().catch(()=>({google:null}));
+    if(status.google===false){document.getElementById('school-google').disabled=true;document.getElementById('school-auth-message').textContent='Google sign-in is awaiting administrator setup. Continue using your MEA ID.';}
   }catch(e){showToast(e.message,true);document.getElementById('google-login-status').textContent=e.message;}
 }
 async function startGoogleOAuth() {
