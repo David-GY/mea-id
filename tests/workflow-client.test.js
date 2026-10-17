@@ -200,3 +200,9 @@ test('server identity failures stay visible without upgrading an ID-only account
  c.run("schoolAuth={signOut:finishSignOut};connectGoogle=openSignIn");const pending=c.context.changeAccount('google');
  assert.equal(opened,false);finish();await pending;assert.equal(opened,true);
  });
+
+test('failed sign-out does not start Google account switching or restore verified access',async()=>{
+ const c=client();let opened=false;c.context.openSignIn=()=>{opened=true;};
+ c.run("state.lastId={idNumber:'100001',verified:true};meaSwitchAccount();schoolAuth={signOut:async()=>{throw new Error('Offline')}};connectGoogle=openSignIn");
+ await c.context.changeAccount('google');assert.equal(opened,false);assert.equal(c.run('state.lastId'),null);assert.equal(JSON.parse(c.data.get('mea_google_signed_out')),true);
+});

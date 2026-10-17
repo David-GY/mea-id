@@ -50,7 +50,7 @@
       },async verifyEmailCode(email,token){
         if(!/^\d{6,10}$/.test(String(token).trim()))throw new Error('Enter the verification code from your email.');
         const {data,error}=await client.auth.verifyOtp({email:String(email).trim().toLowerCase(),token:String(token).trim(),type:'email'});if(error)throw error;user=adapt(data.session);return user;
-      },async signOut(){const {error}=await client.auth.signOut(); if(error)throw error;user=null;},onAuthStateChanged(callback){
+      },async signOut(){const {error}=await client.auth.signOut({scope:'local'}); if(error)throw error;user=null;},onAuthStateChanged(callback){
         // Supabase warns against awaited auth calls inside its synchronous callback.
         let active=true, version=0;
         const publish=session=>{user=adapt(session);const current=++version;setTimeout(()=>{if(active && current===version)callback(user);},0);};

@@ -87,7 +87,8 @@ async function changeAccount(method) {
   if (submitBusy || returnBusy) return showToast('Wait for the current submission to finish.', true);
   performLogout();
   if (method === 'google') {
-    await schoolSignOut;
+    try { await schoolSignOut; }
+    catch (_) { showToast('Could not sign out of your school account. Check your connection and try again.', true); return; }
     await connectGoogle();
   }
   else document.getElementById('login-id-input').focus();
@@ -95,7 +96,10 @@ async function changeAccount(method) {
 window.meaBeforeLogout = function() {
   if (draftOwner) writeLocal(draftKey(), {...draftSnapshot(), dirty: draftDirty});
   writeLocal('mea_google_signed_out', true);
-  if (schoolAuth) schoolSignOut = schoolAuth.signOut().catch(() => {});
+  if (schoolAuth) {
+    schoolSignOut = schoolAuth.signOut();
+    schoolSignOut.catch(() => {});
+  }
 };
 window.meaReconcileCart = function() {
   if (!draftOwner) return;
@@ -472,6 +476,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cart-shortcut').onclick = () => showView('cart');
   document.getElementById('google-login').onclick = connectGoogle;
   document.getElementById('google-connect').onclick = connectGoogle;
+  document.querySelectorAll('.account-menu').forEach(menu => {
+    menu.addEventListener('toggle', () => { if (menu.open) hideInstallBanner(); });
+  });
   document.querySelectorAll('[data-account-action]').forEach(button => {
     button.onclick = () => changeAccount(button.dataset.accountAction);
   });
