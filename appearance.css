@@ -2,6 +2,7 @@
 :root, :root[data-appearance="dark"] {
   color-scheme: dark;
   --page: #0a3535; --card: #124343; --ink: #edf7f3;
+  --canvas-ink: var(--ink);
   --text-dim: #b5cec5; --text-faint: #a2beb3;
   --border-dark: #285652; --border-mid: #3e6c62;
   --surface: #124343; --surface-hi: #1e514b; --surface-hi-2: #2b6155;
@@ -16,6 +17,7 @@
 :root[data-appearance="garden"] {
   color-scheme: light;
   --page: #557d5a; --card: #f4ecd8; --ink: #233e29;
+  --canvas-ink: #fff4df;
   --text-dim: #405b42; --text-faint: #4f694d;
   --border-dark: #cecdb3; --border-mid: #9db48e;
   --surface: #f4ecd8; --surface-hi: #e7e6cf; --surface-hi-2: #d5ddc0;
@@ -27,6 +29,7 @@
 :root[data-appearance="coffee"] {
   color-scheme: light;
   --page: #80634c; --card: #f0e4ce; --ink: #443123;
+  --canvas-ink: #fff4df;
   --text-dim: #69513b; --text-faint: #765d45;
   --border-dark: #d7c5a8; --border-mid: #bda481;
   --surface: #f0e4ce; --surface-hi: #e6d6b9; --surface-hi-2: #dac6a2;
@@ -138,12 +141,12 @@ select option, select option:checked, select option:hover { background: var(--ca
 .history-section-label, .state-title, .state-sub, .appearance-setting > label,
 .dashboard-title, .dashboard-subtitle, #view-cart > #cart-save-status,
 #view-cart > #cart-feedback, #view-checkout > .field-label,
-#view-checkout > .case-hint { color: #fff4df; }
+#view-checkout > .case-hint { color: var(--canvas-ink); }
 .workflow-sheet .field-label, .workflow-sheet .state-title { color: var(--ink); }
 .appearance-setting { padding: 16px; margin-bottom: 24px; background: var(--card); border: 1px solid var(--border-mid); border-radius: 14px; }
 .appearance-setting > label { color: var(--ink); }
-#view-settings > .id-input-label { color: #fff4df; }
-.home-footnote, .logout-row a { color: #fff4df; }
+#view-settings > .id-input-label { color: var(--canvas-ink); }
+.home-footnote, .logout-row a { color: var(--canvas-ink); }
 
 .catalog-toolbar { padding: 8px 10px; background: var(--card); border: 1px solid var(--border-dark); border-radius: 14px; gap: 12px; }
 #view-checkout > .btn-secondary, #view-cart > .btn-secondary { background: var(--card); }
