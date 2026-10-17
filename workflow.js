@@ -62,14 +62,32 @@ window.meaSwitchAccount = function() {
   document.getElementById('committee-input').value = '';
   document.getElementById('history-pending-list').replaceChildren();
   document.getElementById('history-total-list').replaceChildren();
+  document.getElementById('history-legacy-list').replaceChildren();
   document.getElementById('cart-feedback').replaceChildren();
   window.meaHistoryRecords = [];
   state.historyShowDeleted=false;
   window.meaRestoreFields();
   saveStatus('Saved on this device · connect your school account to sync across devices');
   updateCartBadge();
+  renderAccountControls();
   if (document.getElementById('workflow-dialog').open) closeWorkflow();
 };
+function renderAccountControls() {
+  const account = state.lastId;
+  const verified = !!account?.verified;
+  document.querySelectorAll('#logout-link, .sidebar-logout-link').forEach(link => { link.hidden = verified; });
+  document.querySelectorAll('.account-menu').forEach(menu => {
+    menu.hidden = !verified;
+    menu.open = false;
+    menu.querySelector('.account-email').textContent = account?.email || account?.name || 'Google account';
+  });
+}
+async function changeAccount(method) {
+  if (submitBusy || returnBusy) return showToast('Wait for the current submission to finish.', true);
+  performLogout();
+  if (method === 'google') await connectGoogle();
+  else document.getElementById('login-id-input').focus();
+}
 window.meaBeforeLogout = function() {
   if (draftOwner) writeLocal(draftKey(), {...draftSnapshot(), dirty: draftDirty});
   writeLocal('mea_google_signed_out', true);
@@ -273,6 +291,11 @@ function openReturnSheet(recordId) {
   const remaining = MeaCart.outstanding(rec);
   openWorkflow(`<h2 id="workflow-title">Return ${esc(rec.item)}</h2><p>${esc(rec.reference || '')} · ${esc(rec.project || 'Personal')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''}</p><p>Borrower: ${esc(rec.name || rec.idNum || 'Member')}</p><p>Borrowed: ${rec.borrowedQty ?? rec.qty} · Returned: ${rec.returnedQty || 0} · Remaining: ${remaining}</p><label class="field-label" for="sheet-quantity">Quantity to return</label>${quantityControls(remaining)}<p id="return-error" role="alert"></p><button type="button" class="btn-primary" id="return-confirm">Confirm return</button>`);
   bindQuantity(); document.getElementById('sheet-quantity').max = remaining;
+  if (rec.legacyAssumedUnreturned) {
+    const note = document.createElement('p');
+    note.textContent = 'Legacy loan: starting balance assumed unreturned, pending verification. Confirm only items being returned now; historical returns have not been matched.';
+    document.getElementById('return-confirm').before(note);
+  }
   document.getElementById('return-confirm').onclick = async () => {
     try {
       const qty = MeaCart.validateReturn(rec, document.getElementById('sheet-quantity').value, draftOwner, rec.canReturn === true);
@@ -445,6 +468,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cart-shortcut').onclick = () => showView('cart');
   document.getElementById('google-login').onclick = connectGoogle;
   document.getElementById('google-connect').onclick = connectGoogle;
+  document.querySelectorAll('[data-account-action]').forEach(button => {
+    button.onclick = () => changeAccount(button.dataset.accountAction);
+  });
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.account-menu[open]').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') document.querySelectorAll('.account-menu[open]').forEach(menu => { menu.open = false; menu.querySelector('summary').focus(); });
+  });
   document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); const a=e.target.closest('[data-record-action]');if(a)openRecordChange(a.dataset.recordAction,a.dataset.recordId); });
   document.getElementById('history-deleted-toggle').onclick=()=>{state.historyShowDeleted=!state.historyShowDeleted;document.getElementById('history-deleted-toggle').setAttribute('aria-pressed',String(state.historyShowDeleted));renderHistory();};
   document.addEventListener('mea:viewchange', () => { updateCartBadge(); if (state.view === 'history') { renderReturnQueue(); flushReturns(); } });
@@ -488,7 +520,7 @@ async function acceptGoogleAccount(data, user) {
     writeLocal(returnKey(),[...byId.values()]);
   }
   if (chosen) {state.cart=MeaCart.normalize(chosen.cart); writeLocal(draftKey(),{...chosen,cart:state.cart,dirty:true}); window.meaRestoreFields(); draftDirty=true;}
-  renderIdentity(); updateHomeCardStates();
+  renderIdentity(); updateHomeCardStates(); renderAccountControls();
   document.getElementById('google-account-status').textContent=(member.accountKind==='GUEST' ? 'Guest · ' + member.guestCode : 'Verified member') + ' · school account connected';
   if (state.view==='login') showView('home');
 }

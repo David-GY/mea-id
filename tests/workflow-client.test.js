@@ -20,6 +20,40 @@ function client() {
  const run=code=>vm.runInContext(code,context);
  return {context,run,data,element};
 }
+
+test('legacy review queue is scoped, escaped and read-only without changing history records',async()=>{
+ const c=client();c.data.set('mea_inventory_url','https://example.test');
+ c.run("state.lastId={idNumber:'100001'};meaSwitchAccount();state.historyTab='project'");c.element('history-project-select').value='__ALL__';
+ const legacy={recordId:'LEGACY-old',item:'<Old item>',name:'Borrower',idNum:'100002',project:'SUS',caseType:'BORROWING',borrowedQty:3,returnedQty:1,outstandingQty:2,returnable:false,canEdit:true,canDelete:true,resolved:false};
+ const records=[legacy,{...legacy,recordId:'resolved',resolved:true},{...legacy,recordId:'deleted',deleted:true},{...legacy,recordId:'consume',caseType:'CONSUMING',resolved:true},{...legacy,recordId:'new',returnable:true,canReturn:true}];
+ const before=JSON.stringify(records);let calls=0;
+ c.context.fetch=async(_,options)=>{calls++;assert.equal(JSON.parse(options.body).scope,'officer');return {json:async()=>({ok:true,admin:true,projects:['SUS'],records})};};
+ await c.context.renderHistory();
+ const html=c.element('history-legacy-list').innerHTML;
+ assert.match(html,/1 record\(s\)/);assert.match(html,/LEGACY-old/);assert.match(html,/Borrower.*100002/);assert.match(html,/&lt;Old item&gt;/);assert.match(html,/Unconfirmed remaining: 2/);assert.match(html,/No linked inventory item/);
+ assert.doesNotMatch(html,/<button|data-return-id|data-record-action/);assert.doesNotMatch(c.element('history-pending-list').innerHTML,/LEGACY-old/);
+ assert.equal(JSON.stringify(records),before);assert.equal(calls,1);
+ c.run("state.lastId={idNumber:'100003'};meaSwitchAccount()");assert.equal(c.element('history-legacy-list').innerHTML,'');
+});
+
+test('assumed legacy loans appear in normal outstanding history with return controls and baseline label',async()=>{
+ const c=client();c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount()");
+ const rec={recordId:'LEGACY-one',item:'Old loan',idNum:'100001',caseType:'BORROWING',borrowedQty:4,returnedQty:1,outstandingQty:3,resolved:false,returnable:true,canReturn:true,legacyAssumedUnreturned:true};
+ c.context.fetch=async()=>({json:async()=>({ok:true,records:[rec],projects:['SUS']})});await c.context.renderHistory();
+ assert.match(c.element('history-pending-list').innerHTML,/starting balance assumed unreturned/);assert.match(c.element('history-pending-list').innerHTML,/Return items/);assert.match(c.element('history-pending-list').innerHTML,/3 remaining/);
+ assert.doesNotMatch(c.element('history-legacy-list').innerHTML,/LEGACY-one/);
+ c.context.openReturnSheet(rec.recordId);assert.equal(c.element('sheet-quantity').max,3);assert.equal(c.element('workflow-dialog').open,true);
+});
+
+test('review queue reports offline data and clears on authorization failure or stale response',async()=>{
+ const c=client();c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount()");
+ c.context.navigator.onLine=false;await c.context.renderHistory();assert.match(c.element('history-legacy-list').innerHTML,/unavailable.*no saved data/);
+ c.context.navigator.onLine=true;c.context.fetch=async()=>({json:async()=>({ok:false,error:'Forbidden',code:'FORBIDDEN'})});
+ await c.context.renderHistory();assert.match(c.element('history-legacy-list').innerHTML,/Forbidden/);
+ let resolve;c.context.fetch=()=>new Promise(r=>resolve=r);const pending=c.context.renderHistory();await new Promise(r=>setImmediate(r));
+ c.run("state.lastId={idNumber:'100002'};meaSwitchAccount()");resolve({json:async()=>({ok:true,records:[{recordId:'old',idNum:'100001',caseType:'BORROWING',returnable:false}]})});await pending;
+ assert.equal(c.element('history-legacy-list').innerHTML,'');
+});
 test('drafts and checkout fields survive reload and stay separated on logout/account switch',()=>{
  const c=client(); c.run("state.lastId={idNumber:'100001'}; meaSwitchAccount(); state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'A'},qty:2,action:'BORROWING'};");
  c.element('project-select').value='SUS';c.element('committee-input').value='Operations';c.run('saveCart()');

@@ -711,6 +711,7 @@
         <div class="history-item-main">
           <div class="history-item-title">${escapeHtml(rec.item)}${rec.qty ? ' × ' + escapeHtml(rec.qty) : ''}</div>
           <div class="history-item-meta">${escapeHtml(rec.reference || '')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''} · ${escapeHtml(rec.project || '—')}${rec.committee ? ' · ' + escapeHtml(rec.committee) : ''}${state.historyTab === 'project' && rec.name ? ' · ' + escapeHtml(rec.name) : ''}</div>
+          ${rec.legacyAssumedUnreturned ? '<div class="history-item-meta">Legacy loan · starting balance assumed unreturned, pending verification</div>' : ''}
         </div>
         <div class="history-item-side">
           <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>
@@ -725,9 +726,22 @@
   }
 
   let historyLoadToken = 0;
+  function legacyReviewRowHtml(rec) {
+    const value = v => escapeHtml(v == null || v === '' ? 'Unknown' : String(v));
+    return `<div class="history-item"><div class="history-item-main">
+      <div class="history-item-title">${value(rec.item)}</div>
+      <div class="history-item-meta">Record: ${value(rec.recordId)} · Reference: ${value(rec.reference)}</div>
+      <div class="history-item-meta">Borrower: ${value(rec.name)} · ID: ${value(rec.idNum)}</div>
+      <div class="history-item-meta">Project/Dept: ${value(rec.project)} · Committee: ${value(rec.committee)}</div>
+      <div class="history-item-meta">Date: ${value(rec.time)}</div>
+      <div>Recorded borrowed: ${value(rec.borrowedQty ?? rec.qty)} · Recorded returned: ${value(rec.returnedQty)} · Unconfirmed remaining: ${value(rec.outstandingQty ?? MeaCart.outstanding(rec))}</div>
+      <p>Needs reconciliation: historical returns are not reliably linked.${!rec.itemId ? ' No linked inventory item.' : ''} Return actions remain blocked. SUS must inspect the original Borrow and Return rows before using the editor reconciliation utility.</p>
+    </div></div>`;
+  }
   async function renderHistory() {
     const pendingList = document.getElementById('history-pending-list');
     const totalList = document.getElementById('history-total-list');
+    const legacyList = document.getElementById('history-legacy-list');
     if (!pendingList || !totalList) return;
 
     document.getElementById('history-deleted-toggle')?.setAttribute('aria-pressed',String(!!state.historyShowDeleted));
@@ -735,12 +749,14 @@
     const skeletonRow = '<div class="history-item skeleton-row skeleton" style="height:52px;"></div>';
     pendingList.innerHTML = skeletonRow.repeat(2);
     totalList.innerHTML = skeletonRow.repeat(3);
+    legacyList.innerHTML = skeletonRow;
 
     window.meaHistoryRecords = [];
     const { records, offline, error, syncedAt } = await fetchHistoryRecords();
     if (myToken !== historyLoadToken) return; // a newer call already took over
 
     if (error && !offline) {
+      legacyList.innerHTML = `<div class="history-empty" role="alert">${escapeHtml(error)}</div>`;
       pendingList.innerHTML = `<div class="history-empty" role="alert">${escapeHtml(error)}</div>`;
       totalList.innerHTML = ''; return;
     }
@@ -752,6 +768,7 @@
       const projectSelect = document.getElementById('history-project-select');
       const chosen = projectSelect ? projectSelect.value : '';
       if (!chosen) {
+        legacyList.innerHTML = '<div class="history-empty">Select a Project/Dept above</div>';
         pendingList.innerHTML = '<div class="history-empty">Select a Project/Dept above</div>';
         totalList.innerHTML = '<div class="history-empty">Select a Project/Dept above</div>';
         return;
@@ -761,12 +778,17 @@
 
     window.meaHistoryRecords = records;
     scoped=scoped.filter(r=>!!r.deleted===!!state.historyShowDeleted);
-    const pending = scoped.filter(r => r.caseType === 'BORROWING' && !r.resolved);
+    const legacy = scoped.filter(MeaCart.needsLegacyReview);
+    const pending = scoped.filter(r => r.caseType === 'BORROWING' && !r.resolved && !MeaCart.needsLegacyReview(r));
     const total = scoped.filter(r => r.caseType !== 'BORROWING' || r.resolved);
 
     const offlineNote = offline
       ? `<div class="history-offline-note"><img class="svg-icon icon-inline" src="icons/ui/wifi.svg" alt="">${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
       : '';
+
+    legacyList.innerHTML = offlineNote + `<div class="history-offline-note">${legacy.length} record(s) needing review in this scope${offline ? ' · saved data only' : ''}</div>` + (legacy.length
+      ? legacy.map(legacyReviewRowHtml).join('')
+      : `<div class="history-empty">${offline && !syncedAt ? 'Review queue unavailable — no saved data' : 'No legacy loans needing review in this scope'}</div>`);
 
     pendingList.innerHTML = offlineNote + (pending.length
       ? pending.map(historyRowHtml).join('')

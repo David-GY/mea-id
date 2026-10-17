@@ -34,7 +34,11 @@ Project names match after trimming, collapsing whitespace and ignoring case. The
 
 Delete is reversible: RECORD_DELETE/RECORD_RESTORE events hide or restore records without removing original orders, returns or balances. Deleted records have a dedicated view. Restore an outstanding borrowing record before recording another return. Admin edits use RECORD_EDIT events and cannot reduce borrowed quantity below confirmed returns. Record revision checks reject concurrent changes; fixed retry IDs prevent duplicates. Actor identity and prior values are retained in the journal. Visible projections receive History status in column O only when such an action occurs.
 
-Old unresolved loans with ambiguous historical returns remain blocked until SUS reviews and reconciles them with reconcileLegacyBorrow in the editor. Never infer a historical return from its item title alone.
+SUS authorized treating unresolved legacy loans as fully unreturned on October 17, 2026. Imported borrowing snapshots with zero recorded returns and a valid whole borrowed quantity from 1 to 9999 now enter the normal return flow. The starting balance is explicitly labeled assumed unreturned, pending verification. Completed loans, previously reconciled balances, deleted records and malformed quantities are not reopened. Historical Return rows are never matched by title.
+
+History retains a read-only review queue for legacy loans still blocked. SUS admins can select Project → All records (Admin) to review all authorized history; personal and project scopes remain unchanged. Eligible assumed loans appear in Outstanding borrows with the existing partial/full return controls and permission checks. New returns use the existing journal, stable borrow IDs and duplicate-safe retry IDs; each return event records whether its baseline was assumed. Original `_MEA_LEGACY` snapshots are unchanged. Returns append normal Return rows and update the original Borrow resolved checkbox on completion. Tests performed on the live app therefore create real transactions. Offline entries are explicitly last-synced data.
+
+Deploy the updated inventory backend before the frontend; no setup or migration utility is needed. Existing cached history may show the old blocked state until it refreshes online. Reverting the backend blocks unreconciled loans again but retains their new journal returns. Before subsequently using `reconcileLegacyBorrow`, inspect both historical and new returns; that utility refuses loans which already have v2 return events.
 
 ## Rollout and rollback
 

@@ -371,6 +371,9 @@ body::before {
   padding: 12px 14px;
 }
 .history-item-main { min-width: 0; flex: 1; }
+#history-legacy-list .history-item-main { overflow-wrap: anywhere; }
+#history-legacy-list .history-item-title,
+#history-legacy-list .history-item-meta { white-space: normal; }
 .history-item-title {
   font-size: 13.5px; font-weight: 700; color: var(--ink);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

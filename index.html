@@ -17,7 +17,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="inventory.css?v=4">
 <link rel="stylesheet" href="dashboard.css?v=1">
-<link rel="stylesheet" href="appearance.css?v=20">
+<link rel="stylesheet" href="appearance.css?v=23">
 <script src="appearance.js"></script>
 </head>
 <body>
@@ -157,7 +157,7 @@
         </div>
       </div>
 
-      <div class="logout-row"><a id="logout-link">Log out</a></div>
+      <div class="logout-row"><a id="logout-link">Log out</a><details class="account-menu" hidden><summary aria-label="Google account options"><span class="account-email"></span></summary><div class="account-options"><button type="button" data-account-action="id">Use ID-only entry</button><button type="button" data-account-action="google">Change Google account</button></div></details></div>
     </section>
 
     <!-- ===================== View: Help ===================== -->
@@ -194,6 +194,12 @@
           <option value="">Project/Dept</option>
         </select>
       </div>
+
+      <section aria-labelledby="legacy-review-title">
+        <h2 class="history-section-label" id="legacy-review-title">Legacy loans needing review</h2>
+        <p class="history-offline-note">Read-only · Uses the selected History scope. SUS admins can choose Project → All records (Admin) for the full queue. Eligible unresolved legacy loans appear under Outstanding borrows with their starting balance assumed unreturned. Records still blocked below need SUS reconciliation.</p>
+        <div class="history-list" id="history-legacy-list" aria-live="polite"></div>
+      </section>
 
       <div class="history-section-label">Outstanding borrows</div>
       <div class="history-list" id="history-pending-list">
@@ -351,7 +357,7 @@
       <div class="nav-btn" data-view="cart" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/shopping-basket.svg" alt=""></span>Cart</div>
       <div class="nav-btn" data-view="checkout" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/check.svg" alt=""></span>Checkout</div>
     </div>
-    <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a></div>
+    <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a><details class="account-menu" hidden><summary aria-label="Google account options"><span class="account-email"></span></summary><div class="account-options"><button type="button" data-account-action="id">Use ID-only entry</button><button type="button" data-account-action="google">Change Google account</button></div></details></div>
   </nav>
 
   <!-- ===================== Bottom Nav (Home / Settings / Help) ===================== -->
@@ -367,7 +373,7 @@
       <div class="nav-btn restricted-dashboard-nav" data-mainview="dashboard" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/chart-bar.svg" alt=""></span>Dashboard</div>
       <div class="nav-btn restricted-dashboard-nav" data-mainview="activity-log" role="button" tabindex="0"><span class="nav-emoji"><img class="svg-icon nav-svg-icon" src="icons/ui/list.svg" alt=""></span>Activity</div>
     </div>
-    <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a></div>
+    <div class="sidebar-logout"><a class="sidebar-logout-link">Log out</a><details class="account-menu" hidden><summary aria-label="Google account options"><span class="account-email"></span></summary><div class="account-options"><button type="button" data-account-action="id">Use ID-only entry</button><button type="button" data-account-action="google">Change Google account</button></div></details></div>
   </nav>
 
   <!-- ===================== Install App Banner (mobile only) ===================== -->
@@ -408,10 +414,10 @@
 <script src="dashboard-rules.js?v=1"></script>
 <script src="dashboard-model.js?v=1"></script>
 <script src="app-config.js?v=15"></script>
-<script src="cart-model.js?v=13"></script>
-<script src="inventory.js?v=13"></script>
+<script src="cart-model.js?v=22"></script>
+<script src="inventory.js?v=22"></script>
 <script src="school-auth.js?v=19"></script>
-<script src="workflow.js?v=19"></script>
+<script src="workflow.js?v=23"></script>
 <script src="dashboard.js?v=2"></script>
 <dialog id="workflow-dialog" aria-labelledby="workflow-title"><div class="workflow-sheet"><button type="button" class="sheet-close" aria-label="Close dialog">×</button><div id="workflow-body"></div></div></dialog>
 <button type="button" id="cart-shortcut" class="btn-primary" hidden>View cart</button>

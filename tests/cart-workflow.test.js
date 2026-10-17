@@ -58,6 +58,13 @@ test('cart keeps independent actions for one item and rejects malformed quantiti
   assert.equal(Object.keys(draft).length,2); assert.equal(cart.groups(draft).length,2);
   for(const value of [0,-1,1.5,'2 packs','',Infinity,10000]) assert.throws(()=>cart.quantity(value));
 });
+
+test('legacy review selects only active unresolved blocked loans and preserves return guards',()=>{
+ const loan={recordId:'LEGACY-one',caseType:'BORROWING',qty:3,returnedQty:0,returnable:false,resolved:false};
+ assert.equal(cart.needsLegacyReview(loan),true);
+ for(const changes of [{caseType:'CONSUMING'},{returnable:true},{returnable:undefined},{resolved:true},{deleted:true}])assert.equal(cart.needsLegacyReview({...loan,...changes}),false);
+ assert.throws(()=>cart.validateReturn(loan,1,'officer',true),/cannot be returned/);
+});
 test('quantity labels preserve units and zero; reordered catalog preserves references', () => {
   assert.equal(cart.availability('2 packs').value,null); assert.equal(cart.availability('*').value,null); assert.equal(cart.availability('0').value,0);
   const item = {id:'stable-a',qtyDisplay:'4'}, key=cart.key(item.id,'BORROWING');
@@ -100,6 +107,36 @@ test('partial and full returns reject over-return, other owners, consumed items,
   assert.equal(f.request('returnItems',{...ret,clientId:'return-1000004',qty:1}).ok,false);
   const consumed=f.request('submitOrder',f.order({caseType:'CONSUMING',clientId:'consume-1000001'}));
   assert.equal(f.request('returnItems',{...ret,clientId:'return-1000005',borrowId:consumed.recordIds[0]}).ok,false);
+});
+
+test('unresolved legacy loans join normal returns without rewriting their original snapshots',()=>{
+ const f=fixture();
+ f.tabs.Borrow.appendRow([new Date(),'Old unresolved',4,'SUS','','100001','One','one@student.ateneo.edu',false]);
+ f.context.repairLegacyMetadata({dryRun:false});
+ const snapshots=JSON.stringify(f.tabs._MEA_LEGACY.rows), borrowBefore=JSON.stringify(f.tabs.Borrow.rows), eventsBefore=JSON.stringify(f.tabs._MEA_EVENTS.rows);
+ const history=f.request('history',{idNumber:'100001'});
+ const loan=history.records.find(r=>r.item==='Old unresolved');
+ assert.equal(loan.legacyAssumedUnreturned,true);assert.equal(loan.returnable,true);assert.equal(loan.canReturn,true);assert.equal(loan.outstandingQty,4);assert.equal(loan.returnedQty,0);
+ const completed=history.records.find(r=>r.item==='Old item');assert.equal(completed.resolved,true);assert.equal(completed.canReturn,false);assert.equal(completed.legacyAssumedUnreturned,undefined);
+ assert.equal(JSON.stringify(f.tabs.Borrow.rows),borrowBefore);assert.equal(JSON.stringify(f.tabs._MEA_EVENTS.rows),eventsBefore);assert.equal(JSON.stringify(f.tabs._MEA_LEGACY.rows),snapshots);
+ const ret={clientId:'legacy-return-001',idNumber:'100001',borrowId:loan.recordId,qty:1};
+ assert.equal(f.request('returnItems',{...ret,idNumber:'100002'}).ok,false);
+ assert.equal(f.request('returnItems',ret).remaining,3);assert.equal(f.request('returnItems',ret).remaining,3);assert.equal(f.tabs.Return.rows.length,2);
+ assert.equal(f.context.invEvents_()[0].legacyAssumedUnreturned,true);
+ assert.equal(f.request('returnItems',{...ret,clientId:'legacy-return-002',qty:4}).ok,false);
+ assert.equal(f.request('returnItems',{...ret,clientId:'legacy-return-003',qty:3}).remaining,0);
+ const returned=f.request('history',{idNumber:'100001'}).records.find(r=>r.recordId===loan.recordId);
+ assert.equal(returned.resolved,true);assert.equal(returned.returnedQty,4);assert.equal(returned.canReturn,false);assert.equal(f.tabs.Borrow.rows[2][8],true);
+ assert.equal(JSON.stringify(f.tabs._MEA_LEGACY.rows),snapshots);
+ assert.equal(f.request('returnItems',{...ret,clientId:'legacy-return-004'}).ok,false);
+});
+
+test('assumed legacy balances exclude invalid, completed, consumed, deleted and reconciled loans',()=>{
+ const f=fixture(), template={recordId:'LEGACY-case',caseType:'BORROWING',idNum:'100001',project:'SUS',borrowedQty:4,returnedQty:0,returnable:false};
+ const cases=[{borrowedQty:0},{borrowedQty:-2},{borrowedQty:1.5},{borrowedQty:'unknown'},{borrowedQty:10000},{returnedQty:4},{returnedQty:1},{caseType:'CONSUMING'},{deleted:true},{returnable:true,returnedQty:2}];
+ f.tabs._MEA_LEGACY.rows=[f.tabs._MEA_LEGACY.rows[0],...cases.map((changes,i)=>{const r={...template,...changes,recordId:'LEGACY-case-'+i};return [r.recordId,JSON.stringify(r)];})];
+ for(const r of f.context.invHistory_())assert.equal(r.legacyAssumedUnreturned,undefined);
+ const reconciled=f.context.invHistory_().find(r=>r.recordId==='LEGACY-case-9');assert.equal(reconciled.returnable,true);assert.equal(reconciled.outstandingQty,2);
 });
 test('projection failures do not lose journal records; repair does not duplicate rows', () => {
   const f=fixture(), append=f.tabs.Borrow.appendRow.bind(f.tabs.Borrow);

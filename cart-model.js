@@ -36,6 +36,9 @@
     }));
   }
   function outstanding(rec) { return Math.max(0, Number(rec.borrowedQty ?? rec.qty) - Number(rec.returnedQty || 0)); }
+  function needsLegacyReview(rec) {
+    return rec.caseType === 'BORROWING' && rec.returnable === false && !rec.deleted && !rec.resolved;
+  }
   function validateReturn(rec, qty, id, serverAuthorized = false) {
     qty = quantity(qty);
     if (rec.caseType !== 'BORROWING' || !rec.recordId || rec.returnable === false || (!serverAuthorized && String(rec.idNum) !== String(id))) throw new Error('This borrowing record cannot be returned by this account.');
@@ -50,5 +53,5 @@
     const shape = d => ({project: d?.project || '', committee: d?.committee || '', lines: Object.values(d?.cart || {}).map(l => [String(l.item?.id), l.action, Number(l.qty)]).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))});
     return JSON.stringify(shape(a)) === JSON.stringify(shape(b));
   }
-  return {sameDraft, actions, quantity, key, normalize, groups, reconcile, outstanding, validateReturn, availability};
+  return {sameDraft, actions, quantity, key, normalize, groups, reconcile, outstanding, needsLegacyReview, validateReturn, availability};
 });

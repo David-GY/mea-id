@@ -337,6 +337,14 @@ function invSubmit_(p) {
 }
 function invHistory_() {
   var records = invRows_(MEA_INV.legacy).map(function(row) { return JSON.parse(row[1]); });
+  // SUS-approved baseline: unresolved legacy loans start unreturned; original snapshots stay intact.
+  records.forEach(function(r) {
+    var qty = Number(r.borrowedQty);
+    if (r.caseType === 'BORROWING' && r.returnable === false && !r.deleted && Number.isSafeInteger(qty) && qty > 0 && qty <= 9999 && Number(r.returnedQty || 0) === 0) {
+      r.legacyAssumedUnreturned = true;
+      r.returnable = true;
+    }
+  });
   var returns = {};
   invEvents_().forEach(function(e) {
     if (e.type === 'RETURN') { returns[e.borrowId] = (returns[e.borrowId] || 0) + e.qty; return; }
@@ -371,7 +379,7 @@ function invReturn_(p) {
   if (rec.caseType !== 'BORROWING' || rec.deleted || !rec.returnable || !(invOwns_(actor, rec) || invManagesProject_(actor, rec.project))) throw invError_('Only the borrower, a verified project member or an admin can return this active record.');
   if (qty > rec.outstandingQty) throw invError_('Return exceeds the outstanding quantity. Refresh History.');
   return invAppendEvent_({ownerKey: actor.ownerKey, verified: actor.verified, accountKind: actor.accountKind, guestCode: actor.guestCode || '', name: actor.member.name, email: actor.member.email, reference: invReference_('RT', 'RETURN-' + p.clientId), borrowReference: rec.reference, onBehalfOf: rec.idNum, borrowerName: rec.name || '', type: 'RETURN', clientId: p.clientId, idNumber: owner, borrowId: rec.recordId, qty: qty,
-    time: new Date().toISOString(), item: rec.item, project: rec.project, committee: rec.committee,
+    time: new Date().toISOString(), item: rec.item, project: rec.project, committee: rec.committee, legacyAssumedUnreturned: !!rec.legacyAssumedUnreturned,
     request: invRequestFingerprint_(p, 'RETURN'), result: {remaining: rec.outstandingQty - qty}});
 }
 function invRecordChange_(action, p) {
