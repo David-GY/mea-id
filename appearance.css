@@ -136,6 +136,8 @@ select option, select option:checked, select option:hover { background: var(--ca
 .cart-action-toggle button:disabled { opacity: .5; cursor: not-allowed; }
 .cart-entry { align-items: flex-start; }
 
+.identity-block { min-width: 0; overflow-wrap: anywhere; }
+
 /* Readable identity and section headings on the stronger themed page canvas. */
 .identity-name, .identity-id, .history-title, .help-title, .help-sub,
 .history-section-label, .state-title, .state-sub, .appearance-setting > label,

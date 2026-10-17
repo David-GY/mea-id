@@ -39,4 +39,4 @@ http.createServer((req,res)=>{
  const type={'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'}[path.extname(target)]||'text/plain';
  res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});res.end(bytes);
  } catch(_) {res.writeHead(404);res.end();}
-}).listen(8765,'127.0.0.1',()=>console.log('Isolated fixture at http://127.0.0.1:8765'));
+}).listen(Number(process.env.PORT || 8765),'127.0.0.1',function(){console.log('Isolated fixture at http://127.0.0.1:'+this.address().port);});
