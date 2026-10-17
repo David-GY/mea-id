@@ -59,12 +59,6 @@ test('cart keeps independent actions for one item and rejects malformed quantiti
   for(const value of [0,-1,1.5,'2 packs','',Infinity,10000]) assert.throws(()=>cart.quantity(value));
 });
 
-test('legacy review selects only active unresolved blocked loans and preserves return guards',()=>{
- const loan={recordId:'LEGACY-one',caseType:'BORROWING',qty:3,returnedQty:0,returnable:false,resolved:false};
- assert.equal(cart.needsLegacyReview(loan),true);
- for(const changes of [{caseType:'CONSUMING'},{returnable:true},{returnable:undefined},{resolved:true},{deleted:true}])assert.equal(cart.needsLegacyReview({...loan,...changes}),false);
- assert.throws(()=>cart.validateReturn(loan,1,'officer',true),/cannot be returned/);
-});
 test('quantity labels preserve units and zero; reordered catalog preserves references', () => {
   assert.equal(cart.availability('2 packs').value,null); assert.equal(cart.availability('*').value,null); assert.equal(cart.availability('0').value,0);
   const item = {id:'stable-a',qtyDisplay:'4'}, key=cart.key(item.id,'BORROWING');
@@ -77,10 +71,30 @@ test('setup preserves names, emails, resolved checkboxes, and permanent IDs', ()
   const f=fixture(), id=f.item().id;
   f.context.setupInventoryV2();
   assert.equal(f.item().id,id); assert.equal(f.tabs.Borrow.rows[1][6],'One'); assert.equal(f.tabs.Borrow.rows[1][7],'one@student.ateneo.edu'); assert.equal(f.tabs.Borrow.rows[1][8],true);
-  const old=f.context.invHistory_()[0]; assert.equal(old.resolved,true); assert.equal(old.returnable,false);
+  assert.equal(f.context.invHistory_().length,0);
   f.tabs.Inventory.rows.splice(4,0,['','Other','*','Shelf','Other','','other-id']);
   assert.equal(f.context.invCatalog_().find(i=>i.title==='Markers').id,id);
 });
+test('old sheet rows and snapshots are untouched and excluded from current transactions',()=>{
+ const f=fixture();
+ f.tabs.Borrow.rows.push([new Date(),'Archived loan',5,'SUS','','100001','One','',false,'LEGACY-archive',false,false]);
+ f.tabs.Consume.rows.push([new Date(),'Archived consumption',2,'SUS','','100001']);
+ f.tabs.Return.rows.push([new Date(),'Archived return',1,'SUS','','100001']);
+ const before=JSON.stringify(['Borrow','Consume','Return'].map(name=>f.tabs[name].rows.slice(1)));
+ const oldLoan=JSON.stringify(f.tabs.Borrow.rows[2]);
+ f.tabs._MEA_LEGACY={getLastRow(){throw new Error('Archived snapshots must not be read');}};
+ f.context.setupInventoryV2();
+ assert.equal(JSON.stringify(['Borrow','Consume','Return'].map(name=>f.tabs[name].rows.slice(1))),before);
+ assert.equal(f.context.invHistory_().length,0);
+ assert.equal(f.request('history',{idNumber:'100001'}).records.length,0);
+ assert.equal(f.request('returnItems',{idNumber:'100001',borrowId:'LEGACY-archive',qty:1,clientId:'archive-return-1'}).ok,false);
+ assert.equal(f.context.reconcileLegacyBorrow,undefined);assert.equal(f.context.repairLegacyMetadata,undefined);
+ const current=f.request('submitOrder',f.order());assert.equal(current.ok,true);
+ assert.equal(f.request('history',{idNumber:'100001'}).records.length,1);
+ assert.equal(f.request('returnItems',{idNumber:'100001',borrowId:current.recordIds[0],qty:3,clientId:'current-return-1'}).remaining,0);
+ assert.equal(JSON.stringify(f.tabs.Borrow.rows[2]),oldLoan);
+});
+
 test('submissions retry without duplicate rows or receipts; same key cannot mutate request', () => {
   const f=fixture(), payload=f.order();
   assert.equal(f.request('submitOrder',payload).ok,true);
@@ -109,39 +123,10 @@ test('partial and full returns reject over-return, other owners, consumed items,
   assert.equal(f.request('returnItems',{...ret,clientId:'return-1000005',borrowId:consumed.recordIds[0]}).ok,false);
 });
 
-test('unresolved legacy loans join normal returns without rewriting their original snapshots',()=>{
- const f=fixture();
- f.tabs.Borrow.appendRow([new Date(),'Old unresolved',4,'SUS','','100001','One','one@student.ateneo.edu',false]);
- f.context.repairLegacyMetadata({dryRun:false});
- const snapshots=JSON.stringify(f.tabs._MEA_LEGACY.rows), borrowBefore=JSON.stringify(f.tabs.Borrow.rows), eventsBefore=JSON.stringify(f.tabs._MEA_EVENTS.rows);
- const history=f.request('history',{idNumber:'100001'});
- const loan=history.records.find(r=>r.item==='Old unresolved');
- assert.equal(loan.legacyAssumedUnreturned,true);assert.equal(loan.returnable,true);assert.equal(loan.canReturn,true);assert.equal(loan.outstandingQty,4);assert.equal(loan.returnedQty,0);
- const completed=history.records.find(r=>r.item==='Old item');assert.equal(completed.resolved,true);assert.equal(completed.canReturn,false);assert.equal(completed.legacyAssumedUnreturned,undefined);
- assert.equal(JSON.stringify(f.tabs.Borrow.rows),borrowBefore);assert.equal(JSON.stringify(f.tabs._MEA_EVENTS.rows),eventsBefore);assert.equal(JSON.stringify(f.tabs._MEA_LEGACY.rows),snapshots);
- const ret={clientId:'legacy-return-001',idNumber:'100001',borrowId:loan.recordId,qty:1};
- assert.equal(f.request('returnItems',{...ret,idNumber:'100002'}).ok,false);
- assert.equal(f.request('returnItems',ret).remaining,3);assert.equal(f.request('returnItems',ret).remaining,3);assert.equal(f.tabs.Return.rows.length,2);
- assert.equal(f.context.invEvents_()[0].legacyAssumedUnreturned,true);
- assert.equal(f.request('returnItems',{...ret,clientId:'legacy-return-002',qty:4}).ok,false);
- assert.equal(f.request('returnItems',{...ret,clientId:'legacy-return-003',qty:3}).remaining,0);
- const returned=f.request('history',{idNumber:'100001'}).records.find(r=>r.recordId===loan.recordId);
- assert.equal(returned.resolved,true);assert.equal(returned.returnedQty,4);assert.equal(returned.canReturn,false);assert.equal(f.tabs.Borrow.rows[2][8],true);
- assert.equal(JSON.stringify(f.tabs._MEA_LEGACY.rows),snapshots);
- assert.equal(f.request('returnItems',{...ret,clientId:'legacy-return-004'}).ok,false);
-});
-
-test('assumed legacy balances exclude invalid, completed, consumed, deleted and reconciled loans',()=>{
- const f=fixture(), template={recordId:'LEGACY-case',caseType:'BORROWING',idNum:'100001',project:'SUS',borrowedQty:4,returnedQty:0,returnable:false};
- const cases=[{borrowedQty:0},{borrowedQty:-2},{borrowedQty:1.5},{borrowedQty:'unknown'},{borrowedQty:10000},{returnedQty:4},{returnedQty:1},{caseType:'CONSUMING'},{deleted:true},{returnable:true,returnedQty:2}];
- f.tabs._MEA_LEGACY.rows=[f.tabs._MEA_LEGACY.rows[0],...cases.map((changes,i)=>{const r={...template,...changes,recordId:'LEGACY-case-'+i};return [r.recordId,JSON.stringify(r)];})];
- for(const r of f.context.invHistory_())assert.equal(r.legacyAssumedUnreturned,undefined);
- const reconciled=f.context.invHistory_().find(r=>r.recordId==='LEGACY-case-9');assert.equal(reconciled.returnable,true);assert.equal(reconciled.outstandingQty,2);
-});
 test('projection failures do not lose journal records; repair does not duplicate rows', () => {
   const f=fixture(), append=f.tabs.Borrow.appendRow.bind(f.tabs.Borrow);
   f.tabs.Borrow.appendRow=()=>{throw new Error('Transient sheet failure');};
-  assert.equal(f.request('submitOrder',f.order()).ok,true); assert.equal(f.context.invHistory_().length,2);
+  assert.equal(f.request('submitOrder',f.order()).ok,true); assert.equal(f.context.invHistory_().length,1);
   f.tabs.Borrow.appendRow=append; f.context.repairInventoryProjections(); f.context.repairInventoryProjections();
   assert.equal(f.tabs.Borrow.rows.length,3);
 });
@@ -158,24 +143,6 @@ test('cloud drafts require verified school identity and enforce revision and acc
   assert.equal(f.request('googleMember',{idToken:'one'}).code,'ROSTER_MISMATCH');
 });
 
-test('metadata repair imports checkbox rows once, preserves resolved state and supports dry run', () => {
-  const f=fixture();
-  f.tabs.Borrow.rows.push([new Date(),'Skipped loan',4,'SUS','','100001','One','one@student.ateneo.edu',true,false,false,false]);
-  const audit=f.context.repairLegacyMetadata(); assert.equal(audit.booleanPlaceholders,3);
-  assert.equal(f.tabs.Borrow.rows[2][9],false);
-  f.context.repairLegacyMetadata({dryRun:false}); f.context.repairLegacyMetadata({dryRun:false});
-  assert.match(f.tabs.Borrow.rows[2][9],/^LEGACY-/); assert.equal(f.tabs.Borrow.rows[2][11],'');
-  const rows=f.context.invHistory_().filter(r=>r.item==='Skipped loan');
-  assert.equal(rows.length,1); assert.equal(rows[0].resolved,true); assert.equal(f.tabs.Borrow.rows[2][8],true);
-  assert.match(rows[0].reference,/^BR-/);
-});
-test('unexpected metadata and duplicate IDs stop repair without clearing data',()=>{
-  const f=fixture(); f.tabs.Borrow.rows.push([new Date(),'Problem',1,'','','100001','','',false,'unexpected',false,false]);
-  assert.throws(()=>f.context.repairLegacyMetadata({dryRun:false}),/Metadata needs review/);
-  assert.equal(f.tabs.Borrow.rows[2][10],false);
-  f.tabs.Borrow.rows[2][9]=f.tabs.Borrow.rows[1][9];
-  assert.match(f.context.repairLegacyMetadata().issues.join(),/Duplicate/);
-});
 test('display aliases are stable across repeat setup and sorting and grow beyond 999',()=>{
   const f=fixture(), id=f.item().id, code=f.item().itemCode;
   f.context.setupInventoryV2(); assert.equal(f.item().itemCode,code);
@@ -205,7 +172,7 @@ test('verified guest submissions ignore forged member IDs and protect history an
   const created=f.request('submitOrder',f.order({idToken:'valid',idNumber:'100001'}));assert.equal(created.ok,true);
   const borrowId=created.recordIds[0];assert.equal(f.tabs.Borrow.rows[2][5],'guest:guest-a');
   assert.equal(f.request('history',{idToken:'valid'}).records.length,1);
-  assert.equal(f.request('history',{idNumber:'100001'}).records.length,1); // legacy only
+  assert.equal(f.request('history',{idNumber:'100001'}).records.length,0);
   assert.equal(f.request('history',{idToken:'valid',scope:'project',project:'SUS'}).code,'FORBIDDEN');
   googleUser(f,'guest-b','another@student.ateneo.edu');assert.equal(f.request('history',{idToken:'valid'}).records.length,0);
   assert.equal(f.request('returnItems',{idToken:'valid',idNumber:'guest:guest-a',borrowId,qty:1,clientId:'return-guest-b'}).ok,false);
@@ -261,7 +228,7 @@ test('shared department history normalizes labels and allows only own or verifie
   assert.equal(f.request('history',{...scope,idNumber:'999999'}).code,'UNAUTHORIZED');
 });
 
-test('shared history never exposes another guest UID and consumed or legacy rows cannot be returned',()=>{
+test('shared history never exposes another guest UID and consumed rows cannot be returned',()=>{
   const f=fixture();googleUser(f,'private-guest','guest@student.ateneo.edu');
   f.request('submitOrder',f.order({idToken:'valid',caseType:'CONSUMING'}));
   const shared=f.request('history',{idNumber:'100001',scope:'project',project:'SUS'});
@@ -289,7 +256,7 @@ test('Access Admin controls all projects and audit edits cannot reduce quantity 
  const f=fixture(); const loan=f.request('submitOrder',f.order({project:'Unassigned Project'}));
  googleUser(f,'two','two@student.ateneo.edu');f.trackerTabs.ACCESS.rows.push(['100002','Two','Admin']);
  const account=f.request('googleMember',{idToken:'valid'}).account;assert.equal(account.admin,true);
- assert.equal(f.request('history',{idToken:'valid',scope:'officer'}).records.length,2);
+ assert.equal(f.request('history',{idToken:'valid',scope:'officer'}).records.length,1);
  f.request('returnItems',{idToken:'valid',borrowId:loan.recordIds[0],qty:2,clientId:'admin-returns'});
  const change={idToken:'valid',recordId:loan.recordIds[0],expectedRevision:0,clientId:'admin-edit-row',changes:{qty:1,project:'SUS',committee:'A'}};
  assert.equal(f.request('recordEdit',change).ok,false);

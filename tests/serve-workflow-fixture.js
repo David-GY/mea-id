@@ -7,7 +7,6 @@ const fixture = `<script>
 localStorage.setItem('mea_inventory_url','https://script.google.com/fixture/exec');
 localStorage.setItem('mea_cfg2',JSON.stringify({url:'https://script.google.com/tracker-fixture/exec'}));
 let records = [{recordId:'borrow-1',item:'Whiteboard Markers',qty:4,borrowedQty:4,returnedQty:1,outstandingQty:3,idNum:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',resolved:false,returnable:true,time:'2026-10-15T12:00:00Z'}];
-records.push({recordId:'LEGACY-fixture',item:'Legacy extension cord',qty:2,borrowedQty:2,returnedQty:0,outstandingQty:2,idNum:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',resolved:false,returnable:true,legacyAssumedUnreturned:true,time:'2026-10-01T12:00:00Z'});
 window.fetch = async (url, options={}) => {
  const action = new URL(url,location.href).searchParams.get('action');
  const payload = options.body ? JSON.parse(options.body) : {};

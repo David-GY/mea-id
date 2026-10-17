@@ -10,51 +10,12 @@ var MEA_INV = {
   spreadsheet: '1oAMU9MEVxJqWuHCiwMsKsMePYlREYgq_sBi4_2-Ra3Y',
   tracker: '1426S83-4R3b7Ys81thvRETPbmIiNjJtYw853gFhuj-I',
   catalogs: ['Inventory', 'Special Inventory'],
-  journal: '_MEA_EVENTS', drafts: '_MEA_DRAFTS', legacy: '_MEA_LEGACY', references: '_MEA_REFERENCES', accounts: 'Accounts'
+  journal: '_MEA_EVENTS', drafts: '_MEA_DRAFTS', references: '_MEA_REFERENCES', accounts: 'Accounts'
 };
 function invBook_() { return SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('INVENTORY_SPREADSHEET_ID') || MEA_INV.spreadsheet); }
 function invJson_(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
 function invError_(message, code) { var e = new Error(message); e.code = code || 'INVALID'; return e; }
 function invText_(v) { return String(v == null ? '' : v).trim(); }
-function invMetadataId_(v, type) {
-  if (v === '' || v == null || typeof v === 'boolean') return null;
-  if (typeof v !== 'string' || /^(true|false)$/i.test(v.trim())) throw invError_('Unexpected metadata value. Run metadata dry run before repair.', 'METADATA_INVALID');
-  var id = v.trim();
-  if (!(type === 'record' ? /^(REC|LEGACY|RETURN)-[A-Za-z0-9-]+$/ : /^[A-Za-z0-9-]{8,120}$/).test(id)) throw invError_('Unexpected metadata ID: ' + id, 'METADATA_INVALID');
-  return id;
-}
-/** Editor utility. Default is read-only; pass {dryRun:false} to repair. */
-function repairLegacyMetadata(options) {
-  return invWithLock_(function() {
-    var result = invRepairMetadata_(!options || options.dryRun !== false);
-    if (options && options.dryRun === false) { invImportLegacy_(); invBackfillReferences_(); }
-    console.log(JSON.stringify(result)); return result;
-  });
-}
-function invRepairMetadata_(dryRun) {
-  var changes = [], issues = [], ids = {};
-  ['Borrow', 'Consume', 'Return'].forEach(function(name) {
-    var s = invSheet_(name); if (s.getLastRow() < 2) return;
-    var rows = s.getRange(2, 1, s.getLastRow() - 1, 12).getValues();
-    rows.forEach(function(row, i) {
-      for (var j = 9; j < 12; j++) {
-        if (typeof row[j] === 'boolean') changes.push({sheet: name, row: i + 2, column: j + 1});
-        else try { invMetadataId_(row[j], j < 11 ? 'record' : 'client'); }
-        catch (_) { issues.push(name + ' row ' + (i + 2) + ' column ' + (j + 1)); }
-      }
-      if (row[1] && typeof row[9] === 'string' && row[9]) {
-        if (ids[row[9]]) issues.push('Duplicate record ID at ' + name + ' row ' + (i + 2));
-        ids[row[9]] = true;
-      }
-    });
-  });
-  if (!dryRun && issues.length) throw invError_('Metadata needs review: ' + issues.join(', '), 'METADATA_INVALID');
-  if (!dryRun) {
-    ['Borrow', 'Consume', 'Return'].forEach(function(name) { var s = invSheet_(name); if (s.getLastRow() > 1) s.getRange(2, 10, s.getLastRow() - 1, 3).clearDataValidations(); });
-    changes.forEach(function(c) { invSheet_(c.sheet).getRange(c.row, c.column).clearContent(); });
-  }
-  return {dryRun: dryRun, booleanPlaceholders: changes.length, issues: issues};
-}
 var invReferenceCache_ = null;
 function invLookupReference_(type, id) {
   if (!invReferenceCache_) {
@@ -85,7 +46,7 @@ function invDisplayColumns_(s, headerRow, start, labels) {
   labels.forEach(function(label, i) { if (headers[i] && headers[i] !== label) throw invError_('Display columns already occupied.', 'METADATA_INVALID'); });
   s.getRange(headerRow, start, 1, labels.length).setValues([labels]);
 }
-function invBackfillReferences_() {
+function invSetupReferences_() {
   MEA_INV.catalogs.forEach(function(name) {
     var s = invBook_().getSheetByName(name); if (!s) return;
     invDisplayColumns_(s, 4, 8, ['Item code']);
@@ -97,13 +58,6 @@ function invBackfillReferences_() {
   ['Borrow', 'Consume', 'Return'].forEach(function(name) {
     var s = invSheet_(name), type = name === 'Borrow' ? 'BR' : name === 'Consume' ? 'CO' : 'RT';
     invDisplayColumns_(s, 1, 13, ['Reference', 'Original borrow']);
-    if (s.getLastRow() > 1) s.getRange(2, 1, s.getLastRow() - 1, 12).getValues().forEach(function(r, i) {
-      if (!r[1]) return;
-      var id = invMetadataId_(r[9], 'record');
-      if (!id) { id = 'LEGACY-' + Utilities.getUuid(); s.getRange(i + 2, 10).setValue(id); }
-      var borrow = invMetadataId_(r[10], 'record');
-      s.getRange(i + 2, 13, 1, 2).setValues([[invReference_(type, id), borrow ? invReference_('BR', borrow) : '']]);
-    });
     s.hideColumns(10, 3); s.showColumns(13);
     if (name === 'Return') s.showColumns(14); else s.hideColumns(14);
   });
@@ -247,7 +201,6 @@ function setupInventoryV2() {
     var book = invBook_();
     invEnsure_(book, MEA_INV.journal, ['Client ID', 'Owner ID', 'Event JSON', 'Server time']);
     invEnsure_(book, MEA_INV.drafts, ['Google UID', 'Member ID', 'Revision', 'Draft JSON', 'Updated at']);
-    invEnsure_(book, MEA_INV.legacy, ['Record ID', 'Legacy JSON']);
     invEnsure_(book, MEA_INV.references, ['Type', 'Canonical ID', 'Display code']);
     invEnsure_(book, MEA_INV.accounts, ['Google UID', 'Verified email', 'Display name', 'Kind', 'Member ID', 'Guest code', 'First seen', 'Last seen', 'Prior owner keys']);
     MEA_INV.catalogs.forEach(function(name) {
@@ -267,9 +220,7 @@ function setupInventoryV2() {
       ['MEA Record ID', 'MEA Borrow ID', 'MEA Client ID'].forEach(function(label, i) { if (headers[i] && headers[i] !== label) throw invError_(name + ' metadata columns are occupied.'); });
       s.getRange(1, 10, 1, 3).setValues([['MEA Record ID', 'MEA Borrow ID', 'MEA Client ID']]);
     });
-    invRepairMetadata_(false);
-    invImportLegacy_();
-    invBackfillReferences_();
+    invSetupReferences_();
     return {ok: true};
   });
 }
@@ -336,15 +287,7 @@ function invSubmit_(p) {
   return invAppendEvent_(event);
 }
 function invHistory_() {
-  var records = invRows_(MEA_INV.legacy).map(function(row) { return JSON.parse(row[1]); });
-  // SUS-approved baseline: unresolved legacy loans start unreturned; original snapshots stay intact.
-  records.forEach(function(r) {
-    var qty = Number(r.borrowedQty);
-    if (r.caseType === 'BORROWING' && r.returnable === false && !r.deleted && Number.isSafeInteger(qty) && qty > 0 && qty <= 9999 && Number(r.returnedQty || 0) === 0) {
-      r.legacyAssumedUnreturned = true;
-      r.returnable = true;
-    }
-  });
+  var records = [];
   var returns = {};
   invEvents_().forEach(function(e) {
     if (e.type === 'RETURN') { returns[e.borrowId] = (returns[e.borrowId] || 0) + e.qty; return; }
@@ -379,7 +322,7 @@ function invReturn_(p) {
   if (rec.caseType !== 'BORROWING' || rec.deleted || !rec.returnable || !(invOwns_(actor, rec) || invManagesProject_(actor, rec.project))) throw invError_('Only the borrower, a verified project member or an admin can return this active record.');
   if (qty > rec.outstandingQty) throw invError_('Return exceeds the outstanding quantity. Refresh History.');
   return invAppendEvent_({ownerKey: actor.ownerKey, verified: actor.verified, accountKind: actor.accountKind, guestCode: actor.guestCode || '', name: actor.member.name, email: actor.member.email, reference: invReference_('RT', 'RETURN-' + p.clientId), borrowReference: rec.reference, onBehalfOf: rec.idNum, borrowerName: rec.name || '', type: 'RETURN', clientId: p.clientId, idNumber: owner, borrowId: rec.recordId, qty: qty,
-    time: new Date().toISOString(), item: rec.item, project: rec.project, committee: rec.committee, legacyAssumedUnreturned: !!rec.legacyAssumedUnreturned,
+    time: new Date().toISOString(), item: rec.item, project: rec.project, committee: rec.committee,
     request: invRequestFingerprint_(p, 'RETURN'), result: {remaining: rec.outstandingQty - qty}});
 }
 function invRecordChange_(action, p) {
@@ -423,42 +366,11 @@ function invProjectEvent_(e) {
   if (e.type === 'RETURN') {
     var borrow = invSheet_('Borrow');
     var history = invHistory_().find(function(r) { return r.recordId === e.borrowId; });
+    if (!history) return;
     if (borrow.getLastRow() > 1) borrow.getRange(2, 10, borrow.getLastRow() - 1, 1).getValues().forEach(function(row, i) { if (row[0] === e.borrowId) borrow.getRange(i + 2, 9).setValue(history.resolved); });
   }
 }
 function repairInventoryProjections() { return invWithLock_(function() { invEvents_().forEach(invProjectEvent_); }); }
-function invImportLegacy_() {
-  var known = {};
-  invRows_(MEA_INV.legacy).forEach(function(row) { known[row[0]] = true; });
-  ['Borrow', 'Consume'].forEach(function(name) {
-    var s = invSheet_(name); if (s.getLastRow() < 2) return;
-    var rows = s.getRange(2, 1, s.getLastRow() - 1, 12).getValues();
-    rows.forEach(function(row, i) {
-      if (!invText_(row[1]) || invMetadataId_(row[11], 'client')) return; // V2 projected rows already have a client ID.
-      var recordId = invMetadataId_(row[9], 'record') || 'LEGACY-' + Utilities.getUuid();
-      if (!invMetadataId_(row[9], 'record')) s.getRange(i + 2, 10).setValue(recordId);
-      if (known[recordId]) return;
-      var rec = {recordId: recordId, item: invText_(row[1]), qty: row[2], borrowedQty: Number(row[2]) || 0,
-        returnedQty: name === 'Borrow' && row[8] === true ? (Number(row[2]) || 0) : 0, name: invText_(row[6]), email: invText_(row[7]), caseType: name === 'Borrow' ? 'BORROWING' : 'CONSUMING', idNum: invText_(row[5]),
-        project: invText_(row[3]), committee: invText_(row[4]), time: row[0] instanceof Date ? row[0].toISOString() : invText_(row[0]),
-        returnable: false}; // Existing Return rows are not reliably linked: reconciliation is required.
-      invSheet_(MEA_INV.legacy).appendRow([recordId, JSON.stringify(rec)]); known[recordId] = true;
-    });
-  });
-}
-/** Officer-only editor utility, never routed publicly. Inspect old Return rows first. */
-function reconcileLegacyBorrow(recordId, confirmedReturnedQty) {
-  return invWithLock_(function() {
-    var s = invSheet_(MEA_INV.legacy), rows = invRows_(MEA_INV.legacy);
-    var index = rows.findIndex(function(row) { return row[0] === recordId; });
-    if (index < 0) throw invError_('Legacy record not found.');
-    var rec = JSON.parse(rows[index][1]), qty = Number(confirmedReturnedQty);
-    if (rec.caseType !== 'BORROWING' || !Number.isSafeInteger(qty) || qty < 0 || qty > rec.borrowedQty) throw invError_('Invalid reconciled quantity.');
-    if (invEvents_().some(function(e) { return e.borrowId === recordId; })) throw invError_('This record already has v2 returns.');
-    rec.returnedQty = qty; rec.returnable = true;
-    s.getRange(index + 2, 2).setValue(JSON.stringify(rec));
-  });
-}
 function invGoogleUser_(idToken) {
   if (!idToken) throw invError_('School Google sign-in is required.', 'UNAUTHORIZED');
   var key = PropertiesService.getScriptProperties().getProperty('SUPABASE_PUBLISHABLE_KEY') || MEA_INV.supabasePublishableKey;

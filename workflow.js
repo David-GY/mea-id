@@ -63,7 +63,6 @@ window.meaSwitchAccount = function() {
   document.getElementById('committee-input').value = '';
   document.getElementById('history-pending-list').replaceChildren();
   document.getElementById('history-total-list').replaceChildren();
-  document.getElementById('history-legacy-list').replaceChildren();
   document.getElementById('cart-feedback').replaceChildren();
   window.meaHistoryRecords = [];
   state.historyShowDeleted=false;
@@ -299,11 +298,6 @@ function openReturnSheet(recordId) {
   const remaining = MeaCart.outstanding(rec);
   openWorkflow(`<h2 id="workflow-title">Return ${esc(rec.item)}</h2><p>${esc(rec.reference || '')} · ${esc(rec.project || 'Personal')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''}</p><p>Borrower: ${esc(rec.name || rec.idNum || 'Member')}</p><p>Borrowed: ${rec.borrowedQty ?? rec.qty} · Returned: ${rec.returnedQty || 0} · Remaining: ${remaining}</p><label class="field-label" for="sheet-quantity">Quantity to return</label>${quantityControls(remaining)}<p id="return-error" role="alert"></p><button type="button" class="btn-primary" id="return-confirm">Confirm return</button>`);
   bindQuantity(); document.getElementById('sheet-quantity').max = remaining;
-  if (rec.legacyAssumedUnreturned) {
-    const note = document.createElement('p');
-    note.textContent = 'Legacy loan: starting balance assumed unreturned, pending verification. Confirm only items being returned now; historical returns have not been matched.';
-    document.getElementById('return-confirm').before(note);
-  }
   document.getElementById('return-confirm').onclick = async () => {
     try {
       const qty = MeaCart.validateReturn(rec, document.getElementById('sheet-quantity').value, draftOwner, rec.canReturn === true);
