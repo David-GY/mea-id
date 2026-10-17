@@ -172,3 +172,12 @@ select option, select option:checked, select option:hover { background: var(--ca
     opacity: 1;
   }
 }
+
+/* Account options share the existing footer location on mobile and desktop. */
+.account-menu { position: relative; text-align: left; min-width: 0; }
+.account-menu[hidden], #logout-link[hidden], .sidebar-logout-link[hidden] { display: none; }
+.account-menu summary { cursor: pointer; padding: 12px 10px; font-size: 13px; color: var(--canvas-ink); overflow-wrap: anywhere; }
+.account-menu summary:focus-visible, .account-options button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.account-options { position: absolute; bottom: 100%; right: 0; z-index: 30; width: 220px; max-width: calc(100vw - 40px); padding: 6px; border: 1px solid var(--border-dark); border-radius: 12px; background: var(--surface); }
+.account-options button { display: block; width: 100%; min-height: 44px; padding: 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.account-options button:hover { background: var(--surface-hi); }

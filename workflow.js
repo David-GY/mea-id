@@ -7,6 +7,7 @@ let cloudBusy = false;
 let cloudConflict = false;
 let accountEpoch = 0;
 let schoolAuth = null;
+let schoolSignOut = Promise.resolve();
 let verifiedMember = null;
 let submitBusy = false;
 let returnBusy = false;
@@ -69,12 +70,32 @@ window.meaSwitchAccount = function() {
   window.meaRestoreFields();
   saveStatus('Saved on this device · connect your school account to sync across devices');
   updateCartBadge();
+  renderAccountControls();
   if (document.getElementById('workflow-dialog').open) closeWorkflow();
 };
+function renderAccountControls() {
+  const account = state.lastId;
+  const verified = !!account?.verified;
+  document.querySelectorAll('#logout-link, .sidebar-logout-link').forEach(link => { link.hidden = verified; });
+  document.querySelectorAll('.account-menu').forEach(menu => {
+    menu.hidden = !verified;
+    menu.open = false;
+    menu.querySelector('.account-email').textContent = account?.email || account?.name || 'Google account';
+  });
+}
+async function changeAccount(method) {
+  if (submitBusy || returnBusy) return showToast('Wait for the current submission to finish.', true);
+  performLogout();
+  if (method === 'google') {
+    await schoolSignOut;
+    await connectGoogle();
+  }
+  else document.getElementById('login-id-input').focus();
+}
 window.meaBeforeLogout = function() {
   if (draftOwner) writeLocal(draftKey(), {...draftSnapshot(), dirty: draftDirty});
   writeLocal('mea_google_signed_out', true);
-  if (schoolAuth) schoolAuth.signOut().catch(() => {});
+  if (schoolAuth) schoolSignOut = schoolAuth.signOut().catch(() => {});
 };
 window.meaReconcileCart = function() {
   if (!draftOwner) return;
@@ -451,6 +472,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cart-shortcut').onclick = () => showView('cart');
   document.getElementById('google-login').onclick = connectGoogle;
   document.getElementById('google-connect').onclick = connectGoogle;
+  document.querySelectorAll('[data-account-action]').forEach(button => {
+    button.onclick = () => changeAccount(button.dataset.accountAction);
+  });
+  document.addEventListener('click', event => {
+    document.querySelectorAll('.account-menu[open]').forEach(menu => { if (!menu.contains(event.target)) menu.open = false; });
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') document.querySelectorAll('.account-menu[open]').forEach(menu => { menu.open = false; menu.querySelector('summary').focus(); });
+  });
   document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); const a=e.target.closest('[data-record-action]');if(a)openRecordChange(a.dataset.recordAction,a.dataset.recordId); });
   document.getElementById('history-deleted-toggle').onclick=()=>{state.historyShowDeleted=!state.historyShowDeleted;document.getElementById('history-deleted-toggle').setAttribute('aria-pressed',String(state.historyShowDeleted));renderHistory();};
   document.addEventListener('mea:viewchange', () => { updateCartBadge(); if (state.view === 'history') { renderReturnQueue(); flushReturns(); } });
@@ -494,7 +524,7 @@ async function acceptGoogleAccount(data, user) {
     writeLocal(returnKey(),[...byId.values()]);
   }
   if (chosen) {state.cart=MeaCart.normalize(chosen.cart); writeLocal(draftKey(),{...chosen,cart:state.cart,dirty:true}); window.meaRestoreFields(); draftDirty=true;}
-  renderIdentity(); updateHomeCardStates();
+  renderIdentity(); updateHomeCardStates(); renderAccountControls();
   document.getElementById('google-account-status').textContent=(member.accountKind==='GUEST' ? 'Guest · ' + member.guestCode : 'Verified member') + ' · school account connected';
   if (state.view==='login') showView('home');
 }

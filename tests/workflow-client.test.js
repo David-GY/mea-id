@@ -187,3 +187,16 @@ test('server identity failures stay visible without upgrading an ID-only account
  assert.equal(c.run('state.lastId.verified'),undefined);assert.match(c.element('school-auth-error').textContent,/Member roster unavailable/);
  assert.equal(c.element('workflow-dialog').open,true);
 });
+
+ test('account options clear verified access and preserve the old cart before ID-only entry',async()=>{
+ const c=client();c.run("state.lastId={idNumber:'100001',verified:true,email:'one@student.ateneo.edu'};meaSwitchAccount();state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a'},qty:2,action:'BORROWING'};verifiedMember={uid:'one'}");
+ await c.context.changeAccount('id');
+ assert.equal(c.run('state.lastId'),null);assert.equal(c.run('verifiedMember'),null);
+ assert.equal(c.run('state.view'),'login');assert.equal(JSON.parse(c.data.get('mea_google_signed_out')),true);
+ assert.equal(Object.values(JSON.parse(c.data.get('mea_cart_v3:100001')).cart)[0].qty,2);
+ });
+ test('changing Google account waits for sign-out before opening sign-in',async()=>{
+ const c=client();let finish;let opened=false;c.context.finishSignOut=()=>new Promise(r=>finish=r);c.context.openSignIn=()=>{opened=true;};
+ c.run("schoolAuth={signOut:finishSignOut};connectGoogle=openSignIn");const pending=c.context.changeAccount('google');
+ assert.equal(opened,false);finish();await pending;assert.equal(opened,true);
+ });
