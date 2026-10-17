@@ -45,6 +45,13 @@ const {chromium} = require('playwright');
       }
     }
     console.log('Mobile layout passed: ID-only, school member and guest; 5 widths × 5 views.');
+    const wideCallback = async route => {
+      if (route.request().resourceType() !== 'document' || !route.request().url().includes('code=')) return route.continue();
+      const response = await route.fetch();
+      // Simulate a desktop-sized viewport restored by the external sign-in round trip.
+      const body = (await response.text()).replace('width=device-width, initial-scale=1.0, viewport-fit=cover', 'width=1280, initial-scale=1.0');
+      await route.fulfill({response, body});
+    };
     for (const device of [
       {width: 390, height: 844},
       {width: 412, height: 915},
@@ -55,13 +62,7 @@ const {chromium} = require('playwright');
         localStorage.setItem('mea_google_signed_out', location.search.includes('code=') ? 'false' : 'true');
       });
       const phone = await context.newPage();
-      await phone.route('**/*', async route => {
-        if (route.request().resourceType() !== 'document' || !route.request().url().includes('code=')) return route.continue();
-        const response = await route.fetch();
-        // Simulate a desktop-sized viewport restored by the external sign-in round trip.
-        const body = (await response.text()).replace('width=device-width, initial-scale=1.0, viewport-fit=cover', 'width=1280, initial-scale=1.0');
-        await route.fulfill({response, body});
-      });
+      await phone.route('**/*', wideCallback);
       await phone.goto(url);
       await phone.locator('#login-id-input').fill('100001');
       await phone.locator('#login-enter-btn').click();
@@ -82,6 +83,20 @@ const {chromium} = require('playwright');
         assert.ok(layout.scroll <= device.width + 1, `${view}: callback must not overflow horizontally`);
         assert.equal(layout.sidebar, 'none', `${view}: desktop sidebar must stay hidden`);
         if (device.width < 768) assert.equal(layout.frame, 'none', `${view}: phone must not become a desktop card`);
+      }
+      if (device.width === 390) {
+        const reopened = await browser.newContext({viewport: device, screen: {width: 1280, height: 2560},
+          isMobile: true, hasTouch: true, storageState: await context.storageState()});
+        const restored = await reopened.newPage();
+        await restored.route('**/*', wideCallback);
+        await restored.goto(url + '/?code=fixture-reopened-phone');
+        await restored.waitForFunction(() => state.view === 'home' && state.lastId?.verified);
+        assert.equal(await restored.evaluate(() => innerWidth), device.width,
+          'Remembered phone layout survives reopening with desktop-reported screen dimensions');
+        await restored.reload();
+        await restored.waitForFunction(() => state.view === 'home');
+        assert.equal(await restored.evaluate(() => innerWidth), device.width, 'Phone layout survives another reload');
+        await reopened.close();
       }
       await context.close();
     }
