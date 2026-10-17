@@ -139,3 +139,17 @@ test('a claimed client admin role cannot reveal editing when the server capabili
  const c=client();c.run("state.lastId={idNumber:'100001',level:'ADMIN'};meaSwitchAccount();window.meaHistoryRecords=[{recordId:'r',item:'A',canEdit:false,canDelete:false}]");
  c.context.openRecordChange('edit','r');assert.equal(c.element('workflow-dialog').open,false);
 });
+
+
+test('school restoration upgrades ID-only identity and permissions before syncing drafts',async()=>{
+ const c=client();c.run("state.lastId={idNumber:'100001',name:'One'};meaSwitchAccount();inventoryRequest=async()=>({member:{idNumber:'100001',name:'One',level:'ADMIN',accountKind:'MEMBER'},account:{uid:'uid-one',admin:true,projects:['SUS']}});loadCloudDraft=async()=>{};");
+ await c.context.restoreSchoolAccount({uid:'uid-one'});
+ assert.equal(c.run('state.lastId.verified'),true);assert.equal(c.run('state.lastId.level'),'ADMIN');assert.equal(c.run('verifiedMember.admin'),true);
+ assert.match(c.element('home-identity-id').textContent,/Verified member/);
+});
+test('server identity failures stay visible without upgrading an ID-only account',async()=>{
+ const c=client();c.run("state.lastId={idNumber:'100001',name:'One'};meaSwitchAccount();inventoryRequest=async()=>{throw new Error('Member roster unavailable');};");
+ await c.context.restoreSchoolAccount({uid:'uid-one'});
+ assert.equal(c.run('state.lastId.verified'),undefined);assert.match(c.element('school-auth-error').textContent,/Member roster unavailable/);
+ assert.equal(c.element('workflow-dialog').open,true);
+});

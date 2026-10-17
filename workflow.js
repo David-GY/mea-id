@@ -408,20 +408,37 @@ window.meaInstallHelp = function() {
   openWorkflow(`<h2 id="workflow-title">Install MEA App</h2><p>Keep MEA on your home screen for quick access.</p>${embedded ? '<p class="workflow-warning">Open this page in Safari on Apple devices or Chrome on Android using this browser’s menu.</p>' : ''}${isIOS() ? '<ol class="install-guide"><li><img src="icons/ui/share.svg" alt="" width="24" height="24"> Open the Share menu in Safari.</li><li><img src="icons/ui/plus.svg" alt="" width="24" height="24"> Choose Add to Home Screen.</li><li>Enable Open as Web App if shown, then tap Add.</li></ol>' : '<ol class="install-guide"><li>Open your browser’s menu.</li><li>Choose Install app or Add to Home screen.</li><li>Confirm installation.</li></ol>'}<button type="button" class="btn-secondary" id="install-help-done">Done</button>`);
   document.getElementById('install-help-done').onclick = closeWorkflow;
 };
+let schoolRestoreUid=null;
+function showSchoolAuthFailure(error) {
+  const message=error.message || 'Could not connect your school account. Try again.';
+  document.getElementById('google-login-status').textContent=message;
+  document.getElementById('google-account-status').textContent=message;
+  saveStatus('Saved on this device · school account not connected');
+  openWorkflow('<h2 id="workflow-title">School sign-in needs attention</h2><p id="school-auth-error" role="alert"></p><button type="button" class="btn-primary" id="school-auth-retry">Try Google sign-in again</button>');
+  document.getElementById('school-auth-error').textContent=message;
+  document.getElementById('school-auth-retry').onclick=connectGoogle;
+}
+async function restoreSchoolAccount(user) {
+  if (readLocal('mea_google_signed_out',false)) return;
+  if (!user) {verifiedMember=null;cloudLoaded=false;return;}
+  if (verifiedMember?.uid===user.uid || schoolRestoreUid===user.uid) return;
+  schoolRestoreUid=user.uid;
+  const epoch=accountEpoch;
+  document.getElementById('google-account-status').textContent='Checking your school account and MEA permissions…';
+  try {
+    const data=await inventoryRequest('googleMember',{},true);
+    if(epoch!==accountEpoch)return;
+    await acceptGoogleAccount(data,user);
+    closeWorkflow();
+  } catch(error) {if(epoch===accountEpoch)showSchoolAuthFailure(error);return;}
+  finally {schoolRestoreUid=null;}
+  try {await loadCloudDraft();} catch(_) {saveStatus('School account connected · cart waiting to sync');}
+}
 document.addEventListener('DOMContentLoaded', () => {
   window.meaSwitchAccount();
-  if (window.MEA_CONFIG?.supabase?.publishableKey && !readLocal('mea_google_signed_out', false)) loadSchoolAuth().then(auth => auth.onAuthStateChanged(async user => {
-    if (readLocal('mea_google_signed_out', false)) return;
-    if (!user) { verifiedMember=null; cloudLoaded=false; if(state.lastId?.verified) saveStatus('Saved on this device · reconnect your school account to sync'); return; }
-    if (verifiedMember?.uid===user.uid) return;
-    const epoch = accountEpoch;
-    try {
-      const data = await inventoryRequest('googleMember', {}, true);
-      if (epoch !== accountEpoch) return;
-      await acceptGoogleAccount(data, user);
-      await loadCloudDraft();
-    } catch (_) { saveStatus('Saved on this device · reconnect your school account to sync'); }
-  })).catch(e => { document.getElementById('google-login-status').textContent=e.message; });
+  if (window.MEA_CONFIG?.supabase?.publishableKey && (!readLocal('mea_google_signed_out', false) || MeaSchoolAuth.callbackPresent?.())) {
+    loadSchoolAuth().then(auth => auth.onAuthStateChanged(restoreSchoolAccount)).catch(showSchoolAuthFailure);
+  }
   document.getElementById('workflow-dialog').querySelector('.sheet-close').onclick = closeWorkflow;
   document.getElementById('workflow-dialog').addEventListener('cancel', e => { e.preventDefault(); closeWorkflow(); });
   document.getElementById('workflow-dialog').addEventListener('click', e => { if (e.target === e.currentTarget) closeWorkflow(); });

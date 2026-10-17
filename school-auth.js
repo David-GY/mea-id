@@ -1,11 +1,30 @@
 /* Supabase Google OAuth adapter. Only a publishable/anon key belongs in app-config.js. */
 (function(root) {
   let loading;
-  root.MeaSchoolAuth = {load(config) {
+  function callbackParams() {
+    const query=new URLSearchParams(root.location.search || '');
+    const hash=new URLSearchParams((root.location.hash || '').replace(/^#/,''));
+    return {code:query.get('code'), error:query.get('error') || hash.get('error'), description:query.get('error_description') || hash.get('error_description') || ''};
+  }
+  function clearCallback() {
+    if (!root.history?.replaceState || !root.location.href) return;
+    const url=new URL(root.location.href);
+    ['code','error','error_code','error_description'].forEach(k=>url.searchParams.delete(k));
+    if (/(?:^#|&)(?:error|access_token|refresh_token)=/.test(url.hash)) url.hash='';
+    root.history.replaceState(null,'',url.pathname+url.search+url.hash);
+  }
+  root.MeaSchoolAuth = {callbackPresent() {const p=callbackParams();return !!(p.code || p.error);},load(config) {
     if (loading) return loading;
     if (!config?.url || !config?.publishableKey) return Promise.reject(new Error('School sign-in needs the Supabase public key. Continue with your ID.'));
     if (config.url !== 'https://gxffeavbefmmycmvccsm.supabase.co' || /^sb_secret_/.test(config.publishableKey)) return Promise.reject(new Error('Invalid Supabase public configuration.'));
     loading = (async () => {
+      const callback=callbackParams();
+      if (callback.error) {
+        clearCallback();
+        throw new Error(/exchange external code/i.test(callback.description)
+          ? 'Google sign-in failed before MEA received a session. An administrator must check the Google OAuth Client ID and matching secret in Supabase, then try again.'
+          : 'Google sign-in was cancelled or rejected. Try again with your student.ateneo.edu account.');
+      }
       if (!root.supabase?.createClient) await new Promise((resolve,reject) => {
         const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js';
         s.onload=resolve; s.onerror=()=>{s.remove();reject(new Error('Could not load school sign-in. Check your connection.'));}; document.head.append(s);
@@ -33,10 +52,17 @@
         const {data,error}=await client.auth.verifyOtp({email:String(email).trim().toLowerCase(),token:String(token).trim(),type:'email'});if(error)throw error;user=adapt(data.session);return user;
       },async signOut(){const {error}=await client.auth.signOut(); if(error)throw error;user=null;},onAuthStateChanged(callback){
         // Supabase warns against awaited auth calls inside its synchronous callback.
-        const {data}=client.auth.onAuthStateChange((_event,session)=>{user=adapt(session);setTimeout(()=>callback(user),0);});
-        return ()=>data.subscription.unsubscribe();
+        let active=true, version=0;
+        const publish=session=>{user=adapt(session);const current=++version;setTimeout(()=>{if(active && current===version)callback(user);},0);};
+        const {data}=client.auth.onAuthStateChange((_event,session)=>publish(session));
+        // The initial SDK event may precede this subscription while the script loads.
+        publish(initial.data.session);
+        return ()=>{active=false;data.subscription.unsubscribe();};
       }};
-      const initial=await client.auth.getSession(); if(initial.error)throw initial.error;user=adapt(initial.data.session);
+      const initial=await client.auth.getSession();
+      if(initial.error) {if(callback.code)clearCallback();throw new Error(callback.code ? 'Could not finish Google sign-in. Start again in this same browser.' : initial.error.message);}
+      user=adapt(initial.data.session);
+      if(callback.code) {clearCallback();if(!user)throw new Error('Google returned without a session. Try signing in again in this same browser.');}
       return api;
     })().catch(e=>{loading=null;throw e;});
     return loading;
