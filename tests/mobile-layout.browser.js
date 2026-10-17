@@ -45,6 +45,47 @@ const {chromium} = require('playwright');
       }
     }
     console.log('Mobile layout passed: ID-only, school member and guest; 5 widths × 5 views.');
+    for (const device of [
+      {width: 390, height: 844},
+      {width: 412, height: 915},
+      {width: 844, height: 390}
+    ]) {
+      const context = await browser.newContext({viewport: device, screen: device, isMobile: true, hasTouch: true});
+      await context.addInitScript(() => {
+        localStorage.setItem('mea_google_signed_out', location.search.includes('code=') ? 'false' : 'true');
+      });
+      const phone = await context.newPage();
+      await phone.route('**/*', async route => {
+        if (route.request().resourceType() !== 'document' || !route.request().url().includes('code=')) return route.continue();
+        const response = await route.fetch();
+        // Simulate a desktop-sized viewport restored by the external sign-in round trip.
+        const body = (await response.text()).replace('width=device-width, initial-scale=1.0, viewport-fit=cover', 'width=1280, initial-scale=1.0');
+        await route.fulfill({response, body});
+      });
+      await phone.goto(url);
+      await phone.locator('#login-id-input').fill('100001');
+      await phone.locator('#login-enter-btn').click();
+      await phone.waitForFunction(() => state.view === 'home' && !state.lastId.verified);
+      const idWidth = await phone.evaluate(() => innerWidth);
+      await phone.goto(url + '/?code=fixture-school-return');
+      await phone.waitForFunction(() => state.view === 'home' && state.lastId?.verified);
+      assert.equal(await phone.evaluate(() => innerWidth), idWidth, 'Gmail return must match ID-only layout width');
+      for (const view of ['home', 'settings', 'history', 'catalog']) {
+        await phone.evaluate(view => showView(view), view);
+        const layout = await phone.evaluate(() => ({
+          width: innerWidth,
+          scroll: document.documentElement.scrollWidth,
+          sidebar: getComputedStyle(document.querySelector('.sidebar-brand')).display,
+          frame: getComputedStyle(document.querySelector('.desktop-frame')).transform
+        }));
+        assert.equal(layout.width, device.width, `${view}: phone viewport must stay at device width`);
+        assert.ok(layout.scroll <= device.width + 1, `${view}: callback must not overflow horizontally`);
+        assert.equal(layout.sidebar, 'none', `${view}: desktop sidebar must stay hidden`);
+        if (device.width < 768) assert.equal(layout.frame, 'none', `${view}: phone must not become a desktop card`);
+      }
+      await context.close();
+    }
+    console.log('Sign-in return passed: ID-only matches Gmail with a restored wide viewport, on two portrait phones and landscape.');
   } finally {
     await browser?.close();
     server.kill();
