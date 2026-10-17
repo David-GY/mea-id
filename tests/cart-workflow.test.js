@@ -272,3 +272,13 @@ test('Supabase confirmed email identity supports email sign-in without trusting 
  const f=fixture();f.context.UrlFetchApp.fetch=()=>({getResponseCode:()=>200,getContentText:()=>JSON.stringify({id:'email-user',email:'one@student.ateneo.edu',email_confirmed_at:'2026-10-16',identities:[{provider:'email',identity_data:{email:'one@student.ateneo.edu'}}],user_metadata:{admin:true,full_name:'Claimed Admin'}})});
  const account=f.request('googleMember',{idToken:'valid'}).account;assert.equal(account.memberId,'100001');assert.equal(account.admin,false);
 });
+
+
+test('numeric sheet member IDs reconnect without permitting actual reassignment',()=>{
+ const f=fixture();assert.equal(f.request('googleMember',{idToken:'one'}).ok,true);
+ const row=f.tabs.Accounts.rows[1];row[4]=100001;
+ assert.equal(f.request('googleMember',{idToken:'one'}).ok,true);
+ row[4]=100002;
+ assert.equal(f.request('googleMember',{idToken:'one'}).code,'ROSTER_MISMATCH');
+});
+

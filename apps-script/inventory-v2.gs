@@ -168,7 +168,7 @@ function invUpsertAccount_(user, c) {
   if (matches.length > 1 || rows.some(function(r) { return r[0] !== user.localId && invText_(r[1]).toLowerCase() === c.email; })) throw invError_('Account link needs SUS review.', 'ROSTER_MISMATCH');
   var old = matches.length ? matches[0].row : null;
   // Email/member reassignment is never silently accepted. Guest promotion is supported.
-  if (old && (old[1] !== c.email || old[4] && old[4] !== c.memberId)) throw invError_('Account roster link changed. Contact SUS.', 'ROSTER_MISMATCH');
+  if (old && (invText_(old[1]).toLowerCase() !== c.email || invText_(old[4]) && invText_(old[4]) !== invText_(c.memberId))) throw invError_('Account roster link changed. Contact SUS.', 'ROSTER_MISMATCH');
   var key = c.memberId ? 'member:' + c.memberId : 'guest:' + user.localId;
   var linked = old && old[8] ? JSON.parse(old[8]) : [];
   if (old && old[3] === 'GUEST' && c.kind === 'MEMBER') linked.push('guest:' + user.localId);
