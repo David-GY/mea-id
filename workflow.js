@@ -192,8 +192,12 @@ function changeCartAction(key, action, combine = false) {
   try { qty = MeaCart.quantity(line.qty + (target?.qty || 0)); }
   catch (error) { showToast(error.message, true); return; }
   invalidateAction(line.action); invalidateAction(action);
-  delete state.cart[key];
-  state.cart[targetKey] = {...line, qty, action, changed: line.changed || target?.changed};
+  const updated = {...line, qty, action, changed: line.changed || target?.changed};
+  // Replace the key in place; a confirmed merge keeps the destination row's position.
+  state.cart = Object.fromEntries(Object.entries(state.cart).flatMap(([entryKey, entry]) => {
+    if (entryKey === key) return target ? [] : [[targetKey, updated]];
+    return [[entryKey, entryKey === targetKey ? updated : entry]];
+  }));
   delete state.cart[targetKey].clientId;
   saveCart(); updateCartBadge(); renderCart();
   document.querySelector(`[data-cart-index="${Object.keys(state.cart).indexOf(targetKey)}"] [data-cart-action="${action}"]`)?.focus();

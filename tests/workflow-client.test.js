@@ -181,3 +181,31 @@ test('failed sign-out does not start Google account switching or restore verifie
  c.run("state.lastId={idNumber:'100001',verified:true};meaSwitchAccount();schoolAuth={signOut:async()=>{throw new Error('Offline')}};connectGoogle=openSignIn");
  await c.context.changeAccount('google');assert.equal(opened,false);assert.equal(c.run('state.lastId'),null);assert.equal(JSON.parse(c.data.get('mea_google_signed_out')),true);
 });
+
+
+test('switching each cart row repeatedly preserves display and saved order across reload',()=>{
+ const c=client();
+ c.run("state.lastId={idNumber:'100001'};meaSwitchAccount();for(const id of ['a','b','c'])state.cart[MeaCart.key(id,'BORROWING')]={item:{id,title:id},qty:2,action:'BORROWING'}");
+ for(const id of ['a','b','c']) for(const action of ['CONSUMING','BORROWING','CONSUMING']) {
+  c.run(`changeCartAction(MeaCart.key('${id}',state.cart[Object.keys(state.cart).find(k=>state.cart[k].item.id==='${id}')].action),'${action}')`);
+  assert.equal(c.run('Object.values(state.cart).map(l=>l.item.id).join()'),'a,b,c');
+  assert.equal(Object.values(JSON.parse(c.data.get('mea_cart_v3:100001')).cart).map(l=>l.item.id).join(),'a,b,c');
+ }
+ c.run("state.lastId={idNumber:'100002'};meaSwitchAccount();state.lastId={idNumber:'100001'};meaSwitchAccount()");
+ assert.equal(c.run('Object.values(state.cart).map(l=>l.item.id).join()'),'a,b,c');
+});
+
+test('confirmed action merges keep the destination position before or after the source',()=>{
+ for(const destinationFirst of [true,false]) {
+  const c=client();
+  c.run(`state.lastId={idNumber:'100001'};meaSwitchAccount();
+   for(const [id,action] of ${JSON.stringify(destinationFirst ? [['a','BORROWING'],['b','BORROWING'],['a','CONSUMING'],['c','BORROWING']] : [['a','CONSUMING'],['b','BORROWING'],['a','BORROWING'],['c','BORROWING']])})state.cart[MeaCart.key(id,action)]={item:{id,title:id},qty:2,action};
+   changeCartAction(MeaCart.key('a','CONSUMING'),'BORROWING')`);
+  assert.equal(c.run('Object.keys(state.cart).length'),4);
+  c.element('combine-cart').onclick();
+  const expected=destinationFirst?'a,b,c':'b,a,c';
+  assert.equal(c.run('Object.values(state.cart).map(l=>l.item.id).join()'),expected);
+  assert.equal(c.run("state.cart[MeaCart.key('a','BORROWING')].qty"),4);
+  assert.equal(Object.values(JSON.parse(c.data.get('mea_cart_v3:100001')).cart).map(l=>l.item.id).join(),expected);
+ }
+});
