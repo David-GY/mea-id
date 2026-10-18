@@ -976,6 +976,7 @@ body::before {
 }
 
 </style>
+<link rel="stylesheet" href="tracker-ui.css?v=1">
 </head>
 <body>
 <div class="desktop-frame">
@@ -1005,16 +1006,17 @@ body::before {
      MAIN PAGE
 ══════════════════════════════════ -->
 <div class="page active" id="page-main">
+  <aside class="tracker-sidebar"><a href="index.html" class="workspace-brand"><img src="brand/mea-logo-lightgray.png" alt="MEA"><span>SUS workspace</span></a><nav aria-label="Workspace"><a href="index.html"><img src="icons/ui/home.svg" alt="">Home</a><a href="index.html#inventory"><img src="icons/ui/shopping-basket.svg" alt="">SUScart</a><button onclick="chooseDestination()" aria-current="page"><img src="icons/ui/id-badge.svg" alt="">MEA ID</button></nav><div class="sidebar-footer"><img src="brand/sus-logo-white.png" alt="SUS"><p>Management Engineering<br>Association</p></div></aside>
 
   <div class="header">
     <div class="brand">
       <a href="index.html" class="brand-logo" title="Back to Home" style="text-decoration:none;"><img src="icons/icon-96.png" alt="MEA" style="width:100%;height:100%;object-fit:cover;"></a>
       <div>
-        <div class="brand-name">MEA ID Tracker</div>
+        <div class="brand-name">MEA ID</div>
         <div class="brand-sub">Management Engineering Association</div>
       </div>
     </div>
-    <div class="header-right">
+    <div class="header-right"><a class="suscart-link" href="index.html#inventory">Open SUScart ↗</a>
       <a href="index.html" class="icon-btn" title="Back to Home" aria-label="Back to Home" style="text-decoration:none;"><img class="tracker-svg" src="icons/ui/home.svg" alt="" width="17" height="17"></a>
       <div class="dd-wrap">
         <div class="icon-btn" id="menuBtn" onclick="toggleDD()" role="button" tabindex="0" aria-label="Menu"><img class="tracker-svg" src="icons/ui/more-horizontal.svg" alt="" width="18" height="18"></div>
@@ -1037,19 +1039,16 @@ body::before {
   </div>
 
 
-  <!-- Tab bar -->
-  <div class="tab-bar">
-    <button class="tab-btn active" id="tab-INVENTORY" onclick="setTab('INVENTORY')">
-      Inventory<span>Storage</span>
-    </button>
-    <button class="tab-btn" id="tab-W/Proj" onclick="setTab('W/Proj')">
-      W/Proj<span>In Use</span>
-    </button>
-    <button class="tab-btn" id="tab-DEPLOYED" onclick="setTab('DEPLOYED')">
-      Deployed<span>Field</span>
-    </button>
-  </div>
-
+  <section id="destinationChooser" class="destination-chooser"><p class="workspace-path">Workspace / MEA ID</p><h1 tabindex="-1" id="destinationHeading">Where are these IDs going?</h1><p class="chooser-intro">Choose a destination before you scan or enter an ID.</p>
+<div class="choices">
+<button class="choice inventory" onclick="setTab('INVENTORY')"><span class="choice-icon"><img src="icons/ui/archive-box.svg" alt=""></span><span class="choice-title">Inventory</span><span class="purpose">Return to storage</span><span class="description">IDs received or returned to the SUS inventory.</span><span class="destination">Destination <strong>INVENTORY</strong></span><span class="choice-action">Choose Inventory <span aria-hidden="true">↗</span></span></button>
+<button class="choice project" onclick="setTab('W/Proj')"><span class="choice-icon"><img src="icons/ui/folder.svg" alt=""></span><span class="choice-title">W/Proj</span><span class="purpose">Hand over to a project</span><span class="description">IDs held by a project team before member distribution.</span><span class="destination">Destination <strong>W/Proj</strong></span><span class="choice-action">Choose W/Proj <span aria-hidden="true">↗</span></span></button>
+<button class="choice deploy" onclick="setTab('DEPLOYED')"><span class="choice-icon"><img src="icons/ui/user.svg" alt=""></span><span class="choice-title">Deploy</span><span class="purpose">Give to the member</span><span class="description">IDs released to their members and marked as deployed.</span><span class="destination">Destination <strong>DEPLOYED</strong></span><span class="choice-action">Choose Deploy <span aria-hidden="true">↗</span></span></button>
+</div><div class="hint"><img src="icons/ui/info.svg" alt=""><p>Choose where the ID will be after the handover. Every ID you send will go straight to the selected destination.</p></div>
+</section>
+  <section id="trackerOperations" hidden>
+  <div class="destination-toolbar"><button class="change-destination" onclick="chooseDestination()">‹ Choose another destination</button></div>
+  <div class="mode-banner"><span class="mode-icon"><img id="destinationIcon" src="icons/ui/archive-box.svg" alt=""></span><div><span>Moving IDs to</span><h1 id="destinationTitle" tabindex="-1">Inventory</h1><p id="destinationDescription">Return IDs to SUS storage.</p></div><span class="mode-tag" id="destinationSheet">INVENTORY</span></div>
   <div class="sync-pill" id="syncPill" onclick="syncPillClick()">
     <div class="sync-dot" id="syncDot"></div>
     <span id="syncPillText">0 pending</span>
@@ -1063,12 +1062,12 @@ body::before {
   <div class="scan-zone">
 
     <div class="manual-entry">
-      <div class="manual-entry-label">Type ID Number</div>
+      <h2 class="entry-heading">Scan or enter an ID</h2><p class="entry-description">Send an ID directly to this destination.</p><label class="manual-entry-label" for="manualInput">Member ID number</label>
       <div class="manual-entry-row">
         <input type="text" class="manual-input" id="manualInput" placeholder="e.g. 212345"
           inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false"
           onkeydown="if(event.key==='Enter') submitManual()">
-        <button class="manual-submit" onclick="submitManual()" aria-label="Submit ID"><img class="tracker-svg" src="icons/ui/arrow-right.svg" alt="" width="20" height="20"></button>
+        <button class="manual-submit" onclick="submitManual()" aria-label="Send ID">Send ID</button>
       </div>
     </div>
 
@@ -1080,10 +1079,10 @@ body::before {
       <div class="ring ring-1"></div>
       <div class="ring ring-2"></div>
       <div class="ring ring-3"></div>
-      <div class="scan-circle" id="scanCircle" onclick="toggleScan()">
+      <button type="button" class="scan-circle" id="scanCircle" onclick="toggleScan()" aria-label="Start or stop NFC scanning">
         <div class="scan-icon" id="scanIcon"><img class="tracker-svg" src="icons/ui/id-badge.svg" alt="ID scan" width="42" height="42"></div>
         <div class="scan-txt"  id="scanTxt">Tap to Scan</div>
-      </div>
+      </button>
     </div>
 
     <div class="nfc-unavailable" id="nfcUnavailable">
@@ -1092,7 +1091,7 @@ body::before {
       <div class="nu-sub">Web NFC requires Chrome on Android.<br>Use the field above to enter IDs manually.</div>
     </div>
 
-    <div class="status-block">
+    <div class="status-block" role="status" aria-live="polite">
       <div class="status-title" id="statusTitle">INVENTORY</div>
       <div class="status-sub"   id="statusSub">Select a tab then tap the button</div>
     </div>
@@ -1122,6 +1121,7 @@ body::before {
     <pre id="nfcDebugText" style="font-family:'Courier New',monospace;font-size:11px;color:#88ddcc;line-height:1.7;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
   </div>
 
+</section><!-- /trackerOperations -->
 </div><!-- /page-main -->
 
 <!-- ══════════════════════════════════
@@ -1394,7 +1394,7 @@ function doPost(e) { return doGet(e); }</code>
       </div>
       <div class="step-body">
         NFC tags must contain the <strong>student ID as a plain text record</strong> (string format, e.g. 202112345).
-        Select a destination tab, tap the circle, and hold a tag to the back of your Android device.
+        Choose a destination, tap the circle, and hold a tag to the back of your Android device.
         The ID is logged locally and sent to Google Sheets.
         <div class="alert alert-warn">
           <span class="alert-icon"><img src="icons/ui/smartphone.svg" alt=""></span>
@@ -1457,7 +1457,8 @@ function authParams() {
   }
   return params;
 }
-let activeTab     = 'INVENTORY';
+let activeTab     = null;
+let destinationGeneration = 0;
 let isScanning    = false;
 let nfcReader     = null;
 let lastScanMs    = 0;
@@ -1552,18 +1553,22 @@ async function submitGate() {
       setCachedAccess(id, json.name || '');
       okBox.textContent = 'Welcome, ' + (json.name || id) + '!';
       okBox.classList.add('show');
-      setTimeout(() => { hideGate(); }, 600);
+      hideGate();
     } else {
       errBox.textContent = 'Access Denied — ID not recognized.';
       errBox.classList.add('show');
       btn.disabled = false;
-      btn.textContent = 'Verify & Continue';
+      btn.textContent = 'Retry';
+      btn.hidden = false;
+      document.getElementById('gateHomeBtn').style.display = 'block';
     }
   } catch(err) {
     errBox.textContent = 'Could not reach the server. Try again.';
     errBox.classList.add('show');
     btn.disabled = false;
-    btn.textContent = 'Verify & Continue';
+    btn.textContent = 'Retry';
+    btn.hidden = false;
+    document.getElementById('gateHomeBtn').style.display = 'block';
   }
 }
 
@@ -1768,11 +1773,14 @@ function syncPillClick() {
     if (s) saved = Object.assign(saved, JSON.parse(s));
   } catch(e) {}
 
-  // Grab the ID carried over from the Home page (if any) up front, so it can
-  // both prefill manual entry AND auto-run the access check below.
+  // Reuse the signed-in actor for the existing automatic access check.
   let carriedId = '';
   try {
     carriedId = new URLSearchParams(window.location.search).get('id') || '';
+    if (!carriedId) {
+      const login = JSON.parse(localStorage.getItem('mea_login_v1') || 'null');
+      if (login && ['ADMIN', 'TRACKER'].includes(String(login.level).toUpperCase())) carriedId = login.idNumber || '';
+    }
   } catch(e) {}
 
   // Access gate is always enforced. Apps Script URL setup now lives on the
@@ -1788,7 +1796,7 @@ function syncPillClick() {
     document.getElementById('gateError').classList.add('show');
   } else {
     const cached = getCachedAccess();
-    if (cached) {
+    if (cached && (!carriedId || cached.id === carriedId)) {
       hideGate();
     } else if (!navigator.onLine) {
       // Can't verify without a connection — offer a provisional offline
@@ -1801,29 +1809,25 @@ function syncPillClick() {
       document.getElementById('gateOfflineBtn').style.display = 'block';
       if (carriedId) document.getElementById('gateInput').value = carriedId;
     } else if (carriedId) {
-      // Skip retyping — the ID already entered on the Home page verifies automatically.
+      // Keep the existing access request automatic; no second ID entry.
       showGate();
+      document.getElementById('gateSub').textContent = 'Opening your tracker…';
+      document.getElementById('gateInput').hidden = true;
+      document.getElementById('gateSubmitBtn').hidden = true;
       document.getElementById('gateInput').value = carriedId;
       submitGate();
     } else {
-      showGate();
+      window.location.replace('index.html');
+      return;
     }
   }
 
   if (!('NDEFReader' in window)) {
     document.getElementById('scanWrap').style.display = 'none';
     document.getElementById('nfcUnavailable').classList.add('show');
-    document.getElementById('statusTitle').textContent = LABELS[activeTab];
+    document.getElementById('statusTitle').textContent = 'Choose a destination';
     document.getElementById('statusSub').textContent = 'Type an ID above to log it';
   }
-
-  // Pre-fill manual entry with the same carried-over ID
-  try {
-    if (carriedId) {
-      const input = document.getElementById('manualInput');
-      if (input) input.value = carriedId;
-    }
-  } catch(e) {}
 
   // Register service worker for installability + offline app shell
   if ('serviceWorker' in navigator) {
@@ -1898,19 +1902,47 @@ document.addEventListener('click', e => {
 // ────────────────────────────────────────────
 // Tab
 // ────────────────────────────────────────────
+const DESTINATIONS = {
+  'INVENTORY': {title:'Inventory', theme:'inventory', icon:'archive-box', description:'Return IDs to SUS storage.'},
+  'W/Proj': {title:'W/Proj', theme:'project', icon:'folder', description:'Hand IDs over to a project team.'},
+  'DEPLOYED': {title:'Deploy', theme:'deploy', icon:'user', description:'Release IDs to their members.'}
+};
+function chooseDestination() {
+  destinationGeneration++;
+  if (isScanning) stopScan();
+  activeTab = null;
+  document.getElementById('manualInput').value = '';
+  document.getElementById('trackerOperations').hidden = true;
+  document.getElementById('destinationChooser').hidden = false;
+  document.getElementById('destinationHeading').focus();
+  window.scrollTo(0,0);
+}
 function setTab(tab) {
+  if (!TABS.includes(tab)) return;
+  destinationGeneration++;
   if (isScanning) stopScan();
   activeTab = tab;
-  TABS.forEach(t => document.getElementById('tab-'+t).classList.remove('active'));
-  document.getElementById('tab-'+tab).classList.add('active');
+  const destination = DESTINATIONS[tab];
+  document.getElementById('trackerOperations').className = destination.theme;
+  document.getElementById('destinationChooser').hidden = true;
+  document.getElementById('trackerOperations').hidden = false;
+  document.getElementById('manualInput').value = '';
+  document.getElementById('destinationTitle').textContent = destination.title;
+  document.getElementById('destinationDescription').textContent = destination.description;
+  document.getElementById('destinationSheet').textContent = tab;
+  document.getElementById('destinationIcon').src = 'icons/ui/' + destination.icon + '.svg';
   document.getElementById('statusTitle').textContent = LABELS[tab];
-  document.getElementById('statusSub').textContent = 'Tap the button to start scanning';
+  document.getElementById('statusSub').textContent = 'Type an ID and send, or tap to scan';
+  document.getElementById('lastPill').style.display = 'none';
+  document.getElementById('destinationTitle').focus();
+  window.scrollTo(0,0);
 }
 
 // ────────────────────────────────────────────
 // NFC
 // ────────────────────────────────────────────
 async function toggleScan() {
+  if (!activeTab) { chooseDestination(); return; }
   if (!cfg.url) { toast('Add your Script URL in Settings first','info'); return; }
   if (!('NDEFReader' in window)) { toast('NFC not supported on this device','fail'); return; }
   if (isScanning) { stopScan(); return; }
@@ -1918,14 +1950,19 @@ async function toggleScan() {
 }
 
 async function startScan() {
+  if (!activeTab) return;
+  const generation = destinationGeneration;
   try {
-    nfcReader = new NDEFReader();
-    await nfcReader.scan();
+    const reader = new NDEFReader();
+    await reader.scan();
+    if (generation !== destinationGeneration) return;
+    nfcReader = reader;
     isScanning = true;
     lastScanMs = 0;
 
     nfcReader.onreadingerror = () => toast('Tag read error','fail');
     nfcReader.onreading = ({ message, serialNumber }) => {
+      if (!isScanning || generation !== destinationGeneration) return;
       const now = Date.now();
       if (now - lastScanMs < cfg.cooldown * 1000) {
         toast('Cooldown — please wait','skip');
@@ -1944,6 +1981,7 @@ async function startScan() {
 }
 
 function stopScan() {
+  if (nfcReader) { nfcReader.onreading = null; nfcReader.onreadingerror = null; }
   isScanning = false;
   nfcReader  = null;
   setScanUI('', 'id-badge', 'Tap to Scan');
@@ -1952,6 +1990,8 @@ function stopScan() {
 }
 
 async function handleRead(message, serialNumber) {
+  if (!activeTab || !isScanning) return;
+  const generation = destinationGeneration;
   let raw = '';
 
   // Dump full tag info to screen for debugging
@@ -2002,7 +2042,7 @@ async function handleRead(message, serialNumber) {
     document.getElementById('lastId').textContent = memberName ? memberName + ' (' + raw + ')' : raw;
 
     setTimeout(() => {
-      if (!isScanning) return;
+      if (!isScanning || generation !== destinationGeneration) return;
       setScanUI('active','refresh','Scanning…');
       document.getElementById('statusTitle').textContent = LABELS[activeTab];
       document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
@@ -2015,6 +2055,7 @@ async function handleRead(message, serialNumber) {
     document.getElementById('statusSub').textContent = 'See debug panel below';
     toast('No data — see debug panel','fail');
     setTimeout(() => {
+      if (!isScanning || generation !== destinationGeneration) return;
       setScanUI('active','refresh','Scanning…');
       document.getElementById('statusTitle').textContent = LABELS[activeTab];
       document.getElementById('statusSub').textContent = 'Hold NFC tag to device · tap to stop';
@@ -2023,6 +2064,7 @@ async function handleRead(message, serialNumber) {
 }
 
 async function sendToSheets(data) {
+  if (!activeTab) { chooseDestination(); return; }
   const tab = activeTab;
   const col = cfg.cols[tab] || 'A';
 
@@ -2054,9 +2096,10 @@ async function sendToSheets(data) {
 // ────────────────────────────────────────────
 // Manual ID entry (works on any device — iOS, PC, etc.)
 // ────────────────────────────────────────────
-let lastManualSubmit = { data: '', ms: 0 };
+let lastManualSubmit = { data: '', tab: null, ms: 0 };
 
 async function submitManual() {
+  if (!activeTab) { chooseDestination(); return; }
   const input = document.getElementById('manualInput');
   const raw = input.value.trim();
 
@@ -2066,14 +2109,14 @@ async function submitManual() {
   // Same cooldown NFC scans get, applied per-value — stops an accidental
   // double-tap/double-Enter from writing the same ID twice in a row.
   const now = Date.now();
-  if (raw === lastManualSubmit.data && now - lastManualSubmit.ms < cfg.cooldown * 1000) {
+  if (raw === lastManualSubmit.data && activeTab === lastManualSubmit.tab && now - lastManualSubmit.ms < cfg.cooldown * 1000) {
     toast('Already submitted — cooldown active', 'skip');
     return;
   }
-  lastManualSubmit = { data: raw, ms: now };
+  lastManualSubmit = { data: raw, tab: activeTab, ms: now };
 
   input.value = '';
-  input.blur();
+  input.focus();
 
   const memberName = lookupMemberName(raw);
   document.getElementById('lastPill').style.display = 'inline-flex';

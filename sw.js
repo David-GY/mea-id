@@ -3,12 +3,18 @@
 // Cache is only used as an offline fallback, never as the primary source.
 // NFC scanning and Google Sheets requests always go live, never cached.
 
-const CACHE_NAME = 'mea-app-v29'; // bump this string on any future SW change to force a clean cache
+const CACHE_NAME = 'mea-app-v30'; // bump this string on any future SW change to force a clean cache
 const APP_SHELL = [
   './',
   './index.html',
   './mobile-viewport.js',
   './id-tracker.html',
+  './tracker-ui.css',
+  './icons/ui/archive-box.svg',
+  './icons/ui/folder.svg',
+  './icons/ui/user.svg',
+  './brand/mea-logo-lightgray.png',
+  './brand/sus-logo-white.png',
   './inventory.css',
   './appearance.css',
   './appearance.js',

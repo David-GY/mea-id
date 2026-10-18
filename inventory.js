@@ -466,7 +466,7 @@
       dashSub.textContent = 'Setup required — contact an admin';
       return;
     }
-    trackerSub.textContent = trackerOk ? 'Scan & verify a MEA ID' : 'Restricted — Tracker access required';
+    trackerSub.textContent = trackerOk ? 'Choose a destination & move IDs' : 'Restricted — Tracker access required';
     dashSub.textContent = dashOk ? 'Analytics & reports' : 'Restricted — Dashboard access required';
   }
 
@@ -510,7 +510,7 @@
       state.lastId = saved;
       renderIdentity();
       updateHomeCardStates();
-      showView('home');
+      showView(window.location.hash === '#inventory' ? 'catalog' : 'home');
     } else {
       showView('login');
     }
