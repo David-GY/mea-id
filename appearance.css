@@ -138,6 +138,24 @@ select option, select option:checked, select option:hover { background: var(--ca
 
 .identity-block { min-width: 0; overflow-wrap: anywhere; }
 
+/* Cart density: compact controls and rows; keep other pages at their current scale. */
+#view-cart #cart-list { gap: 5px; }
+#view-cart .cart-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 7px 10px; gap: 2px 8px; box-shadow: none; }
+#view-cart .cart-entry-main { display: contents; }
+#view-cart .cart-entry h3, #view-cart .cart-entry p { grid-column: 1 / -1; }
+#view-cart .cart-entry h3 { font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+#view-cart .cart-entry p { margin-top: 0; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+#view-cart .cart-action-toggle { width: 100%; max-width: 100%; margin-top: 3px; padding: 1px; gap: 2px; border-radius: 6px; }
+#view-cart .cart-action-toggle button { flex: 1 1 0; min-height: 26px; padding: 3px 7px; font-size: 12px; border-radius: 4px; }
+#view-cart .cart-entry-actions { flex-direction: row; align-self: end; gap: 4px; }
+#view-cart .cart-entry-actions button { width: auto; min-width: 0; min-height: 28px; padding: 3px 7px; font-size: 12px; line-height: 1.4; border-radius: 6px; }
+#view-cart #cart-save-status, #view-cart #cart-feedback { margin: 6px 0; font-size: 12px; line-height: 1.4; }
+#view-cart #cart-save-status:empty, #view-cart #cart-feedback:empty { display: none; }
+#view-cart #cart-checkout-btn { min-height: 40px; padding: 10px 14px; font-size: 13px; margin-top: 12px; }
+@media (pointer: coarse) {
+  #view-cart .cart-action-toggle button, #view-cart .cart-entry-actions button { min-height: 28px; }
+}
+
 /* Readable identity and section headings on the stronger themed page canvas. */
 .identity-name, .identity-id, .history-title, .help-title, .help-sub,
 .history-section-label, .state-title, .state-sub, .appearance-setting > label,
