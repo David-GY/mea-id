@@ -1212,6 +1212,13 @@
     const countEl = document.getElementById('catalog-result-count');
 
     if (!state.inventory.length) {
+      if (window.meaRenderEmptyCatalogGame) {
+        container.className = 'item-grid';
+        container.innerHTML = debugHtml;
+        window.meaRenderEmptyCatalogGame(container);
+        if (countEl) countEl.textContent = 'No inventory loaded';
+        return;
+      }
       container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">' + (debugMsg ? 'No saved inventory available. Connect and tap Refresh.' : 'Inventory is empty') + '</div>';
       if (countEl) countEl.textContent = 'Tap an item to borrow or consume';
       return;

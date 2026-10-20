@@ -127,23 +127,25 @@
           autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
       </div>
 
-      <div class="id-input-label" style="text-align:left;">ID TRACKER ACCESS TOKEN <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></div>
-      <div class="id-input-row">
-        <input type="password" id="settings-tracker-token" placeholder="Leave blank if your script doesn't require one"
-          autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
-      </div>
-
       <div class="id-input-label" style="text-align:left;">INVENTORY SCRIPT URL</div>
       <div class="id-input-row">
         <input type="url" id="settings-inventory-url" placeholder="https://script.google.com/macros/s/…/exec"
           autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
       </div>
 
-      <div class="id-input-label" style="text-align:left;">INVENTORY ACCESS TOKEN <span style="text-transform:none;font-weight:400;opacity:0.7;">(optional)</span></div>
+      <details class="settings-token-dropdown">
+      <summary>Access tokens <span>(optional)</span></summary>
+      <label class="id-input-label" for="settings-tracker-token" style="text-align:left;">ID TRACKER ACCESS TOKEN</label>
+      <div class="id-input-row">
+        <input type="password" id="settings-tracker-token" placeholder="Leave blank if your script doesn't require one"
+          autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
+      </div>
+      <label class="id-input-label" for="settings-inventory-token" style="text-align:left;">INVENTORY ACCESS TOKEN</label>
       <div class="id-input-row">
         <input type="password" id="settings-inventory-token" placeholder="Leave blank if your script doesn't require one"
           autocomplete="off" spellcheck="false" style="text-align:left;font-size:12px;font-weight:400;letter-spacing:0;">
       </div>
+      </details>
       <button class="btn-secondary" id="settings-save-btn" style="margin-top:14px;">Save</button>
       <div class="setup-status" id="settingsStatus"></div>
 
@@ -415,6 +417,8 @@
 <script src="dashboard-model.js?v=1"></script>
 <script src="app-config.js?v=15"></script>
 <script src="cart-model.js?v=28"></script>
+<link rel="stylesheet" href="empty-catalog-game.css">
+<script src="empty-catalog-game.js"></script>
 <script src="inventory.js?v=29"></script>
 <script src="school-auth.js?v=24"></script>
 <script src="workflow.js?v=33"></script>
