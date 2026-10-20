@@ -3,12 +3,12 @@
   let dispose = () => {};
   const mascot = new Image();
   mascot.src = 'brand/catalog-runner.png';
-  window.meaRenderEmptyCatalogGame = container => {
+  window.meaRenderEmptyCatalogGame = (container, manual = false) => {
     dispose();
     const panel = document.createElement('section');
     panel.className = 'catalog-dino';
-    panel.innerHTML = `<h2>Nothing loaded yet</h2>
-      <p>Tap Refresh to check inventory. Play a little while you wait.</p>
+    panel.innerHTML = `<h2>${manual ? 'Character runner' : 'Nothing loaded yet'}</h2>
+      <p>${manual ? 'Jump over the cacti and see how far you can go.' : 'Tap Refresh to check inventory. Play a little while you wait.'}</p>
       <canvas width="560" height="180" tabindex="0" role="img" aria-label="Mascot runner. Use the Jump button, Space, or Arrow Up to jump over cacti."></canvas>
       <output aria-label="Game score">Score: 0</output>
       <p class="dino-status" role="status">Ready when you are.</p>
@@ -49,7 +49,7 @@
       status.textContent = 'Paused. Start a new run whenever you like.';
     }
     function tick(time) {
-      if (!panel.isConnected || document.hidden || !panel.closest('.view.active')) { pause(); return; }
+      if (!panel.isConnected || document.hidden || !(panel.closest('dialog')?.open || panel.closest('.view.active'))) { pause(); return; }
       const dt = Math.min((time - previous) / 1000, .04);
       previous = time;
       velocity -= 1500 * dt;
@@ -88,4 +88,22 @@
     mascot.onload = () => { if (panel.isConnected) draw(); };
     draw();
   };
+  const launcher = document.getElementById('open-character-runner');
+  if (launcher) {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'character-runner-dialog';
+    dialog.setAttribute('aria-label', 'Character runner');
+    dialog.innerHTML = '<button type="button" class="btn-secondary runner-close">Close game</button><div class="runner-content"></div>';
+    document.body.appendChild(dialog);
+    const close = dialog.querySelector('.runner-close');
+    close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => { dispose(); launcher.focus(); });
+    launcher.addEventListener('click', () => {
+      window.meaRenderEmptyCatalogGame(dialog.querySelector('.runner-content'), true);
+      // Replace the previous session so each opening starts with one game.
+      const panels = dialog.querySelectorAll('.catalog-dino');
+      panels.forEach((panel, index) => { if (index < panels.length - 1) panel.remove(); });
+      dialog.showModal();
+    });
+  }
 })();

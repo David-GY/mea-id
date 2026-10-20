@@ -381,7 +381,11 @@ async function loadSchoolAuth() {
 }
 async function finishSchoolConnection() {
   const epoch=accountEpoch, auth=await loadSchoolAuth();
-  const data=await inventoryRequest('googleMember',{},true);if(epoch!==accountEpoch)return;
+  let data;
+  window.meaSignInLoading?.show();
+  try {data=await inventoryRequest('googleMember',{},true);}
+  finally {window.meaSignInLoading?.hide();}
+  if(epoch!==accountEpoch)return;
   await acceptGoogleAccount(data,auth.currentUser);await loadCloudDraft();
 }
 async function connectGoogle() {
@@ -465,8 +469,11 @@ async function restoreSchoolAccount(user) {
   schoolRestoreUid=user.uid;
   const epoch=accountEpoch;
   document.getElementById('google-account-status').textContent='Checking your school account and MEA permissions…';
+  window.meaSignInLoading?.show();
   try {
-    const data=await inventoryRequest('googleMember',{},true);
+    let data;
+    try {data=await inventoryRequest('googleMember',{},true);}
+    finally {window.meaSignInLoading?.hide();}
     if(epoch!==accountEpoch)return;
     await acceptGoogleAccount(data,user);
     closeWorkflow();
