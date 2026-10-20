@@ -21,7 +21,7 @@
 
       let res, text;
       try {
-        res = await fetch(url + '?action=inventory');
+        res = await fetch(url + '?action=inventory', {signal: meaRequestSignal()});
         text = await res.text();
       } catch(networkErr) {
         throw new TypeError('Network error — could not reach the Inventory script.');
@@ -41,6 +41,8 @@
           return {
             id: item.id || 'legacy:' + JSON.stringify([item.title, item.location, item.category]),
             stableId: !!item.id, itemCode: item.itemCode || '',
+            inventorySection: item.inventorySection || '',
+            requiresManualVerification: MeaCart.requiresManualVerification(item),
             title: item.title || 'Untitled',
             category: item.category || 'Miscellaneous',
             location: item.location || '',
@@ -62,7 +64,7 @@
     const MAX_ORDER_ATTEMPTS = 5;
 
     function getPendingOrders() {
-      try { return JSON.parse(localStorage.getItem(PENDING_ORDERS_KEY) || '[]'); }
+      try { const rows=JSON.parse(localStorage.getItem(PENDING_ORDERS_KEY) || '[]'); return Array.isArray(rows)?rows.filter(r=>r && r.payload && typeof r.clientId==='string'):[]; }
       catch(e) { return []; }
     }
 
@@ -73,7 +75,7 @@
     }
 
     function getFailedOrders() {
-      try { return JSON.parse(localStorage.getItem(FAILED_ORDERS_KEY) || '[]'); }
+      try { const rows=JSON.parse(localStorage.getItem(FAILED_ORDERS_KEY) || '[]'); return Array.isArray(rows)?rows.filter(r=>r && r.payload && typeof r.clientId==='string'):[]; }
       catch(e) { return []; }
     }
 
@@ -87,6 +89,7 @@
       // attempt that may have actually landed server-side) so a later
       // retry carries the same idempotency key instead of a fresh one.
       clientId = clientId || (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
+      if (list.some(entry => entry.clientId === clientId)) return;
       list.push({ payload, queuedAt: Date.now(), attempts: 0, clientId });
       savePendingOrders(list);
     }
@@ -126,8 +129,9 @@
       try {
         // text/plain avoids a CORS preflight against Apps Script, which
         // doesn't support OPTIONS requests.
-        res = await fetch(url + '?action=submitOrder', {
+        res = await fetch(url + '?action=' + (payload.requestOnly ? 'submitSpecialRequest' : 'submitOrder'), {
           method: 'POST',
+          signal: meaRequestSignal(),
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(body)
         });
@@ -154,59 +158,54 @@
       const pending = getPendingOrders();
       if (!pending.length) return;
 
+      const owner = state.lastId?.idNumber;
+      if (!owner) return;
       isFlushingOrders = true;
       let changed = false;
-      updateOrderSyncPill();
-
-      while (true) {
-        const current = getPendingOrders();
-        if (!current.length) break;
-        const item = current[0];
-        try {
-          await trySubmitOrderToSheet(item.payload, item.clientId);
-          invalidateReadData(); changed = true;
-          const remaining = getPendingOrders();
-          remaining.shift();
-          savePendingOrders(remaining);
-        } catch(err) {
-          // One permanently-failing order (bad data, a removed sheet) would
-          // otherwise block every order behind it forever — after
-          // MAX_ORDER_ATTEMPTS it moves to a "failed" bucket instead, and
-          // the queue keeps moving.
-          const remaining = getPendingOrders();
-          if (remaining.length && remaining[0].clientId === item.clientId) {
-            remaining[0].attempts = (remaining[0].attempts || 0) + 1;
-            if (remaining[0].attempts >= MAX_ORDER_ATTEMPTS) {
-              const failedItem = remaining.shift();
-              const failedQ = getFailedOrders();
-              failedQ.push(failedItem);
-              saveFailedOrders(failedQ);
+      try {
+        while (navigator.onLine && state.lastId?.idNumber === owner) {
+          const item = getPendingOrders().find(entry => entry.payload.idNumber === owner);
+          if (!item) break;
+          try {
+            const identity = await window.meaPendingOrderIdentity(owner);
+            await trySubmitOrderToSheet({...item.payload, ...identity}, item.clientId);
+            savePendingOrders(getPendingOrders().filter(entry => entry.clientId !== item.clientId));
+            invalidateReadData(); changed = true;
+          } catch(err) {
+            const remaining = getPendingOrders(), entry = remaining.find(row => row.clientId === item.clientId);
+            if (entry) {
+              entry.attempts = (entry.attempts || 0) + 1;
+              if (err.permanent || entry.attempts >= MAX_ORDER_ATTEMPTS) {
+                entry.error = err.message;
+                saveFailedOrders([...getFailedOrders().filter(row => row.clientId !== item.clientId), entry]);
+                savePendingOrders(remaining.filter(row => row.clientId !== item.clientId));
+                continue;
+              }
               savePendingOrders(remaining);
-              continue;
             }
-            savePendingOrders(remaining);
+            break;
           }
-          break; // still within retry budget — stop, keep it queued, try again later
         }
+      } finally {
+        isFlushingOrders = false;
+        updateOrderSyncPill();
+        if (changed) refreshActiveReadData();
       }
-
-      isFlushingOrders = false;
-      updateOrderSyncPill();
-      if (changed) refreshActiveReadData();
     }
 
     function retryFailedOrders() {
-      const failed = getFailedOrders();
-      if (!failed.length) return;
+      const owner = state.lastId?.idNumber;
+      const failed = getFailedOrders(), mine = failed.filter(row => row.payload.idNumber === owner);
+      if (!owner || !mine.length) return;
       const q = getPendingOrders();
-      failed.forEach(item => { item.attempts = 0; q.push(item); });
+      mine.forEach(item => { if (!q.some(row => row.clientId === item.clientId)) q.push({...item, attempts: 0}); });
       savePendingOrders(q);
-      saveFailedOrders([]);
+      saveFailedOrders(failed.filter(row => row.payload.idNumber !== owner));
       flushPendingOrders();
     }
 
     function orderSyncPillClick() {
-      if (getFailedOrders().length) { retryFailedOrders(); return; }
+      if (getFailedOrders().some(row => row.payload.idNumber === state.lastId?.idNumber)) { retryFailedOrders(); return; }
       flushPendingOrders();
     }
 
@@ -230,11 +229,13 @@
         status: /^\d{6}$/.test(String(idNumber).trim()) ? 'ACTIVE' : 'UNKNOWN'
       }),
       submitOrder: async (payload) => {
-        // Always keep a full local history — this never fails, regardless
-        // of network state, so an order is never silently lost.
-        const orders = JSON.parse(localStorage.getItem('mea_inventory_orders') || '[]');
-        orders.unshift({ ...payload, createdAt: new Date().toISOString() });
-        localStorage.setItem('mea_inventory_orders', JSON.stringify(orders));
+        // This device log is optional; a full disk must not block an online submission.
+        try {
+          const saved = JSON.parse(localStorage.getItem('mea_inventory_orders') || '[]');
+          const orders = Array.isArray(saved) ? saved : [];
+          orders.unshift({...payload, createdAt:new Date().toISOString()});
+          localStorage.setItem('mea_inventory_orders', JSON.stringify(orders.slice(0,100)));
+        } catch (_) {}
 
         const clientId = payload.clientId || crypto.randomUUID();
 
@@ -271,6 +272,7 @@
     window.google = { script: { run: runner() } };
   }
 
+  function meaRequestSignal() { return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(45000) : undefined; }
   const state = {
     view: 'login',           // login | home | settings | help | history | catalog | cart | checkout
     catalogFormat: 'grid',   // grid | list
@@ -674,7 +676,7 @@
       } catch (err) {
         if (!historyContextValid(context)) return {records: [], discarded: true};
         historyFresh.delete(context.key);
-        const offline = !err.code && (err instanceof TypeError || err.name === 'TypeError' || !navigator.onLine);
+        const offline = !err.code && (err instanceof TypeError || ['TypeError','TimeoutError','AbortError'].includes(err.name) || !navigator.onLine);
         if (!offline) { try { localStorage.removeItem(context.key); } catch (_) {} }
         return {...(offline ? cache : {}), records: offline ? cache?.records || [] : [], offline, error: err.message};
       } finally { if (historyFlights.get(flightKey) === promise) historyFlights.delete(flightKey); }
@@ -709,8 +711,8 @@
 
   function historyRowHtml(rec) {
     const when = rec.time ? new Date(rec.time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-    const caseLabel = rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
-    const canReturn = !rec.deleted && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false && (rec.canReturn === true || rec.canReturn === undefined && String(rec.idNum) === String(state.lastId?.idNumber));
+    const caseLabel = rec.requestOnly ? ({PENDING:'Awaiting SUS verification',VERIFIED:'Verified by SUS',DECLINED:'Declined by SUS'}[rec.requestStatus] || 'Awaiting SUS verification') : rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
+    const canReturn = !rec.requestOnly && !rec.deleted && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false && (rec.canReturn === true || rec.canReturn === undefined && String(rec.idNum) === String(state.lastId?.idNumber));
     return `
       <div class="history-item">
         <div class="history-item-main">
@@ -721,8 +723,9 @@
           <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>
           <div class="history-item-date">${when}</div>
           ${rec.caseType === 'BORROWING' ? `<div>${MeaCart.outstanding(rec)} remaining</div>` : ''}
-          ${rec.canEdit && !rec.deleted ? `<button type="button" class="btn-secondary" data-record-action="edit" data-record-id="${escapeHtml(rec.recordId)}">Edit record</button>` : ''}
-          ${rec.canDelete ? `<button type="button" class="btn-secondary" data-record-action="${rec.deleted?'restore':'delete'}" data-record-id="${escapeHtml(rec.recordId)}">${rec.deleted?'Restore':'Delete'}</button>` : ''}
+          ${rec.canEdit && !rec.requestOnly && !rec.deleted ? `<button type="button" class="btn-secondary" data-record-action="edit" data-record-id="${escapeHtml(rec.recordId)}">Edit record</button>` : ''}
+          ${rec.canDelete && !rec.requestOnly ? `<button type="button" class="btn-secondary" data-record-action="${rec.deleted?'restore':'delete'}" data-record-id="${escapeHtml(rec.recordId)}">${rec.deleted?'Restore':'Delete'}</button>` : ''}
+          ${rec.requestOnly ? `<div>${rec.requestedAction === 'CONSUMING' ? 'Consume' : 'Borrow'} requested · No email</div>${rec.reviewNote ? `<div>${escapeHtml(rec.reviewNote)}</div>` : ''}${rec.canReview ? `<button type="button" class="btn-secondary" data-special-review="${escapeHtml(rec.recordId)}">Review request</button>` : ''}` : ''}
           ${canReturn ? `<button type="button" class="btn-secondary history-return" data-return-id="${escapeHtml(rec.recordId)}">Return items</button>` : ''}
         </div>
       </div>`;
@@ -739,6 +742,7 @@
     const context = historyContext(), cache = getCachedHistory(context);
     if (cache) paintHistory({...cache, saved: true, offline: !navigator.onLine});
     else {
+      document.getElementById('history-special-list').replaceChildren();
       const skeletonRow = '<div class="history-item skeleton-row skeleton" style="height:52px;"></div>';
       pendingList.innerHTML = skeletonRow.repeat(2);
       totalList.innerHTML = skeletonRow.repeat(3);
@@ -752,6 +756,8 @@
   function paintHistory({records, projects, admin, offline, error, syncedAt, saved}) {
     const pendingList = document.getElementById('history-pending-list');
     const totalList = document.getElementById('history-total-list');
+    const specialList = document.getElementById('history-special-list');
+    specialList.replaceChildren();
     applyHistoryProjects({projects, admin});
 
     if (error && !offline) {
@@ -777,12 +783,14 @@
     window.meaHistoryRecords = records;
     scoped=scoped.filter(r=>!!r.deleted===!!state.historyShowDeleted);
     const pending = scoped.filter(r => r.caseType === 'BORROWING' && !r.resolved);
-    const total = scoped.filter(r => r.caseType !== 'BORROWING' || r.resolved);
+    const total = scoped.filter(r => !r.requestOnly && (r.caseType !== 'BORROWING' || r.resolved));
+    const special = scoped.filter(r => r.requestOnly);
 
     const offlineNote = offline
       ? `<div class="history-offline-note"><img class="svg-icon icon-inline" src="icons/ui/wifi.svg" alt="">${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
       : saved ? `<div class="history-offline-note">Saved copy · ${new Date(syncedAt).toLocaleString()} · Updating…</div>` : '';
 
+    specialList.innerHTML = offlineNote + (special.length ? special.map(historyRowHtml).join('') : '<div class="history-empty">No special requests</div>');
     pendingList.innerHTML = offlineNote + (pending.length
       ? pending.map(historyRowHtml).join('')
       : '<div class="history-empty">No pending requests yet</div>');
@@ -1039,7 +1047,7 @@
   function loadInventory(options = {}) {
     const source = readSource(), revision = readDataRevision(), generation = readGeneration;
     if (!inventoryRead || inventoryRead.source !== source || inventoryRead.revision !== revision) {
-      const key = 'mea_inventory_cache_v2:' + readSourceScope();
+      const key = 'mea_inventory_cache_v3:' + readSourceScope();
       const cache = readSnapshot(key, 'items');
       inventoryRead = {source, revision, key, cache, syncedAt: 0, promise: null};
       window.__meaInventoryDebugError = null;
@@ -1249,7 +1257,8 @@
       container.innerHTML = debugHtml + visible.map(item => `
         <div class="item-card" role="button" tabindex="0" onclick="openItemSheet('${escapeAttr(item.id)}')">
           <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</div>
+          ${MeaCart.requiresManualVerification(item) ? '<div class="manual-verification">Special Inventory · Manual verification required</div>' : ''}
+          <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable, MeaCart.requiresManualVerification(item)).text)}</div>
           <div class="item-location">${escapeHtml(item.location || 'Location unassigned')}</div>
           ${cartQty(item.id) ? `<span class="in-cart-badge">${cartQty(item.id)} in cart</span>` : ''}
         </div>
@@ -1260,7 +1269,8 @@
         <div class="item-row" role="button" tabindex="0" onclick="openItemSheet('${escapeAttr(item.id)}')">
           <div class="item-info">
             <div class="item-title">${escapeHtml(item.title)}</div>
-            <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</div>
+          ${MeaCart.requiresManualVerification(item) ? '<div class="manual-verification">Special Inventory · Manual verification required</div>' : ''}
+            <div class="item-qty">${escapeHtml(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable, MeaCart.requiresManualVerification(item)).text)}</div>
             <div class="item-location">${escapeHtml(item.location || 'Location unassigned')}</div>
           </div>
           ${cartQty(item.id) > 0 ? `<div class="in-cart-badge">${cartQty(item.id)} in cart</div>` : ''}

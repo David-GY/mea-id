@@ -79,15 +79,34 @@
     return level === 'ADMIN' || level === 'DASHBOARD';
   }
 
-  function cacheRead(key) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) { return null; }
+  let activeContext = '', contextRevision = 0;
+  function contextKey() {
+    let hash = 2166136261;
+    for (const char of JSON.stringify([actor(), getTrackerConfig()])) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+    return (hash >>> 0).toString(36);
   }
-
+  function resetContext() {
+    activeContext = contextKey(); contextRevision++;
+    clearTimeout(dashboardState.activityTimer); clearTimeout(dashboardState.previewTimer);
+    dashboardState.data = null; dashboardState.activity = []; dashboardState.activityCursor = null;
+    dashboardState.project = ''; dashboardState.filter = 'all';
+    dashboardState.dashboardRequestInFlight = false; dashboardState.activityInFlight = false;
+    dashboardState.activityBackoff = ACTIVITY_POLL_MS;
+    for (const id of ['dashboard-summary-cards','dashboard-readiness-list','dashboard-roster','dashboard-activity-preview','activity-list']) document.getElementById(id)?.replaceChildren();
+    setLoading(false);
+  }
+  function syncContext() { if (activeContext !== contextKey()) resetContext(); return activeContext + ':' + contextRevision; }
+  function contextValid(context) { return context === activeContext + ':' + contextRevision && activeContext === contextKey(); }
+  function cacheRead(key) {
+    if (!canReadDashboard()) return null;
+    try { return JSON.parse(localStorage.getItem(key + ':v2:' + contextKey())); } catch (_) { return null; }
+  }
   function cacheWrite(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    try { localStorage.setItem(key + ':v2:' + contextKey(), JSON.stringify(value)); } catch (_) {}
+  }
+  function clearDenied() {
+    try { for (const key of [DASHBOARD_CACHE_KEY, ACTIVITY_CACHE_KEY]) localStorage.removeItem(key + ':v2:' + contextKey()); } catch (_) {}
+    resetContext();
   }
 
   function setConnection(target, text, tone) {
@@ -124,7 +143,7 @@
     if (!url) throw new Error('ID Tracker Apps Script URL is not configured.');
     const opts = options || {};
     const query = buildQuery(action, opts.query);
-    const init = { method: opts.method || 'GET' };
+    const init = { method: opts.method || 'GET', signal: typeof AbortSignal !== 'undefined' ? AbortSignal.timeout(30000) : undefined };
     if (opts.body) {
       init.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
       init.body = JSON.stringify(Object.assign({}, opts.body, { token: getTrackerToken() || undefined }));
@@ -133,7 +152,7 @@
     const text = await response.text();
     let json;
     try { json = JSON.parse(text); } catch (e) { throw new Error('Apps Script returned an unexpected response.'); }
-    if (!response.ok || !json || json.ok === false) throw new Error((json && json.error) || ('Request failed (' + response.status + ').'));
+    if (!response.ok || !json || json.ok === false) { const error = new Error((json && json.error) || ('Request failed (' + response.status + ').')); error.authorization = response.status === 401 || response.status === 403 || /unauthoriz|permission|forbidden|actor ID/i.test(error.message); throw error; }
     return json;
   }
 
@@ -142,6 +161,7 @@
   }
 
   async function loadDashboard(options) {
+    const context = syncContext();
     if (!canReadDashboard()) {
       showAlert('dashboard-error', 'Dashboard access is restricted to Admin and Dashboard users.');
       return;
@@ -156,11 +176,14 @@
     try {
       if (!navigator.onLine) throw new Error('offline');
       const json = await request('dashboardData');
+      if (!contextValid(context) || !canReadDashboard()) return;
       dashboardState.data = normalizePayload(json);
       cacheWrite(DASHBOARD_CACHE_KEY, { data: dashboardState.data, cachedAt: Date.now() });
       setConnection('dashboard-connection-state', 'Live · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 'online');
       renderDashboard();
     } catch (error) {
+      if (!contextValid(context) || !canReadDashboard()) return;
+      if (error.authorization) { clearDenied(); showAlert('dashboard-error', error.message); return; }
       const cached = cacheRead(DASHBOARD_CACHE_KEY);
       if (cached && cached.data) {
         dashboardState.data = Model.normalizeResponse(cached.data);
@@ -173,8 +196,7 @@
         setLoading(false);
       }
     } finally {
-      dashboardState.dashboardRequestInFlight = false;
-      setLoading(false);
+      if (contextValid(context)) { dashboardState.dashboardRequestInFlight = false; setLoading(false); }
     }
   }
 
@@ -315,6 +337,7 @@
   function setActivityConnection(text, tone) { setConnection('activity-connection-state', text, tone); }
 
   async function pollActivity(force) {
+    const context = syncContext();
     if (!canReadDashboard() || dashboardState.activityInFlight || !navigator.onLine) {
       if (!navigator.onLine) setActivityConnection('Offline', 'offline');
       return;
@@ -322,6 +345,7 @@
     dashboardState.activityInFlight = true;
     try {
       const json = await request('activity', { query: { cursor: dashboardState.activityCursor || '' } });
+      if (!contextValid(context) || !canReadDashboard()) return;
       const events = Array.isArray(json.events) ? json.events : [];
       dashboardState.activity = Model.mergeActivity(dashboardState.activity, events);
       dashboardState.activityCursor = json.nextCursor || json.cursor || (dashboardState.activity[0] && dashboardState.activity[0].eventId) || dashboardState.activityCursor;
@@ -337,6 +361,8 @@
       renderActivityLog();
       dashboardState.activityBackoff = ACTIVITY_POLL_MS;
     } catch (error) {
+      if (!contextValid(context) || !canReadDashboard()) return;
+      if (error.authorization) { clearDenied(); showAlert('activity-error',error.message); return; }
       const cached = cacheRead(ACTIVITY_CACHE_KEY);
       if (!dashboardState.activity.length && cached && cached.events) {
         dashboardState.activity = Model.mergeActivity([], cached.events);
@@ -350,8 +376,7 @@
       showAlert('activity-error', 'Live activity refresh failed. Retrying with backoff. ' + error.message);
       dashboardState.activityBackoff = Math.min(MAX_BACKOFF_MS, Math.max(ACTIVITY_POLL_MS, dashboardState.activityBackoff * 2));
     } finally {
-      dashboardState.activityInFlight = false;
-      scheduleActivityPoll(activityViewVisible() ? dashboardState.activityBackoff : DASHBOARD_PREVIEW_POLL_MS);
+      if (contextValid(context)) { dashboardState.activityInFlight = false; scheduleActivityPoll(activityViewVisible() ? dashboardState.activityBackoff : DASHBOARD_PREVIEW_POLL_MS); }
     }
   }
 
@@ -379,6 +404,7 @@
   }
 
   function guardView(view) {
+    syncContext();
     if (!canReadDashboard()) {
       if (window.showToast) window.showToast('Dashboard access is restricted.', true);
       if (window.showView) window.showView('home');
@@ -413,8 +439,9 @@
     document.getElementById('view-all-activity-btn').addEventListener('click', () => { if (guardView('activity-log')) showView('activity-log'); });
     document.addEventListener('mea:viewchange', event => {
       const view = event.detail && event.detail.view;
-      if (view === 'dashboard') { guardView(view); loadDashboard(); schedulePreviewPoll(); }
-      if (view === 'activity-log') { guardView(view); renderActivityLog(); }
+      syncContext();
+      if (view === 'dashboard' && guardView(view)) { loadDashboard(); schedulePreviewPoll(); }
+      if (view === 'activity-log' && guardView(view)) renderActivityLog();
       if (view !== 'activity-log') clearTimeout(dashboardState.activityTimer);
     });
     document.addEventListener('visibilitychange', () => {
@@ -435,6 +462,7 @@
   });
 
   window.meaDashboard = {
+    reset: resetContext,
     load: loadDashboard,
     refreshActivity: () => pollActivity(true),
     getState: () => dashboardState

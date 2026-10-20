@@ -7,7 +7,7 @@
   const actions = ['BORROWING', 'CONSUMING'];
   function quantity(value) {
     const n = Number(value);
-    if (!Number.isSafeInteger(n) || n < 1 || n > 9999) throw new Error('Enter a whole quantity from 1 to 9999.');
+    if (!['string','number'].includes(typeof value) || !Number.isSafeInteger(n) || n < 1 || n > 9999) throw new Error('Enter a whole quantity from 1 to 9999.');
     return n;
   }
   function key(id, action) {
@@ -25,7 +25,7 @@
     return result;
   }
   function groups(cart) {
-    return actions.map(action => ({action, lines: Object.values(cart).filter(l => l.action === action)})).filter(g => g.lines.length);
+    return actions.flatMap(action => [false, true].map(requestOnly => ({action, requestOnly, lines: Object.values(cart).filter(l => l.action === action && requiresManualVerification(l.item) === requestOnly)}))).filter(g => g.lines.length);
   }
   function reconcile(cart, inventory) {
     const items = new Map(inventory.map(i => [String(i.id), i]));
@@ -42,13 +42,17 @@
     if (qty > outstanding(rec)) throw new Error('Quantity exceeds the outstanding balance.');
     return qty;
   }
-  function availability(raw) {
+  function requiresManualVerification(item) {
+    return item?.requiresManualVerification === true || item?.inventorySection === 'Special Inventory';
+  }
+  function availability(raw, manual = false) {
     const text = String(raw ?? '').trim();
-    return /^\d+$/.test(text) ? {text: text + ' available', value: Number(text)} : {text: text && text !== '*' ? text + ' · exact quantity unknown' : 'Quantity unknown', value: null};
+    if (manual) return {text: /^\d+$/.test(text) ? text + ' recorded · verify with SUS' : 'Quantity requires verification', value: null};
+    return /^\d+$/.test(text) ? {text: text + ' recorded', value: Number(text)} : {text: text && text !== '*' ? text + ' · exact quantity unknown' : 'Quantity unknown', value: null};
   }
   function sameDraft(a, b) {
     const shape = d => ({project: d?.project || '', committee: d?.committee || '', lines: Object.values(d?.cart || {}).map(l => [String(l.item?.id), l.action, Number(l.qty)]).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))});
     return JSON.stringify(shape(a)) === JSON.stringify(shape(b));
   }
-  return {sameDraft, actions, quantity, key, normalize, groups, reconcile, outstanding, validateReturn, availability};
+  return {sameDraft, actions, quantity, key, normalize, groups, reconcile, outstanding, validateReturn, availability, requiresManualVerification};
 });

@@ -14,8 +14,12 @@ window.fetch = async (url, options={}) => {
  if(['inventory','history'].includes(action) && window.fixtureLoading.delayMs) await new Promise(resolve=>setTimeout(resolve,window.fixtureLoading.delayMs));
  const payload = options.body ? JSON.parse(options.body) : {};
  let data;
- if(action==='login') data={ok:true,found:true,idNumber:new URL(url).searchParams.get('id'),name:'Test Member',level:'NONE'};
- else if(action==='inventory') data={ok:true,items:[{id:'item-1',title:'Whiteboard Markers',qty:'8',location:'Steel Cabinet A',category:'Stationery',notes:'Return reusable markers.'},{id:'item-2',title:'Binder Clips',qty:'2 packs',location:'Steel Cabinet B',category:'Stationery',notes:''}]};
+ if(action==='dashboardData') data={ok:true,members:[{idNumber:'100001',name:'Test Member',requiresId:true,state:'INVENTORY',projects:['SUS']}],projects:['SUS'],revision:'fixture',generatedAt:new Date().toISOString()};
+ else if(action==='activity') data={ok:true,events:[],nextCursor:'fixture-cursor'};
+ else if(action==='login') data={ok:true,found:true,idNumber:new URL(url).searchParams.get('id'),name:'Test Member',level:'NONE'};
+ else if(action==='inventory') data={ok:true,items:[{id:'item-1',title:'Whiteboard Markers',qty:'8',location:'Steel Cabinet A',category:'Stationery',notes:'Return reusable markers.'},{id:'item-2',title:'Binder Clips',qty:'2 packs',location:'Steel Cabinet B',category:'Stationery',notes:''},{id:'special-1',itemCode:'IT-109',title:'Walkie Talkie',qty:'6',location:'Brown Cabinet',category:'FIN',inventorySection:'Special Inventory',requiresManualVerification:true,notes:'Check condition with SUS.'}]};
+ else if(action==='submitSpecialRequest') {payload.items.forEach((line,i)=>records.unshift({recordId:'special-request-'+i,reference:'SR-001',item:'Walkie Talkie',qty:line.qty,idNum:payload.idNumber,caseType:'SPECIAL_REQUEST',requestOnly:true,requestStatus:'PENDING',requestedAction:payload.caseType,project:payload.project,committee:payload.committee,canReview:true,time:new Date().toISOString()}));data={ok:true,requestOnly:true,status:'PENDING',logged:payload.items.length};}
+ else if(action==='specialRequestReview') {const r=records.find(r=>r.recordId===payload.recordId);r.requestStatus=payload.status;r.reviewNote=payload.note;r.canReview=false;data={ok:true};}
  else if(action==='history') data={ok:true,records,projects:['SUS'],admin:true};
  else if(action==='submitOrder') data=payload.caseType==='CONSUMING' && sessionStorage.getItem('fixture-fail-consume') ? {ok:false,retryable:false,error:'Fixture: consume rejected'} : {ok:true,logged:payload.items.length};
  else if(action==='returnItems') { const r=records.find(r=>r.recordId===payload.borrowId); r.returnedQty+=payload.qty; r.resolved=r.returnedQty>=r.borrowedQty; data={ok:true}; }

@@ -18,6 +18,15 @@ let undoRemoval = null;
 const ACTION_LABEL = {BORROWING: 'Borrow', CONSUMING: 'Consume'};
 const uuid = () => crypto.randomUUID();
 const esc = escapeHtml;
+window.meaPendingOrderIdentity = async function(owner) {
+  const epoch = accountEpoch;
+  if (state.lastId?.idNumber !== owner) throw new Error('Account changed. Pending order remains saved.');
+  if (!state.lastId?.verified) return {};
+  if (!verifiedMember || !schoolAuth?.currentUser) throw new Error('Reconnect your school account to sync pending orders.');
+  const idToken = await schoolAuth.currentUser.getIdToken();
+  if (epoch !== accountEpoch) throw new Error('Account changed. Pending order remains saved.');
+  return {idToken};
+};
 function readLocal(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (_) { return fallback; } }
 function writeLocal(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); return true; }
@@ -47,6 +56,7 @@ window.meaRestoreFields = function() {
 window.meaSwitchAccount = function() {
   clearTimeout(draftTimer);
   accountEpoch++;
+  window.meaDashboard?.reset();
   resetHistorySession();
   draftOwner = state.lastId?.idNumber || null;
   verifiedMember = null;
@@ -63,6 +73,7 @@ window.meaSwitchAccount = function() {
   document.getElementById('project-select').selectedIndex = 0;
   document.getElementById('committee-input').value = '';
   document.getElementById('history-pending-list').replaceChildren();
+  document.getElementById('history-special-list').replaceChildren();
   document.getElementById('history-total-list').replaceChildren();
   const historyProject = document.getElementById('history-project-select');
   historyProject.innerHTML = '<option value="">Project/Dept</option>';
@@ -152,13 +163,14 @@ function openItemSheet(itemId, selectedAction) {
   let action = selectedAction || (lines.length === 1 ? lines[0].action : '');
   const line = action ? state.cart[MeaCart.key(itemId, action)] : null;
   openWorkflow(`<h2 id="workflow-title">${esc(item.title)}</h2>
-    <p class="sheet-availability">${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable).text)}</p>
+    <p class="sheet-availability">${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable, MeaCart.requiresManualVerification(item)).text)}</p>
     <dl class="sheet-facts">${item.itemCode ? `<div><dt>Item code</dt><dd>${esc(item.itemCode)}</dd></div>` : ''}<div><dt>Location</dt><dd>${esc(item.location || 'Location unassigned')}</dd></div></dl>
     ${item.notes ? `<div class="sheet-notes">${esc(item.notes)}</div>` : ''}
+    ${MeaCart.requiresManualVerification(item) ? '<p class="manual-verification">Special Inventory · Manual verification required</p><p>This submits a separate request for SUS to verify. It is not a confirmed borrowing or consumption and will not appear in your receipt email. Track it under Special requests in History.</p>' : ''}
     <fieldset><legend>What are you doing?</legend><div class="workflow-actions">${MeaCart.actions.map(a => `<label><input type="radio" name="item-action" value="${a}" ${a === action ? 'checked' : ''}> ${ACTION_LABEL[a]}</label>`).join('')}</div></fieldset>
     <div class="sheet-quantity-row"><label for="sheet-quantity">Quantity</label>${quantityControls(line?.qty || 1)}</div>
     <p id="sheet-warning" role="status"></p><p id="sheet-error" role="alert"></p>
-    <button type="button" class="btn-primary" id="sheet-save">${line ? 'Update cart' : 'Add to cart'}</button>`);
+    <button type="button" class="btn-primary" id="sheet-save">${line ? 'Update cart' : MeaCart.requiresManualVerification(item) ? 'Add special request' : 'Add to cart'}</button>`);
   bindQuantity();
   const input = document.getElementById('sheet-quantity');
   const warning = () => { document.getElementById('sheet-warning').textContent = item.qtyAvailable != null && Number(input.value) > item.qtyAvailable ? 'This exceeds the last reported quantity. Confirm availability with SUS.' : ''; };
@@ -167,7 +179,7 @@ function openItemSheet(itemId, selectedAction) {
     action = radio.value;
     const existing = state.cart[MeaCart.key(itemId, action)];
     input.value = existing?.qty || 1;
-    document.getElementById('sheet-save').textContent = existing ? 'Update cart' : 'Add to cart';
+    document.getElementById('sheet-save').textContent = existing ? 'Update cart' : MeaCart.requiresManualVerification(item) ? 'Add special request' : 'Add to cart';
     warning();
   });
   document.getElementById('sheet-save').onclick = () => {
@@ -211,10 +223,11 @@ function changeCartAction(key, action, combine = false) {
 function renderCart() {
   const entries = Object.entries(state.cart);
   const container = document.getElementById('cart-list');
-  document.getElementById('cart-checkout-btn').disabled = !entries.length;
+  document.getElementById('cart-checkout-btn').disabled = !entries.length || entries.some(([,l]) => l.unavailable);
   container.innerHTML = entries.length ? entries.map(([key, l], index) => `<article class="cart-entry" data-cart-index="${index}">
     <div class="cart-entry-main"><h3>${esc(l.item.title)}</h3><p>${l.qty} ${l.qty === 1 ? 'unit' : 'units'} · ${esc(l.item.location || 'Location unassigned')}</p>
     <div class="cart-action-toggle" role="group" aria-label="Action for ${esc(l.item.title)}">${MeaCart.actions.map(action => `<button type="button" data-cart-action="${action}" aria-pressed="${action === l.action}" ${l.unavailable || submitBusy ? 'disabled' : ''}>${ACTION_LABEL[action]}</button>`).join('')}</div>
+    ${MeaCart.requiresManualVerification(l.item) ? '<p class="workflow-warning">Special request · Awaiting SUS verification after submission. No receipt email.</p>' : ''}
     ${l.unavailable ? '<p class="workflow-error">No longer in the catalog. Remove this entry to continue.</p>' : ''}
     ${l.changed ? '<p class="workflow-warning">Quantity changed since you selected this item. Review before submitting.</p>' : ''}</div>
     <div class="cart-entry-actions"><button type="button" class="btn-secondary" data-edit ${l.unavailable ? 'disabled' : ''}>Edit</button><button type="button" class="btn-secondary" data-remove>Remove</button></div></article>`).join('') : '<div class="empty-state"><img class="svg-icon" src="icons/ui/shopping-basket.svg" alt=""><strong>Your cart is empty</strong><p>Choose items to borrow or consume.</p></div>';
@@ -241,17 +254,17 @@ function renderCart() {
 function renderCheckout() {
   window.meaRestoreFields();
   document.getElementById('checkout-id-display').textContent = (state.lastId?.accountKind === 'GUEST' ? 'Guest · ' + state.lastId.guestCode : state.lastId?.idNumber) || 'Enter your ID first';
-  document.getElementById('checkout-summary-body').innerHTML = MeaCart.groups(state.cart).map(g => `<tr class="checkout-group"><th colspan="2">${ACTION_LABEL[g.action]}</th></tr>${g.lines.map(l => `<tr><td>${esc(l.item.title)}${l.unavailable ? ' · unavailable' : ''}</td><td>${l.qty}</td></tr>`).join('')}`).join('') || '<tr><td colspan="2">No items selected</td></tr>';
+  document.getElementById('checkout-summary-body').innerHTML = MeaCart.groups(state.cart).map(g => `<tr class="checkout-group"><th colspan="2">${g.requestOnly ? 'Special request · ' : ''}${ACTION_LABEL[g.action]}${g.requestOnly ? ' · manual verification, no email' : ''}</th></tr>${g.lines.map(l => `<tr><td>${esc(l.item.title)}${l.unavailable ? ' · unavailable' : ''}</td><td>${l.qty}</td></tr>`).join('')}`).join('') || '<tr><td colspan="2">No items selected</td></tr>';
 }
 function bindCheckoutForm() {
   document.getElementById('submit-order-btn').onclick = submitOrder;
   ['project-select', 'committee-input'].forEach(id => document.getElementById(id).addEventListener('change', () => { invalidateAction(); saveCart(); }));
   document.getElementById('committee-input').addEventListener('input', () => { invalidateAction(); saveCart(); });
 }
-function submitGroup(payload) {
-  if (verifiedMember) return inventoryRequest('submitOrder', payload, true);
+function submitGroup(payload, requestOnly = false) {
+  if (verifiedMember) return inventoryRequest(requestOnly ? 'submitSpecialRequest' : 'submitOrder', payload, true);
   if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') return Promise.reject(new Error('Reconnect your school account before submitting. Your cart stays saved.'));
-  return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).submitOrder(payload));
+  return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).submitOrder({...payload, requestOnly}));
 }
 async function submitOrder() {
   if (submitBusy) return;
@@ -265,6 +278,7 @@ async function submitOrder() {
   const outcomes = [];
   try {
     for (const group of groups) {
+      const label = (group.requestOnly ? 'Special request · ' : '') + ACTION_LABEL[group.action];
       if (accountEpoch !== epoch) break;
       // Keep the identifier on the draft until confirmed or durably queued.
       const clientId = group.lines[0].clientId || uuid();
@@ -272,13 +286,13 @@ async function submitOrder() {
       try {
         const result = await submitGroup({clientId, idNumber: owner, caseType: group.action, project: fields.project, committee: fields.committee,
           items: group.lines.map(l => ({id: l.item.id, title: l.item.title, location: l.item.location || '', qty: l.qty,
-            comment: `[${group.action}] - ${l.qty} ${fields.committee || fields.project}, ${state.lastId.name || owner}`}))});
+            comment: `[${group.action}] - ${l.qty} ${fields.committee || fields.project}, ${state.lastId.name || owner}`}))}, group.requestOnly);
         if (epoch !== accountEpoch) break;
         if (result?.success === false || result?.ok === false) throw new Error(result.error || 'Submission rejected.');
         if (!result?.queued) refreshAfterMutation();
         group.lines.forEach(l => delete state.cart[MeaCart.key(l.item.id, l.action)]);
-        outcomes.push(`${ACTION_LABEL[group.action]}: ${result?.queued ? 'Waiting to sync' : 'Submitted'}`);
-      } catch (e) { outcomes.push(`${ACTION_LABEL[group.action]}: Failed — ${e.message}`); }
+        outcomes.push(`${label}: ${result?.queued ? 'Waiting to sync' : group.requestOnly ? 'Awaiting SUS verification · no email' : 'Submitted'}`);
+      } catch (e) { outcomes.push(`${label}: Failed — ${e.message}`); }
     }
     if (epoch === accountEpoch) {
       saveCart(); updateCartBadge(); showView('cart');
@@ -293,10 +307,30 @@ async function inventoryRequest(action, payload = {}, token = false) {
   const idToken = token ? await schoolAuth?.currentUser?.getIdToken() : undefined;
   if (epoch !== accountEpoch) throw new Error('Account changed. Try again.');
   if (token && !idToken) throw new Error('Connect your school account first.');
-  const res = await fetch(url + '?action=' + encodeURIComponent(action), {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({...payload, token: getInventoryToken(), idToken})});
+  const res = await fetch(url + '?action=' + encodeURIComponent(action), {method: 'POST', signal: meaRequestSignal(), headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({...payload, token: getInventoryToken(), idToken})});
   const json = await res.json();
   if (!json.ok) { const e = new Error(json.error || 'Request failed.'); e.code = json.code; e.permanent = json.retryable === false; throw e; }
   return json;
+}
+function openSpecialReview(recordId) {
+  const rec = window.meaHistoryRecords?.find(r => r.recordId === recordId && r.requestOnly);
+  if (!rec?.canReview || !verifiedMember || submitBusy || returnBusy) return;
+  const epoch = accountEpoch, clientId = uuid();
+  openWorkflow(`<h2 id="workflow-title">Review special request</h2><p>${esc(rec.reference || '')} · ${esc(rec.item)} × ${rec.qty}</p><p>Verify availability, condition and permission with the requester. This records manual verification only and sends no receipt email.</p><label for="special-status">Decision</label><select id="special-status"><option value="VERIFIED">Verified with SUS</option><option value="DECLINED">Declined by SUS</option></select><label for="special-note">Verification notes</label><textarea id="special-note" maxlength="500"></textarea><p id="special-error" role="alert"></p><button type="button" class="btn-primary" id="special-confirm">Save verification</button>`);
+  let attempt;
+  document.getElementById('special-confirm').onclick = async () => {
+    if (epoch !== accountEpoch || submitBusy) return;
+    // Keep an ambiguous retry immutable; reopening after refresh starts a new review.
+    attempt ||= {recordId, expectedRevision:rec.recordRevision || 0, clientId, status:document.getElementById('special-status').value, note:document.getElementById('special-note').value};
+    const button = document.getElementById('special-confirm');
+    submitBusy = true; button.disabled = true;
+    try {
+      await inventoryRequest('specialRequestReview', attempt, true);
+      if (epoch !== accountEpoch) return;
+      closeWorkflow(); refreshAfterMutation(); await renderHistory({force:true}); showToast('Special request updated. No email sent.');
+    } catch(e) { if(epoch === accountEpoch) document.getElementById('special-error').textContent=e.message; }
+    finally {submitBusy=false;button.disabled=false;}
+  };
 }
 function returnKey() { return 'mea_returns_v1:' + draftOwner; }
 function pendingReturns() { return draftOwner ? readLocal(returnKey(), []) : []; }
@@ -504,7 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') document.querySelectorAll('.account-menu[open]').forEach(menu => { menu.open = false; menu.querySelector('summary').focus(); });
   });
-  document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); const a=e.target.closest('[data-record-action]');if(a)openRecordChange(a.dataset.recordAction,a.dataset.recordId); });
+  document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); const a=e.target.closest('[data-record-action]');if(a)openRecordChange(a.dataset.recordAction,a.dataset.recordId); const s=e.target.closest('[data-special-review]');if(s)openSpecialReview(s.dataset.specialReview); });
   document.getElementById('history-deleted-toggle').onclick=()=>{state.historyShowDeleted=!state.historyShowDeleted;document.getElementById('history-deleted-toggle').setAttribute('aria-pressed',String(state.historyShowDeleted));renderHistory();};
   document.getElementById('history-refresh')?.addEventListener('click', () => renderHistory({force: true}));
   document.addEventListener('mea:viewchange', () => { updateCartBadge(); if (state.view === 'history') { renderReturnQueue(); flushReturns(); } });

@@ -1411,3 +1411,10 @@ html { touch-action: manipulation; }
 .settings-token-dropdown summary span { opacity: .7; }
 .settings-token-dropdown summary:focus-visible { outline: 2px solid var(--teal-light); outline-offset: 3px; border-radius: 4px; }
 .settings-token-dropdown .id-input-label { display: block; }
+
+/* Special inventory is recorded stock awaiting physical verification. */
+.manual-verification { color: var(--ink); font-size: 0.8125rem; font-weight: 600; line-height: 1.5; margin-block: 6px; overflow-wrap: anywhere; }
+.catalog-sync-row [role="status"], .settings-token-dropdown summary { color: var(--canvas-ink, var(--ink)); }
+.catalog-sync-row .btn-secondary, .history-refresh-row .btn-secondary { background: var(--surface); color: var(--ink); }
+.workflow-sheet select, .workflow-sheet textarea { width: 100%; min-height: 48px; padding: 10px; margin: 8px 0 16px; background: var(--surface); color: var(--ink); border: 1px solid var(--border-mid); border-radius: var(--radius-sm); font: inherit; }
+.workflow-sheet textarea { min-height: 96px; resize: vertical; }

@@ -39,7 +39,9 @@ function fixture() {
   const context = vm.createContext({console, Date, JSON, Number, Object, Array, String,
     PropertiesService: {getScriptProperties: () => ({getProperty: key => properties[key]})},
     SpreadsheetApp: {openById: id => books[id], flush: () => {}},
-    Utilities: {getUuid: () => 'uuid-' + (++serial)},
+    Utilities: {getUuid: () => 'uuid-' + (++serial),formatDate: date => date.toISOString()},
+    Session:{getScriptTimeZone:()=> 'Asia/Manila'},
+    DriveApp:{getFileById:()=>({getBlob:()=> 'fixture-image'})},
     LockService: {getScriptLock: () => ({waitLock: () => { assert.equal(held,false); held = true; }, releaseLock: () => { held = false; }})},
     GmailApp: {sendEmail: () => { mail++; }},
     ContentService: {MimeType:{JSON:'json'}, createTextOutput: text => ({setMimeType: () => JSON.parse(text)})},
@@ -52,11 +54,79 @@ function fixture() {
   const order = (overrides={}) => ({clientId:'client-1000001',idNumber:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',items:[{id:item().id,title:item().title,location:item().location,qty:3}],...overrides});
   return {context,tabs,request,item,order,roster,trackerTabs,properties,mail:()=>mail};
 }
+test('special inventory exposes manual handling and rejects new orders without side effects', () => {
+  for (const caseType of ['BORROWING', 'CONSUMING']) {
+    const f = fixture();
+    f.tabs['Special Inventory'].rows.push(['','Walkie Talkie','6','Brown Cabinet','FIN','','ITEM-special-1']);
+    const special = f.context.invCatalog_().find(i => i.id === 'ITEM-special-1');
+    assert.equal(special.inventorySection, 'Special Inventory');
+    assert.equal(special.requiresManualVerification, true);
+    assert.equal(f.item().requiresManualVerification, false);
+    const references = f.tabs._MEA_REFERENCES.rows.length;
+    const result = f.request('submitOrder', f.order({caseType, items: [{id:f.item().id,qty:1},{id:special.id,qty:1,requiresManualVerification:false}]}));
+    assert.equal(result.ok,false); assert.equal(result.code,'MANUAL_VERIFICATION_REQUIRED'); assert.equal(result.retryable,false);
+    assert.equal(f.tabs._MEA_EVENTS.rows.length,1); assert.equal(f.tabs._MEA_REFERENCES.rows.length,references); assert.equal(f.mail(),0);
+  }
+});
+
+test('reclassification blocks stale carts while committed retries and returns remain valid', () => {
+  const f=fixture(), payload=f.order();
+  const first=f.request('submitOrder',payload); assert.equal(first.ok,true);
+  f.tabs['Special Inventory'].rows.push(f.tabs.Inventory.rows.pop());
+  assert.equal(f.request('submitOrder',payload).recordIds[0],first.recordIds[0]);
+  assert.equal(f.request('submitOrder',{...payload,clientId:'client-reclassified'}).code,'MANUAL_VERIFICATION_REQUIRED');
+  assert.equal(f.request('returnItems',{idNumber:'100001',clientId:'client-old-return',borrowId:first.recordIds[0],qty:1}).ok,true);
+});
+
+test('saved special cart entries are retained and grouped separately after reconciliation', () => {
+  const item={id:'special',qtyDisplay:'6'}, key=cart.key(item.id,'BORROWING');
+  const result=cart.reconcile({[key]:{item,qty:2,action:'BORROWING'}},[{...item,inventorySection:'Special Inventory',requiresManualVerification:true}]);
+  assert.equal(result[key].qty,2); assert.equal(result[key].unavailable,false);
+  assert.equal(cart.requiresManualVerification(result[key].item),true);
+  assert.equal(cart.requiresManualVerification({inventorySection:'Special Inventory'}),true);
+  assert.equal(cart.requiresManualVerification({}),false);
+  assert.equal(cart.availability('6',true).text,'6 recorded · verify with SUS');
+  assert.equal(cart.groups(result)[0].requestOnly,true);
+});
+
+test('special requests have a separate journal and sheet projection, no emails, and no return balance', () => {
+  const f=fixture();
+  f.tabs['Special Inventory'].rows.push(['','Walkie Talkie','6','Brown Cabinet','FIN','','ITEM-special-1']);
+  const payload=f.order({items:[{id:'ITEM-special-1',qty:2}]});
+  const result=f.request('submitSpecialRequest',payload);
+  assert.equal(result.ok,true);assert.equal(result.requestOnly,true);assert.equal(result.status,'PENDING');
+  assert.equal(f.mail(),0);assert.equal(f.tabs.Borrow.rows.length,2);assert.equal(f.tabs.Consume.rows.length,1);
+  assert.equal(f.tabs['Special Requests'].rows.length,2);assert.equal(f.tabs['Special Requests'].rows[1][8],'PENDING');
+  assert.match(f.tabs['Special Requests'].rows[1][11],/^SR-/);
+  assert.equal(f.request('submitSpecialRequest',payload).recordIds[0],result.recordIds[0]);
+  assert.equal(f.tabs['Special Requests'].rows.length,2);assert.equal(f.mail(),0);
+  const rec=f.request('history',{idNumber:'100001'}).records[0];
+  assert.equal(rec.requestOnly,true);assert.equal(rec.canReturn,false);assert.equal(rec.canDelete,false);
+  assert.equal(f.request('returnItems',{idNumber:'100001',borrowId:rec.recordId,qty:1,clientId:'special-return-1'}).ok,false);
+  assert.equal(f.request('submitSpecialRequest',f.order({clientId:'regular-request'})).ok,false);
+  assert.equal(f.request('submitOrder',f.order({clientId:'regular-receipt'})).ok,true);assert.equal(f.mail(),1);
+});
+
+test('only verified admins review special requests with revision checks and immutable retries', () => {
+  const f=fixture();f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-special-1']);
+  const result=f.request('submitSpecialRequest',f.order({items:[{id:'ITEM-special-1',qty:1}]}));
+  const review={idNumber:'100001',recordId:result.recordIds[0],expectedRevision:0,status:'VERIFIED',note:'Count and condition checked',clientId:'special-review-1'};
+  assert.equal(f.request('specialRequestReview',review).code,'FORBIDDEN');
+  assert.equal(f.request('specialRequestReview',{...review,idToken:'one'}).code,'FORBIDDEN');
+  f.trackerTabs.ACCESS.rows.push(['100001','One','Admin']);
+  assert.equal(f.request('specialRequestReview',{...review,idToken:'one',expectedRevision:3}).code,'CONFLICT');
+  assert.equal(f.request('specialRequestReview',{...review,idToken:'one'}).ok,true);
+  assert.equal(f.request('specialRequestReview',{...review,idToken:'one'}).ok,true);
+  assert.equal(f.request('specialRequestReview',{...review,idToken:'one',status:'DECLINED'}).code,'CHANGED_REQUEST');
+  assert.equal(f.tabs['Special Requests'].rows[1][8],'VERIFIED');assert.equal(f.mail(),0);
+  assert.equal(f.request('history',{idToken:'one',scope:'officer'}).records[0].requestStatus,'VERIFIED');
+});
+
 test('cart keeps independent actions for one item and rejects malformed quantities', () => {
   const item = {id:'stable-a'};
   const draft = cart.normalize({a:{item,qty:2,action:'BORROWING'},b:{item,qty:1,action:'CONSUMING'},c:{item,qty:2,action:'RETURNING'}});
   assert.equal(Object.keys(draft).length,2); assert.equal(cart.groups(draft).length,2);
-  for(const value of [0,-1,1.5,'2 packs','',Infinity,10000]) assert.throws(()=>cart.quantity(value));
+  for(const value of [0,-1,1.5,'2 packs','',Infinity,10000,true,[1],{}]) assert.throws(()=>cart.quantity(value));
 });
 
 test('quantity labels preserve units and zero; reordered catalog preserves references', () => {

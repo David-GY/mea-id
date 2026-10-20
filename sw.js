@@ -3,7 +3,8 @@
 // Cache is only used as an offline fallback, never as the primary source.
 // NFC scanning and Google Sheets requests always go live, never cached.
 
-const CACHE_NAME = 'mea-app-v36'; // bump this string on any future SW change to force a clean cache
+const CACHE_PREFIX = 'mea-app:' + self.registration.scope + ':';
+const CACHE_NAME = CACHE_PREFIX + 'mea-app-v35';
 const APP_SHELL = [
   './',
   './index.html',
@@ -47,9 +48,13 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-      )
+      Promise.all(keys.map(async (key) => {
+        if (key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME) return caches.delete(key);
+        if (!/^mea-app-v\d+$/.test(key)) return;
+        const cache = await caches.open(key), requests = await cache.keys();
+        // Retire unscoped legacy caches only when all entries belong to this app.
+        if (requests.length && requests.every(request => request.url.startsWith(self.registration.scope))) return caches.delete(key);
+      }))
     )
   );
   self.clients.claim(); // take control of already-open tabs right away
@@ -57,6 +62,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+  const scope = new URL(self.registration.scope);
 
   // Never touch Google Apps Script requests â€” always go live, never cached
   if (url.hostname.includes('script.google.com')) {
@@ -64,9 +70,15 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Only handle our own same-origin GET requests
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith(scope.pathname)) {
     return;
   }
+  // OAuth callback URLs and arbitrary query values must never enter the app cache.
+  const privateQuery = ['code','access_token','refresh_token','token','error','error_description'].some(key => url.searchParams.has(key));
+  const shellPath = new URL(url.pathname, url.origin).href;
+  const isShell = APP_SHELL.some(path => new URL(path, self.registration.scope).href === shellPath);
+  if (privateQuery || !isShell) return;
+  const cacheKey = shellPath;
 
   // Network-first: always try to fetch the latest version. Only fall back
   // to the cached copy if the network request fails (e.g. offline). This is
@@ -77,10 +89,10 @@ self.addEventListener('fetch', (event) => {
       .then((response) => {
         if (response.ok) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, clone)).catch(() => {}));
         }
         return response;
       })
-      .catch(() => caches.match(event.request, { ignoreSearch: true }))
+      .catch(async () => (await caches.open(CACHE_NAME)).match(cacheKey))
   );
 });

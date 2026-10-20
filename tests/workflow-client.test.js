@@ -25,6 +25,47 @@ function deferred() { let resolve, reject; const promise = new Promise((a,b) => 
 const inventoryResponse = title => ({ok:true,items:title ? [{id:'a',title,qty:'8',category:'Tools',location:'Room',notes:''}] : []});
 function connect(c) { c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount()"); }
 
+test('special item metadata survives loading and item details explain separate requests',async()=>{
+ const c=client();connect(c);
+ c.context.fetch=async()=>({text:async()=>JSON.stringify({ok:true,items:[{id:'s',title:'Radio',qty:'6',inventorySection:'Special Inventory',requiresManualVerification:true}]})});
+ await c.context.loadInventory();assert.equal(c.run('state.inventory[0].requiresManualVerification'),true);
+ assert.match(c.element('catalog-container').innerHTML,/Manual verification required/);
+ c.context.openItemSheet('s');assert.match(c.element('workflow-body').innerHTML,/Add special request/);assert.match(c.element('workflow-body').innerHTML,/will not appear in your receipt email/);
+});
+
+test('offline order replay processes only the active owner and moves permanent failures aside immediately',async()=>{
+ const c=client();connect(c);
+ c.data.set('mea_pending_orders',JSON.stringify([{clientId:'other-owner',payload:{idNumber:'100002'}},{clientId:'mine-fails',payload:{idNumber:'100001'}},{clientId:'mine-special',payload:{idNumber:'100001',requestOnly:true}}]));
+ const sent=[];c.context.fetch=async(url,options)=>{const body=JSON.parse(options.body);sent.push({url,body});return {text:async()=>JSON.stringify(body.clientId==='mine-fails'?{ok:false,retryable:false,error:'Removed item'}:{ok:true})};};
+ c.context.flushPendingOrders();for(let i=0;i<25;i++)await Promise.resolve();
+ assert.equal(sent.length,2);assert.ok(sent.every(r=>r.body.idNumber==='100001'));assert.match(sent[1].url,/submitSpecialRequest/);
+ assert.equal(JSON.parse(c.data.get('mea_pending_orders'))[0].clientId,'other-owner');assert.equal(JSON.parse(c.data.get('mea_failed_orders'))[0].clientId,'mine-fails');
+ c.run('state.lastId=null');c.context.flushPendingOrders();for(let i=0;i<5;i++)await Promise.resolve();assert.equal(sent.length,2);
+});
+
+test('pending ID-only orders use a current verified token after school sign-in without saving it',async()=>{
+ const c=client();connect(c);c.run("state.lastId.verified=true;verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'current-token'}}");
+ c.data.set('mea_pending_orders',JSON.stringify([{clientId:'mine-upgraded',payload:{idNumber:'100001'}}]));
+ let sent;c.context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {text:async()=>'{"ok":true}'};};
+ c.context.flushPendingOrders();for(let i=0;i<20;i++)await Promise.resolve();assert.equal(sent.idToken,'current-token');assert.doesNotMatch(c.data.get('mea_pending_orders'),/current-token/);
+});
+
+test('mixed ordinary and special checkout uses separate endpoints and preserves failed requests',async()=>{
+ const c=client();connect(c);c.run("state.cart=MeaCart.normalize({a:{item:{id:'a',title:'Markers'},qty:1,action:'BORROWING'},s:{item:{id:'s',title:'Radio',requiresManualVerification:true},qty:2,action:'BORROWING'}});verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'one'}}");
+ const calls=[];c.context.fetch=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return {json:async()=>url.includes('submitSpecialRequest')?{ok:false,error:'Needs setup',retryable:false}:{ok:true}};};
+ await c.context.submitOrder();assert.equal(calls.length,2);assert.match(calls[0].url,/submitOrder/);assert.match(calls[1].url,/submitSpecialRequest/);
+ assert.equal(calls[0].body.items.length,1);assert.equal(calls[1].body.items[0].id,'s');assert.equal(c.run('Object.values(state.cart).length'),1);
+ assert.match(c.element('cart-feedback').textContent,/Special request.*Failed/);
+});
+
+test('special requests stay outside normal transaction history and cannot expose return or edit controls',()=>{
+ const c=client();connect(c);c.context.paintHistory({records:[{idNum:'100001',recordId:'s',item:'Radio',qty:2,caseType:'SPECIAL_REQUEST',requestOnly:true,requestStatus:'PENDING',requestedAction:'BORROWING',canReview:true}],projects:[],admin:true});
+ assert.match(c.element('history-special-list').innerHTML,/Awaiting SUS verification/);assert.match(c.element('history-special-list').innerHTML,/Review request/);
+ assert.doesNotMatch(c.element('history-pending-list').innerHTML,/Radio/);assert.doesNotMatch(c.element('history-total-list').innerHTML,/Radio/);
+ assert.doesNotMatch(c.element('history-special-list').innerHTML,/Return items|Edit record/);
+ c.run("state.lastId={idNumber:'100002'};meaSwitchAccount()");assert.equal(c.element('history-special-list').innerHTML,'');
+});
+
 test('startup and catalog share one inventory request and fresh navigation keeps rendered content',async()=>{
  const c=client();connect(c);const response=deferred();let calls=0;
  c.context.fetch=async()=>{calls++;return {text:async()=>JSON.stringify(await response.promise)};};

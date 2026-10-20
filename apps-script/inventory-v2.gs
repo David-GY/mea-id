@@ -149,7 +149,7 @@ function invScopedHistory_(p, actor) {
     if (p.scope === 'project') return !!project && invProjectKey_(r.project) === project;
     return invOwns_(actor, r);
   }).map(function(r) {
-    var copy = Object.assign({}, r); copy.canReturn = invCanReturn_(actor, r); copy.canDelete = invManagesProject_(actor, r.project); copy.canEdit = actor.verified && actor.admin === true;
+    var copy = Object.assign({}, r); copy.canReturn = invCanReturn_(actor, r); copy.canDelete = invManagesProject_(actor, r.project); copy.canEdit = !r.requestOnly && actor.verified && actor.admin === true; copy.canReview = !!r.requestOnly && actor.verified && actor.admin === true && r.requestStatus === 'PENDING'; if(r.requestOnly)copy.canDelete=false;
     if (p.scope !== 'project' && p.scope !== 'officer') copy.idNum = actor.member.idNumber;
     else if (String(copy.idNum).indexOf('guest:') === 0) copy.idNum = copy.guestCode || 'Guest';
     delete copy.email; delete copy.ownerKey; delete copy.originalOwnerKey;
@@ -164,7 +164,7 @@ function invHistoryResponse_(p) {
   });
   return {ok:true, records:invScopedHistory_(p, actor), projects:labels.sort(), admin:actor.verified && actor.admin === true};
 }
-function invQty_(v) { var n = Number(v); if (!Number.isSafeInteger(n) || n < 1 || n > 9999) throw invError_('Quantity must be a whole number from 1 to 9999.'); return n; }
+function invQty_(v) { var n = Number(v); if (['string','number'].indexOf(typeof v) < 0 || !Number.isSafeInteger(n) || n < 1 || n > 9999) throw invError_('Quantity must be a whole number from 1 to 9999.'); return n; }
 function invId_(v) { var id = invText_(v); if (!/^\d{6}$/.test(id)) throw invError_('A six-digit member ID is required.'); return id; }
 function invWithLock_(fn) { var lock = LockService.getScriptLock(); lock.waitLock(30000); try { return fn(); } finally { lock.releaseLock(); } }
 function invToken_(p) { var configured = PropertiesService.getScriptProperties().getProperty('ACCESS_TOKEN'); if (configured && p.token !== configured) throw invError_('Invalid access code.', 'UNAUTHORIZED'); }
@@ -181,8 +181,9 @@ function invRoute_(e, post) {
     invToken_(p);
     var result;
     if (action === 'history') return invJson_(invHistoryResponse_(p));
-    if (action === 'submitOrder' || action === 'returnItems' || ['recordDelete','recordRestore','recordEdit'].indexOf(action) >= 0) p.actor = p.idToken ? invResolveAccount_(p.idToken) : invUnverified_(p.idNumber);
-    if (action === 'submitOrder') result = invWithLock_(function() { return invSubmit_(p); });
+    if (action === 'submitOrder' || action === 'submitSpecialRequest' || action === 'specialRequestReview' || action === 'returnItems' || ['recordDelete','recordRestore','recordEdit'].indexOf(action) >= 0) p.actor = p.idToken ? invResolveAccount_(p.idToken) : invUnverified_(p.idNumber);
+    if (action === 'submitOrder' || action === 'submitSpecialRequest') result = invWithLock_(function() { return invSubmit_(p, action === 'submitSpecialRequest'); });
+    else if (action === 'specialRequestReview') result = invWithLock_(function() { return invReviewSpecial_(p); });
     else if (action === 'returnItems') result = invWithLock_(function() { return invReturn_(p); });
     else if (['recordDelete','recordRestore','recordEdit'].indexOf(action) >= 0) result = invWithLock_(function() { return invRecordChange_(action, p); });
     else if (action === 'googleMember') { var identity = invResolveAccount_(p.idToken); result = {member: identity.member, account: identity}; }
@@ -234,7 +235,7 @@ function invCatalog_() {
       var id = invText_(row[6]);
       if (!id || seen[id]) throw invError_('Missing or duplicate permanent item ID. Run setup or contact SUS.', 'SETUP_REQUIRED');
       seen[id] = true;
-      items.push({id: id, itemCode: invLookupReference_('IT', id), title: row[1], qty: row[2], location: row[3], category: row[4], notes: row[5]});
+      items.push({id: id, itemCode: invLookupReference_('IT', id), inventorySection: name, requiresManualVerification: name === 'Special Inventory', title: row[1], qty: row[2], location: row[3], category: row[4], notes: row[5]});
     });
   });
   return items;
@@ -254,6 +255,7 @@ function invReplay_(p, type) {
   return prior.result;
 }
 function invRequestFingerprint_(p, type) {
+  if(type === 'SPECIAL_REVIEW')return JSON.stringify([p.recordId,p.expectedRevision,p.status,invText_(p.note).slice(0,500)]);
   if (type.indexOf('RECORD_') === 0) return JSON.stringify([p.recordId,p.expectedRevision,p.changes || null]);
   return JSON.stringify(type === 'RETURN' ? [p.borrowId, Number(p.qty)] : [p.caseType, invText_(p.project), invText_(p.committee), (p.items || []).map(function(l) { return [l.id, Number(l.qty), invText_(l.title), invText_(l.location)]; })]);
 }
@@ -266,24 +268,31 @@ function invAppendEvent_(event) {
   try { invReceipt_(event); } catch (_) { /* receipt failure never rolls back the transaction */ }
   return event.result;
 }
-function invSubmit_(p) {
+function invSubmit_(p, special) {
   if (p.caseType !== 'BORROWING' && p.caseType !== 'CONSUMING') throw invError_('Choose Borrow or Consume. Returns start from History.');
-  var replay = invReplay_(p, 'ORDER'); if (replay) return replay;
+  var eventType = special ? 'SPECIAL_REQUEST' : 'ORDER';
+  var replay = invReplay_(p, eventType); if (replay) return replay;
   var actor = p.actor || invUnverified_(p.idNumber), owner = actor.member.idNumber, catalog = invCatalog_();
   if (!Array.isArray(p.items) || !p.items.length || p.items.length > 100) throw invError_('Choose between 1 and 100 item entries.');
   var seen = {};
   var lines = p.items.map(function(line) {
+    if (!line || typeof line !== 'object' || Array.isArray(line)) throw invError_('Invalid item entry. Refresh your cart.');
     var matches = catalog.filter(function(i) { return i.id === line.id; });
     if (matches.length !== 1) throw invError_('An item changed or was removed. Refresh your cart.');
     var item = matches[0], qty = invQty_(line.qty);
+    if (item.requiresManualVerification && !special) throw invError_(item.title + ' requires manual verification. Contact SUS; submit these separately as a special request.', 'MANUAL_VERIFICATION_REQUIRED');
+    if (special && !item.requiresManualVerification) throw invError_('Only Special Inventory items belong in a special request. Refresh your cart.');
     if (seen[item.id]) throw invError_('Duplicate item entry.'); seen[item.id] = true;
+    return {item: item, qty: qty};
+  }).map(function(entry) {
+    var item = entry.item, qty = entry.qty;
     var recordId = 'REC-' + Utilities.getUuid();
-    return {recordId: recordId, reference: invReference_(p.caseType === 'BORROWING' ? 'BR' : 'CO', recordId), itemId: item.id, item: item.title, location: item.location, qty: qty};
+    return {recordId: recordId, reference: invReference_(special ? 'SR' : p.caseType === 'BORROWING' ? 'BR' : 'CO', recordId), itemId: item.id, item: item.title, location: item.location, qty: qty};
   });
   var member = actor.member;
-  var event = {ownerKey: actor.ownerKey, verified: actor.verified, accountKind: actor.accountKind, guestCode: actor.guestCode || '', name: member.name, email: member.email, type: 'ORDER', clientId: p.clientId, idNumber: owner, time: new Date().toISOString(), caseType: p.caseType,
+  var event = {ownerKey: actor.ownerKey, verified: actor.verified, accountKind: actor.accountKind, guestCode: actor.guestCode || '', name: member.name, email: member.email, type: eventType, clientId: p.clientId, idNumber: owner, time: new Date().toISOString(), caseType: p.caseType,
     project: invText_(p.project).slice(0, 200), committee: invText_(p.committee).slice(0, 200), lines: lines,
-    request: invRequestFingerprint_(p, 'ORDER'), result: {logged: lines.length, recordIds: lines.map(function(l) { return l.recordId; })}};
+    request: invRequestFingerprint_(p, eventType), result: {requestOnly: !!special, status: special ? 'PENDING' : 'SUBMITTED', logged: lines.length, recordIds: lines.map(function(l) { return l.recordId; })}};
   return invAppendEvent_(event);
 }
 function invHistory_() {
@@ -291,10 +300,17 @@ function invHistory_() {
   var returns = {};
   invEvents_().forEach(function(e) {
     if (e.type === 'RETURN') { returns[e.borrowId] = (returns[e.borrowId] || 0) + e.qty; return; }
+    if (e.type === 'SPECIAL_REQUEST') e.lines.forEach(function(line) {
+      records.push({requestOnly:true,requestStatus:'PENDING',requestedAction:e.caseType,recordId:line.recordId,reference:line.reference,itemId:line.itemId,item:line.item,qty:line.qty,caseType:'SPECIAL_REQUEST',idNum:e.idNumber,ownerKey:e.ownerKey,verified:!!e.verified,accountKind:e.accountKind,guestCode:e.guestCode,name:e.name || '',project:e.project,committee:e.committee,time:e.time,returnable:false});
+    });
     if (e.type === 'ORDER') e.lines.forEach(function(line) {
       records.push({ownerKey: e.ownerKey || 'member:' + e.idNumber, verified: !!e.verified, accountKind: e.accountKind || 'MEMBER', guestCode: e.guestCode || '', reference: line.reference || invLookupReference_(e.caseType === 'BORROWING' ? 'BR' : 'CO', line.recordId), recordId: line.recordId, itemId: line.itemId, item: line.item, qty: line.qty, borrowedQty: e.caseType === 'BORROWING' ? line.qty : 0,
         returnedQty: 0, caseType: e.caseType, idNum: e.idNumber, project: e.project, committee: e.committee, time: e.time, returnable: e.caseType === 'BORROWING', name: e.name || '', email: e.email || ''});
     });
+  });
+  invEvents_().filter(function(e) { return e.type === 'SPECIAL_REVIEW'; }).forEach(function(e) {
+    var record = records.find(function(r) { return r.recordId === e.recordId && r.requestOnly; });
+    if (record) { record.requestStatus=e.status; record.reviewNote=e.note; record.reviewedBy=e.name; record.reviewedAt=e.time; record.recordRevision=(record.recordRevision || 0)+1; }
   });
   invEvents_().filter(function(e) { return e.type.indexOf('RECORD_') === 0; }).forEach(function(e) {
     var record = records.find(function(r) { return r.recordId === e.recordId; }); if(!record)return;
@@ -329,7 +345,7 @@ function invRecordChange_(action, p) {
   var type = action === 'recordEdit' ? 'RECORD_EDIT' : action === 'recordDelete' ? 'RECORD_DELETE' : 'RECORD_RESTORE';
   var replay = invReplay_(p, type); if (replay) return replay;
   var actor = p.actor, rec = invHistory_().find(function(r) { return r.recordId === p.recordId; });
-  if (!rec || !invManagesProject_(actor, rec.project)) throw invError_('Verified project membership or admin access is required.', 'FORBIDDEN');
+  if (!rec || rec.requestOnly || !invManagesProject_(actor, rec.project)) throw invError_('Verified project membership or admin access is required.', 'FORBIDDEN');
   if ((rec.recordRevision || 0) !== p.expectedRevision) throw invError_('This record changed. Refresh History before continuing.', 'CONFLICT');
   var changes = null;
   if (type === 'RECORD_EDIT') {
@@ -352,7 +368,32 @@ function invProjectRecordChange_(e) {
   });
 }
 function invSafeCell_(v) { var s = String(v == null ? '' : v); return /^[=+@-]/.test(s) ? "'" + s : s; }
+function invReviewSpecial_(p) {
+  var actor = p.actor;
+  if (!actor.verified || !actor.admin) throw invError_('Verified SUS admin access required.', 'FORBIDDEN');
+  var replay = invReplay_(p, 'SPECIAL_REVIEW'); if (replay) return replay;
+  var rec = invHistory_().find(function(r) { return r.recordId === p.recordId && r.requestOnly; });
+  if (!rec || rec.requestStatus !== 'PENDING' || (rec.recordRevision || 0) !== p.expectedRevision) throw invError_('Request changed. Refresh History.', 'CONFLICT');
+  if (['VERIFIED','DECLINED'].indexOf(p.status) < 0) throw invError_('Choose Verified or Declined.');
+  return invAppendEvent_({type:'SPECIAL_REVIEW',clientId:p.clientId,idNumber:actor.member.idNumber,ownerKey:actor.ownerKey,verified:true,name:actor.member.name,time:new Date().toISOString(),recordId:rec.recordId,status:p.status,note:invText_(p.note).slice(0,500),project:rec.project,request:invRequestFingerprint_(p,'SPECIAL_REVIEW'),result:{recordId:rec.recordId,status:p.status}});
+}
+function invSpecialSheet_() {
+  var book=invBook_(), sheet=book.getSheetByName('Special Requests');
+  var headers=['Time','Item','Quantity','Requested action','Project','Committee','Account','Name','Status','Request ID','Client ID','Reference','Reviewed by','Reviewed at','Review note'];
+  if(!sheet) { sheet=book.insertSheet('Special Requests'); sheet.getRange(1,1,1,headers.length).setValues([headers]); }
+  else if(JSON.stringify(sheet.getRange(1,1,1,headers.length).getValues()[0])!==JSON.stringify(headers)) throw invError_('Special Requests headers changed. Contact SUS.', 'SETUP_REQUIRED');
+  return sheet;
+}
+function invProjectSpecial_(e) {
+  var sheet=invSpecialSheet_(), rows=sheet.getLastRow()>1?sheet.getRange(2,10,sheet.getLastRow()-1,1).getValues():[];
+  if(e.type==='SPECIAL_REQUEST') e.lines.forEach(function(line) {
+    if(rows.some(function(r){return r[0]===line.recordId;}))return;
+    sheet.appendRow([new Date(e.time),invSafeCell_(line.item),line.qty,e.caseType,invSafeCell_(e.project),invSafeCell_(e.committee),invSafeCell_(e.guestCode || e.idNumber),invSafeCell_(e.name),'PENDING',line.recordId,e.clientId,line.reference,'','','']);
+  });
+  else rows.forEach(function(r,i) {if(r[0]===e.recordId) {sheet.getRange(i+2,9).setValue(e.status);sheet.getRange(i+2,13,1,3).setValues([[invSafeCell_(e.name),new Date(e.time),invSafeCell_(e.note)]]);}});
+}
 function invProjectEvent_(e) {
+  if (e.type === 'SPECIAL_REQUEST' || e.type === 'SPECIAL_REVIEW') return invProjectSpecial_(e);
   if (e.type.indexOf('RECORD_') === 0) return invProjectRecordChange_(e);
   var name = e.type === 'RETURN' ? 'Return' : (e.caseType === 'BORROWING' ? 'Borrow' : 'Consume');
   var sheet = invSheet_(name), existing = {};
@@ -396,7 +437,7 @@ function invValidateDraft_(draft) {
     var l = draft.cart[k];
     if (!l || !l.item || !itemMap[l.item.id] || ['BORROWING', 'CONSUMING'].indexOf(l.action) < 0 || k !== JSON.stringify([l.item.id, l.action])) throw invError_('Refresh your cart before syncing.');
     var item = itemMap[l.item.id];
-    cart[k] = {item: {id: item.id, stableId: true, title: item.title, location: item.location, category: item.category, notes: item.notes, qtyDisplay: item.qty, qtyAvailable: /^\d+$/.test(item.qty) ? Number(item.qty) : null}, qty: invQty_(l.qty), action: l.action};
+    cart[k] = {item: {id: item.id, stableId: true, inventorySection:item.inventorySection, requiresManualVerification:item.requiresManualVerification, title: item.title, location: item.location, category: item.category, notes: item.notes, qtyDisplay: item.qty, qtyAvailable: /^\d+$/.test(item.qty) ? Number(item.qty) : null}, qty: invQty_(l.qty), action: l.action};
     if (l.clientId) cart[k].clientId = invText_(l.clientId);
   });
   return {cart: cart, project: invText_(draft.project).slice(0, 200), committee: invText_(draft.committee).slice(0, 200)};
@@ -420,12 +461,121 @@ function invMemberById_(id) {
   var matches = sheet.getDataRange().getDisplayValues().filter(function(row) { return invText_(row[1]) === id; });
   return matches.length === 1 ? {name: invText_(matches[0][2]), email: invText_(matches[0][0])} : {name: '', email: ''};
 }
+// Email branding: Drive files are embedded inline, so they do not need public access.
+var MEA_INV_EMAIL = {
+  headerDriveFileId: '1rBtaTkUU392AuzCD6GmWgCN7eaDnpo7F',
+  footerDriveFileId: '1KbalbvA4piUn6cjzF-AMVTE1ZzAW05uR',
+  accent: '#004445'
+};
+
+function invEmailEscape_(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+    return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[ch];
+  });
+}
+
+function invEmailImages_() {
+  return {
+    meaHeader: DriveApp.getFileById(MEA_INV_EMAIL.headerDriveFileId).getBlob(),
+    meaFooter: DriveApp.getFileById(MEA_INV_EMAIL.footerDriveFileId).getBlob()
+  };
+}
+
+function invEmailDate_(value) {
+  var date = value instanceof Date ? value : new Date(value);
+  if (isNaN(date.getTime())) return invEmailEscape_(value);
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'MMMM d, yyyy, h:mm a');
+}
+
+function invEmailItemsHtml_(lines) {
+  return (lines || []).map(function(line) {
+    var reference = line.reference || '';
+    return '<tr><td style="padding:5px 0;color:#333;">' +
+      (reference ? '<span style="color:#647575;">' + invEmailEscape_(reference) + ' &nbsp;·&nbsp; </span>' : '') +
+      invEmailEscape_(line.item) + '</td><td align="right" style="padding:5px 0 5px 12px;white-space:nowrap;color:#333;">&times; ' +
+      invEmailEscape_(line.qty) + '</td></tr>';
+  }).join('');
+}
+
+function invEmailReceiptBox_(event, action, lines) {
+  var account = event.accountKind === 'GUEST' ? 'Guest ' + (event.guestCode || '') : 'Member';
+  var rows = '<p style="margin:0 0 10px;color:' + MEA_INV_EMAIL.accent + ';font-size:13px;letter-spacing:.5px;">MEA INVENTORY ' + invEmailEscape_(action.toUpperCase()) + ' RECEIPT</p>' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">' + invEmailItemsHtml_(lines) + '</table>' +
+    '<div style="height:1px;background:#dce9e7;margin:14px 0;"></div>' +
+    '<p style="margin:0 0 6px;">Project/Dept: ' + invEmailEscape_(event.project) + '</p>' +
+    '<p style="margin:0 0 6px;">Account: ' + invEmailEscape_(account) + '</p>';
+  if (event.type === 'RETURN') {
+    rows += '<p style="margin:0 0 6px;">Original borrow: ' + invEmailEscape_(event.borrowReference || '') + '</p>' +
+      '<p style="margin:0 0 6px;">Remaining quantity: ' + invEmailEscape_(event.result && event.result.remaining != null ? event.result.remaining : '') + '</p>';
+  }
+  rows += '<p style="margin:0 0 6px;">Committee: ' + invEmailEscape_(event.committee) + '</p>' +
+    '<p style="margin:0;">Date: ' + invEmailDate_(event.time) + '</p>';
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 20px;border-collapse:separate;border-spacing:0;">' +
+    '<tr><td style="background:#f0f7f6;border-left:4px solid ' + MEA_INV_EMAIL.accent + ';border-radius:0 9px 9px 0;padding:16px 20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#333;">' + rows + '</td></tr></table>';
+}
+
+function invEmailBaseHtml_(event, action, lines, intro) {
+  var name = event.name || 'there';
+  var id = event.idNumber || '';
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>' +
+    '<body style="margin:0;padding:0;background:#f4f7f7;color:#333;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.65;">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7f7;padding:24px 10px;"><tr><td align="center">' +
+    '<table role="presentation" width="660" cellpadding="0" cellspacing="0" style="width:100%;max-width:660px;background:#fff;border-radius:12px;overflow:hidden;border-collapse:separate;border-spacing:0;">' +
+    '<tr><td><img src="cid:meaHeader" alt="MEA" width="660" style="display:block;width:100%;max-width:660px;height:auto;border:0;"></td></tr>' +
+    '<tr><td style="padding:30px 40px 28px;">' +
+    '<p style="margin:0;color:' + MEA_INV_EMAIL.accent + ';font-size:15px;line-height:1.5;">' + invEmailEscape_(name) + '</p>' +
+    '<p style="margin:2px 0 22px;color:#999;font-size:13px;line-height:1.5;">' + invEmailEscape_(id) + '</p>' +
+    '<p style="margin:0 0 16px;">Hi ' + invEmailEscape_(name) + ',</p>' +
+    '<p style="margin:0 0 16px;">' + intro + '</p>' +
+    invEmailReceiptBox_(event, action, lines) +
+    '<p style="margin:0 0 16px;">If anything looks wrong, contact the <strong style="color:' + MEA_INV_EMAIL.accent + ';">SUS team</strong>.</p>' +
+    '<p style="margin:0;">— MEA Inventory</p>' +
+    '</td></tr>' +
+    '<tr><td><img src="cid:meaFooter" alt="MEA" width="660" style="display:block;width:100%;max-width:660px;height:auto;border:0;"></td></tr>' +
+    '</table></td></tr></table></body></html>';
+}
+
+function invEmailPlainText_(event, action, lines, intro) {
+  var account = event.accountKind === 'GUEST' ? 'Guest ' + (event.guestCode || '') : 'Member';
+  var text = 'Hi ' + (event.name || 'there') + ',\n\n' + intro + '\n\n' +
+    lines.map(function(line) { return (line.reference || event.reference || '') + ' ' + line.item + ' × ' + line.qty; }).join('\n') +
+    '\n\nProject/Dept: ' + event.project + '\nAccount: ' + account;
+  if (event.type === 'RETURN') text += '\nOriginal borrow: ' + (event.borrowReference || '') + '\nRemaining quantity: ' + (event.result && event.result.remaining != null ? event.result.remaining : '');
+  return text + '\nCommittee: ' + event.committee + '\nDate: ' + invEmailDate_(event.time) + '\n\nIf anything looks wrong, contact the SUS team.\n— MEA Inventory';
+}
+
 function invReceipt_(event) {
+  if (event.type === 'SPECIAL_REQUEST' || event.type === 'SPECIAL_REVIEW') return;
   if (event.type.indexOf('RECORD_') === 0) return;
   var member = event.verified ? {name: event.name, email: event.email} : invMemberById_(event.idNumber);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email)) return;
+  event.name = member.name || event.name || 'there';
+  event.idNumber = event.idNumber || '';
   var action = event.type === 'RETURN' ? 'Return' : event.caseType === 'BORROWING' ? 'Borrow' : 'Consume';
-  var lines = event.type === 'RETURN' ? [{item: event.item, qty: event.qty}] : event.lines;
-  var text = 'Hi ' + (member.name || 'there') + ',\n\nThis confirms your MEA Inventory ' + action.toLowerCase() + ' request:\n\n' + lines.map(function(l) { return (l.reference || event.reference || '') + ' ' + l.item + ' × ' + l.qty; }).join('\n') + '\n\nProject/Dept: ' + event.project + '\nAccount: ' + (event.accountKind === 'GUEST' ? 'Guest ' + event.guestCode : 'Member') + (event.type === 'RETURN' ? '\nOriginal borrow: ' + (event.borrowReference || '') + '\nRemaining: ' + event.result.remaining : '') + '\nCommittee: ' + event.committee + '\nDate: ' + event.time + '\n\nIf anything looks wrong, contact the SUS team.\n— MEA Inventory';
-  GmailApp.sendEmail(member.email, 'MEA Inventory Receipt — ' + action, text, {name: 'MEA Inventory'});
+  var lines = event.type === 'RETURN' ? [{reference: event.reference || '', item: event.item, qty: event.qty}] : (event.lines || []);
+
+  // ==================== BORROW EMAIL TEMPLATE: START ====================
+  var htmlBody;
+  if (action === 'Borrow') {
+    htmlBody = invEmailBaseHtml_(event, action, lines, 'This email confirms your MEA Inventory borrow request.');
+  // ===================== BORROW EMAIL TEMPLATE: END =====================
+
+  // =================== CONSUME EMAIL TEMPLATE: START ==================
+  } else if (action === 'Consume') {
+    htmlBody = invEmailBaseHtml_(event, action, lines, 'This email confirms your MEA Inventory consumption request.');
+  // ==================== CONSUME EMAIL TEMPLATE: END ===================
+
+  // ==================== RETURN EMAIL TEMPLATE: START ==================
+  } else {
+    htmlBody = invEmailBaseHtml_(event, action, lines, 'This email confirms your MEA Inventory return.');
+  }
+  // ===================== RETURN EMAIL TEMPLATE: END ====================
+
+  var inlineImages = invEmailImages_();
+  var plainText = invEmailPlainText_(event, action, lines,
+    action === 'Borrow' ? 'This email confirms your MEA Inventory borrow request.' :
+    action === 'Return' ? 'This email confirms your MEA Inventory return.' : 'This email confirms your MEA Inventory consumption request.');
+  GmailApp.sendEmail(member.email, 'MEA Inventory Receipt — ' + action, plainText, {
+    name: 'MEA Inventory', htmlBody: htmlBody, inlineImages: inlineImages
+  });
 }
