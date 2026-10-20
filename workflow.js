@@ -69,6 +69,7 @@ window.meaSwitchAccount = function() {
   undoRemoval = null;
   const saved = draftOwner ? readLocal(draftKey(), {}) : {};
   state.cart = MeaCart.normalize(saved.cart);
+  if (inventoryRead?.cache && inventoryRead.source === readSource()) state.cart = MeaCart.reconcile(state.cart, state.inventory);
   draftDirty = !!saved.dirty;
   document.getElementById('project-select').selectedIndex = 0;
   document.getElementById('committee-input').value = '';
@@ -444,6 +445,7 @@ async function startGoogleOAuth() {
 function applyCloudDraft(data) {
   const draft = data.draft || {};
   state.cart = MeaCart.normalize(draft.cart); draftRevision = data.revision; draftDirty = false; cloudConflict = false;
+  if (inventoryRead?.cache && inventoryRead.source === readSource()) state.cart = MeaCart.reconcile(state.cart, state.inventory);
   writeLocal(draftKey(), {...draft, cart: state.cart, dirty: false}); window.meaRestoreFields(); updateCartBadge();
   if (state.view === 'cart') renderCart(); saveStatus('Synced across devices');
 }

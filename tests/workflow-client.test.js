@@ -58,6 +58,14 @@ test('mixed ordinary and special checkout uses separate endpoints and preserves 
  assert.match(c.element('cart-feedback').textContent,/Special request.*Failed/);
 });
 
+test('restoring an older cloud or device cart retains fresh special inventory classification',async()=>{
+ const c=client();connect(c);c.context.fetch=async()=>({text:async()=>JSON.stringify({ok:true,items:[{id:'s',title:'Radio',qty:'6',requiresManualVerification:true,inventorySection:'Special Inventory'}]})});
+ await c.context.loadInventory();
+ const draft={cart:{s:{item:{id:'s',title:'Radio'},qty:2,action:'BORROWING'}}};
+ c.context.applyCloudDraft({draft,revision:1});assert.equal(c.run('MeaCart.groups(state.cart)[0].requestOnly'),true);
+ c.data.set('mea_cart_v3:100001',JSON.stringify(draft));c.run('meaSwitchAccount()');assert.equal(c.run('MeaCart.groups(state.cart)[0].requestOnly'),true);
+});
+
 test('special requests stay outside normal transaction history and cannot expose return or edit controls',()=>{
  const c=client();connect(c);c.context.paintHistory({records:[{idNum:'100001',recordId:'s',item:'Radio',qty:2,caseType:'SPECIAL_REQUEST',requestOnly:true,requestStatus:'PENDING',requestedAction:'BORROWING',canReview:true}],projects:[],admin:true});
  assert.match(c.element('history-special-list').innerHTML,/Awaiting SUS verification/);assert.match(c.element('history-special-list').innerHTML,/Review request/);
