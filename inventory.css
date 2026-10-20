@@ -1391,3 +1391,11 @@ body:has(#cart-shortcut:not([hidden])) #catalog-container { padding-bottom: 80px
 .workflow-sheet :focus-visible { outline: 2px solid var(--teal-light); outline-offset: 3px; }
 @media(min-width: 768px) { #workflow-dialog { max-width: 520px; margin: auto; border-radius: 22px; } .workflow-sheet { padding: 32px; } }
 @media(prefers-reduced-motion: reduce) { #workflow-dialog, #cart-shortcut { animation: none; transition: none; } }
+
+/* Avoid accidental double-tap zoom while preserving scrolling and pinch zoom. */
+html { touch-action: manipulation; }
+
+@media (max-width: 767px), (pointer: coarse) {
+  /* Avoid mobile focus zoom, including controls with inline font sizes. */
+  input, select, textarea { font-size: 16px !important; }
+}
