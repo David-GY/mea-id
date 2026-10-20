@@ -4,23 +4,9 @@
 
   // GitHub Pages does not provide Apps Script's google.script.run object. This
   // small local adapter keeps the app usable there while preserving the same
-  // call shape for Apps Script deployments. getInventory specifically now
-  // fetches LIVE data from the Apps Script backend (action=inventory) when a
-  // Script URL is configured, matching how the ID Tracker and Access gate
-  // already talk to the same backend — falling back to demo data only when
-  // no URL is set yet or the request fails, so the app never breaks.
+  // call shape for Apps Script deployments. Inventory snapshots and refresh
+  // state are managed by loadInventory, after stale-response checks.
   if (!window.google || !window.google.script || !window.google.script.run) {
-    const demoInventory = [
-      { id: 'ITM-100', title: 'Safety Vest', category: 'Safety', qtyAvailable: 5, qtyDisplay: '5' },
-      { id: 'ITM-101', title: 'Hard Hat', category: 'Safety', qtyAvailable: 6, qtyDisplay: '6' },
-      { id: 'ITM-102', title: 'Wire Spool', category: 'Electrical', qtyAvailable: 7, qtyDisplay: '7' },
-      { id: 'ITM-103', title: 'Multimeter', category: 'Electrical', qtyAvailable: 8, qtyDisplay: '8' },
-      { id: 'ITM-104', title: 'Toolbox', category: 'Tools', qtyAvailable: 9, qtyDisplay: '9' },
-      { id: 'ITM-105', title: 'Extension Cord', category: 'Electrical', qtyAvailable: 10, qtyDisplay: '10' },
-      { id: 'ITM-106', title: 'Work Gloves', category: 'Safety', qtyAvailable: 11, qtyDisplay: '11' },
-      { id: 'ITM-107', title: 'Clipboard', category: 'General', qtyAvailable: 12, qtyDisplay: '12' },
-      { id: 'ITM-108', title: 'Flashlight', category: 'General', qtyAvailable: 13, qtyDisplay: '13' }
-    ];
 
     function getMeaInventoryScriptUrl() {
       try {
@@ -28,66 +14,27 @@
       } catch(e) { return ''; }
     }
 
-    const INVENTORY_CACHE_KEY = 'mea_inventory_cache';
-
-    function getCachedInventory() {
-      try {
-        const raw = localStorage.getItem(INVENTORY_CACHE_KEY);
-        if (!raw) return null;
-        return JSON.parse(raw); // { items, syncedAt }
-      } catch(e) { return null; }
-    }
-
-    function setCachedInventory(items) {
-      try {
-        localStorage.setItem(INVENTORY_CACHE_KEY, JSON.stringify({ items, syncedAt: Date.now() }));
-      } catch(e) {}
-    }
-
-    function offlineOrCachedFallback(reason) {
-      const cache = getCachedInventory();
-      if (cache && cache.items && cache.items.length) {
-        const ago = Math.round((Date.now() - cache.syncedAt) / 60000);
-        showInventoryDebug(reason + '\n\nShowing your last synced copy from ' + ago + ' minute(s) ago.');
-        return cache.items;
-      }
-      showInventoryDebug(reason + '\n\nNo previously synced copy on this device yet — showing demo items.');
-      return demoInventory;
-    }
-
     async function fetchLiveInventory() {
-      window.__meaInventoryDebugError = null;
       const url = getMeaInventoryScriptUrl();
-      if (!url) {
-        showInventoryDebug('No Inventory Script URL configured yet.\n\nGo to Home > Settings > paste your Inventory Apps Script URL into the "Inventory Script URL" field > Save.');
-        return demoInventory; // not configured yet — safe fallback
-      }
-
-      if (!navigator.onLine) {
-        return offlineOrCachedFallback("You're offline.");
-      }
+      if (!url) throw new Error('Set up the Inventory Script URL in Settings first.');
+      if (!navigator.onLine) throw new TypeError("You're offline.");
 
       let res, text;
       try {
         res = await fetch(url + '?action=inventory');
         text = await res.text();
       } catch(networkErr) {
-        console.error('[MEA Inventory] Network error reaching script:', networkErr);
-        return offlineOrCachedFallback('Network error — could not reach the Inventory script.');
+        throw new TypeError('Network error — could not reach the Inventory script.');
       }
 
       let json;
       try {
         json = JSON.parse(text);
       } catch(parseErr) {
-        console.error('[MEA Inventory] Response was not valid JSON:', text);
-        showInventoryDebug('Got a response, but it wasn\'t valid JSON (likely an HTML error page from Apps Script).\n\nFirst 400 characters of the response:\n\n' + text.substring(0, 400));
-        return demoInventory;
+        throw new Error('The inventory script returned an invalid response. Try refreshing.');
       }
 
       if (json && json.ok && Array.isArray(json.items)) {
-        console.log('[MEA Inventory] Loaded', json.items.length, 'items from the sheet.');
-        window.__meaInventoryDebugError = null;
         const mapped = json.items.map((item, i) => {
           const rawQty = String(item.qty ?? '').trim();
           const numericQty = MeaCart.availability(rawQty).value;
@@ -102,19 +49,12 @@
             qtyAvailable: numericQty // null = uncapped (e.g. "*", "2 packs")
           };
         });
-        setCachedInventory(mapped); // remember this for the next time we're offline
         return mapped;
       }
 
       // Script responded with valid JSON but ok:false or unexpected shape
       const errMsg = (json && json.error) ? json.error : 'Unexpected response shape (missing ok/items).';
-      console.error('[MEA Inventory] Script returned an error:', errMsg, json);
-      showInventoryDebug('Script responded but reported an error:\n\n' + errMsg + '\n\nFull response:\n' + JSON.stringify(json, null, 2));
-      return demoInventory;
-    }
-
-    function showInventoryDebug(message) {
-      window.__meaInventoryDebugError = message;
+      throw new Error(errMsg);
     }
 
     const PENDING_ORDERS_KEY = 'mea_pending_orders';
@@ -215,6 +155,7 @@
       if (!pending.length) return;
 
       isFlushingOrders = true;
+      let changed = false;
       updateOrderSyncPill();
 
       while (true) {
@@ -223,6 +164,7 @@
         const item = current[0];
         try {
           await trySubmitOrderToSheet(item.payload, item.clientId);
+          invalidateReadData(); changed = true;
           const remaining = getPendingOrders();
           remaining.shift();
           savePendingOrders(remaining);
@@ -250,6 +192,7 @@
 
       isFlushingOrders = false;
       updateOrderSyncPill();
+      if (changed) refreshActiveReadData();
     }
 
     function retryFailedOrders() {
@@ -496,6 +439,7 @@
     bindSettings();
     bindHeaderActions();
     bindCatalogToggle();
+    document.getElementById('catalog-refresh')?.addEventListener('click', () => loadInventory({force: true}));
     bindCheckoutForm();
     bindModal();
     bindInstallBanner();
@@ -597,7 +541,7 @@
       const tokenInput = document.getElementById('settings-inventory-token');
       if (tokenInput) tokenInput.value = getInventoryToken();
     }
-    if (view === 'home') updateHomeCardStates();
+    if (view === 'home') { updateHomeCardStates(); scheduleHistoryPrefetch(); }
     if (view === 'history') setHistoryTab('personal');
     if (view === 'cart') renderCart();
     if (view === 'checkout') renderCheckout();
@@ -650,56 +594,117 @@
   // cached locally so History still shows the last-known data offline,
   // exactly like the Catalog's inventory cache.
   function historyProjectKey(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
-  function historyCacheKey() { return 'mea_history_cache_v4:' + (state.lastId?.googleUid ? 'google:' + state.lastId.googleUid : 'id:' + (state.lastId?.idNumber || 'anonymous')) + ':' + state.historyTab + ':' + (state.historyTab === 'project' ? document.getElementById('history-project-select')?.value || '' : ''); }
-
-  function getCachedHistory() {
+  // The fingerprint partitions local snapshots; server authorization is still required.
+  // Raw access codes and Google tokens never appear in cache keys or snapshots.
+  function readSource() { return JSON.stringify([getInventoryScriptUrl(), getInventoryToken()]); }
+  function readSourceScope() {
+    let a = 2166136261, b = 5381;
+    for (const char of readSource()) { a = Math.imul(a ^ char.charCodeAt(0), 16777619); b = Math.imul(b, 33) ^ char.charCodeAt(0); }
+    return (a >>> 0).toString(36) + '-' + (b >>> 0).toString(36);
+  }
+  let readRevisionFallback = '';
+  function readDataRevision() { try { return readRevisionFallback || localStorage.getItem('mea_read_revision') || ''; } catch (_) { return readRevisionFallback; } }
+  let readGeneration = 0;
+  function readSnapshot(key, field) {
     try {
-      const raw = localStorage.getItem(historyCacheKey());
-      return raw ? JSON.parse(raw) : null; // { records, syncedAt }
-    } catch(e) { return null; }
+      const data = JSON.parse(localStorage.getItem(key));
+      return data && data.revision === readDataRevision() && Number.isFinite(data.syncedAt) &&
+        Array.isArray(data[field]) && data[field].every(row => row && typeof row === 'object' &&
+          (field !== 'items' || typeof row.id === 'string' && typeof row.title === 'string')) ? data : null;
+    } catch (_) { return null; }
+  }
+  function writeSnapshot(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {} }
+  function invalidateReadData() {
+    readGeneration++;
+    readRevisionFallback = crypto.randomUUID();
+    try { localStorage.setItem('mea_read_revision', readRevisionFallback); readRevisionFallback = ''; } catch (_) {}
+    if (inventoryRead) inventoryRead = {...inventoryRead, revision: readDataRevision(), syncedAt: 0, promise: null};
+    historyFresh.clear();
+    historyFlights.clear();
+    historyLoadToken++;
+  }
+  let historyAccountGeneration = 0;
+  const historyFlights = new Map(), historyFresh = new Map();
+  function resetHistorySession() {
+    historyAccountGeneration++;
+    historyLoadToken++;
+    historyFlights.clear(); historyFresh.clear();
+  }
+  function historyContext(tab = state.historyTab, project = document.getElementById('history-project-select')?.value || '') {
+    const owner = (state.lastId?.googleUid ? 'google:' + state.lastId.googleUid : 'id:' + (state.lastId?.idNumber || 'anonymous')) + (state.lastId?.verified ? ':verified' : ':id-only');
+    return {tab, project: tab === 'project' ? project : '', owner, source: readSource(), revision: readDataRevision(),
+      generation: readGeneration, epoch: historyAccountGeneration,
+      key: 'mea_history_cache_v4:' + owner + ':' + tab + ':' + (tab === 'project' ? historyProjectKey(project) : '') + ':' + readSourceScope()};
+  }
+  function historyCacheKey() { return historyContext().key; }
+  function historyContextValid(context) {
+    return context.epoch === historyAccountGeneration && context.generation === readGeneration &&
+      context.source === readSource() && context.revision === readDataRevision();
   }
 
-  function setCachedHistory(records) {
-    try {
-      localStorage.setItem(historyCacheKey(), JSON.stringify({ records, syncedAt: Date.now() }));
-    } catch(e) {}
+  function getCachedHistory(context = historyContext()) {
+    if (!state.lastId || window.meaHistoryReady?.() === false) return null;
+    const memory = historyFresh.get(context.key);
+    return memory?.revision === context.revision ? memory : readSnapshot(context.key, 'records');
   }
 
-  async function fetchHistoryRecords() {
-    const ownerKey = historyCacheKey();
+  function setCachedHistory(records, context, response) {
+    const snapshot = {records, projects: response.projects, admin: response.admin, syncedAt: Date.now(), revision: context.revision};
+    writeSnapshot(context.key, snapshot);
+    historyFresh.set(context.key, snapshot);
+    return snapshot;
+  }
+
+  function fetchHistoryRecords(options = {}, context = historyContext()) {
     const url = getInventoryScriptUrl();
-    if (!url) return { records: [], offline: false, error: 'No Inventory Script URL configured yet.' };
+    if (!url || !state.lastId || window.meaHistoryReady?.() === false) return Promise.resolve({records: [], error: !url ? 'No Inventory Script URL configured yet.' : 'Reconnect your school account to refresh your history.'});
+    const memory = historyFresh.get(context.key);
+    const cache = memory?.revision === context.revision ? memory : getCachedHistory(context);
+    if (!navigator.onLine) return Promise.resolve({...cache, records: cache?.records || [], offline: true});
+    const flightKey = JSON.stringify([context.key, context.epoch, context.revision, context.generation]);
+    if (historyFlights.has(flightKey)) return historyFlights.get(flightKey);
+    if (!options.force && cache && historyFresh.has(context.key) && Date.now() - cache.syncedAt < 15000) return Promise.resolve({...cache, offline: false});
+    const promise = Promise.resolve().then(async () => {
+      try {
+        if (!historyContextValid(context)) return {records: [], discarded: true};
+        const json = await window.meaHistoryRequest(context.tab, context.project);
+        if (!historyContextValid(context)) return {records: [], discarded: true};
+        if (!json?.ok || !Array.isArray(json.records) || !json.records.every(row => row && typeof row === 'object')) throw new Error(json?.error || 'Unexpected response');
+        return {...setCachedHistory(json.records, context, json), offline: false};
+      } catch (err) {
+        if (!historyContextValid(context)) return {records: [], discarded: true};
+        historyFresh.delete(context.key);
+        const offline = !err.code && (err instanceof TypeError || err.name === 'TypeError' || !navigator.onLine);
+        if (!offline) { try { localStorage.removeItem(context.key); } catch (_) {} }
+        return {...(offline ? cache : {}), records: offline ? cache?.records || [] : [], offline, error: err.message};
+      } finally { if (historyFlights.get(flightKey) === promise) historyFlights.delete(flightKey); }
+    });
+    historyFlights.set(flightKey, promise);
+    return promise;
+  }
 
-    if (!navigator.onLine) {
-      const cache = getCachedHistory();
-      return { records: cache ? cache.records : [], offline: true, syncedAt: cache ? cache.syncedAt : null };
+  async function prefetchHistory(options = {}) {
+    if (!state.lastId || !navigator.onLine || window.meaHistoryReady?.() === false) return Promise.resolve();
+    const context = historyContext('personal', '');
+    const result = await fetchHistoryRecords(options, context);
+    const selected = document.getElementById('history-project-select')?.value;
+    if (historyContextValid(context) && selected && Array.isArray(result.projects) &&
+        result.projects.some(project => historyProjectKey(project) === historyProjectKey(selected))) {
+      await fetchHistoryRecords({}, historyContext('project', selected));
     }
-
-    try {
-      const json = await window.meaHistoryRequest(state.historyTab, document.getElementById('history-project-select')?.value || '');
-      if (json && json.ok && Array.isArray(json.records)) {
-        if (ownerKey !== historyCacheKey()) return {records: [], offline: false};
-        if (Array.isArray(json.projects)) {
-          const select = document.getElementById('history-project-select'), chosen = select.value;
-          const seen = new Set();
-          const labels = json.projects.filter(label => { const key = historyProjectKey(label); if(!key || seen.has(key))return false; seen.add(key);return true; });
-          if(json.admin)labels.unshift('__ALL__');
-          select.innerHTML = '<option value="">Project/Dept</option>' + labels.map(label=>`<option value="${escapeHtml(label)}">${label==='__ALL__'?'All records (Admin)':escapeHtml(label)}</option>`).join('');
-          select.value = chosen==='__ALL__'?chosen:labels.find(label=>historyProjectKey(label)===historyProjectKey(chosen)) || '';
-        }
-        setCachedHistory(json.records);
-        return { records: json.records, offline: false };
-      }
-      throw new Error((json && json.error) || 'Unexpected response');
-    } catch(err) {
-      const cache = getCachedHistory();
-      return {
-        records: !err.code && (err instanceof TypeError || !navigator.onLine) && cache ? cache.records : [],
-        offline: !err.code && (err instanceof TypeError || !navigator.onLine),
-        syncedAt: cache ? cache.syncedAt : null,
-        error: err.message
-      };
-    }
+    return result;
+  }
+  function scheduleHistoryPrefetch() {
+    const epoch = historyAccountGeneration;
+    setTimeout(() => { if (epoch === historyAccountGeneration && state.view === 'home') prefetchHistory(); }, 150);
+  }
+  function applyHistoryProjects(data) {
+    if (!Array.isArray(data.projects)) return;
+    const select = document.getElementById('history-project-select'), chosen = select.value, seen = new Set();
+    const labels = data.projects.filter(label => { const key = historyProjectKey(label); if (!key || seen.has(key)) return false; seen.add(key); return true; });
+    if (data.admin) labels.unshift('__ALL__');
+    select.innerHTML = '<option value="">Project/Dept</option>' + labels.map(label => `<option value="${escapeHtml(label)}">${label === '__ALL__' ? 'All records (Admin)' : escapeHtml(label)}</option>`).join('');
+    select.value = labels.find(label => historyProjectKey(label) === historyProjectKey(chosen)) || '';
   }
 
   function historyRowHtml(rec) {
@@ -724,22 +729,33 @@
   }
 
   let historyLoadToken = 0;
-  async function renderHistory() {
+  async function renderHistory(options = {}) {
     const pendingList = document.getElementById('history-pending-list');
     const totalList = document.getElementById('history-total-list');
     if (!pendingList || !totalList) return;
 
     document.getElementById('history-deleted-toggle')?.setAttribute('aria-pressed',String(!!state.historyShowDeleted));
     const myToken = ++historyLoadToken; // avoids a slow older fetch overwriting a newer render
-    const skeletonRow = '<div class="history-item skeleton-row skeleton" style="height:52px;"></div>';
-    pendingList.innerHTML = skeletonRow.repeat(2);
-    totalList.innerHTML = skeletonRow.repeat(3);
+    const context = historyContext(), cache = getCachedHistory(context);
+    if (cache) paintHistory({...cache, saved: true, offline: !navigator.onLine});
+    else {
+      const skeletonRow = '<div class="history-item skeleton-row skeleton" style="height:52px;"></div>';
+      pendingList.innerHTML = skeletonRow.repeat(2);
+      totalList.innerHTML = skeletonRow.repeat(3);
+      window.meaHistoryRecords = [];
+    }
+    const data = await fetchHistoryRecords(options, context);
+    if (myToken !== historyLoadToken || !historyContextValid(context) || context.key !== historyCacheKey() || data.discarded) return;
+    paintHistory(data);
+  }
 
-    window.meaHistoryRecords = [];
-    const { records, offline, error, syncedAt } = await fetchHistoryRecords();
-    if (myToken !== historyLoadToken) return; // a newer call already took over
+  function paintHistory({records, projects, admin, offline, error, syncedAt, saved}) {
+    const pendingList = document.getElementById('history-pending-list');
+    const totalList = document.getElementById('history-total-list');
+    applyHistoryProjects({projects, admin});
 
     if (error && !offline) {
+      window.meaHistoryRecords = [];
       pendingList.innerHTML = `<div class="history-empty" role="alert">${escapeHtml(error)}</div>`;
       totalList.innerHTML = ''; return;
     }
@@ -765,7 +781,7 @@
 
     const offlineNote = offline
       ? `<div class="history-offline-note"><img class="svg-icon icon-inline" src="icons/ui/wifi.svg" alt="">${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
-      : '';
+      : saved ? `<div class="history-offline-note">Saved copy · ${new Date(syncedAt).toLocaleString()} · Updating…</div>` : '';
 
     pendingList.innerHTML = offlineNote + (pending.length
       ? pending.map(historyRowHtml).join('')
@@ -970,7 +986,8 @@
       status.textContent = 'Saved!';
       status.className = 'setup-status ok';
       updateHomeCardStates();
-      loadInventory(); // refresh right away so Catalog isn't stuck on stale/demo data
+      resetHistorySession();
+      loadInventory({force: true});
     });
 
     document.getElementById('logout-link').addEventListener('click', performLogout);
@@ -1008,18 +1025,67 @@
     container.innerHTML = card.repeat(grid ? 9 : 5);
   }
 
-  function loadInventory() {
-    renderCatalogSkeleton();
-    google.script.run
-      .withSuccessHandler(items => {
-        state.inventory = items || [];
-        window.meaReconcileCart?.();
-        renderCategoryChips();
-        renderCatalog();
-      })
-      .withFailureHandler(err => showToast(err.message || 'Could not load inventory', true))
-      .getInventory();
+  let inventoryRead = null;
+  function setInventorySync(text, busy = false) {
+    const note = document.getElementById('catalog-sync');
+    if (note) note.textContent = text;
+    const button = document.getElementById('catalog-refresh');
+    if (button) { button.disabled = busy; button.setAttribute('aria-busy', String(busy)); }
   }
+  function paintInventory(items) {
+    state.inventory = items;
+    renderCategoryChips(); renderCatalog();
+  }
+  function loadInventory(options = {}) {
+    const source = readSource(), revision = readDataRevision(), generation = readGeneration;
+    if (!inventoryRead || inventoryRead.source !== source || inventoryRead.revision !== revision) {
+      const key = 'mea_inventory_cache_v2:' + readSourceScope();
+      const cache = readSnapshot(key, 'items');
+      inventoryRead = {source, revision, key, cache, syncedAt: 0, promise: null};
+      window.__meaInventoryDebugError = null;
+      if (cache) paintInventory(cache.items);
+      else { state.inventory = []; renderCategoryChips(); renderCatalogSkeleton(); }
+    }
+    const entry = inventoryRead;
+    if (entry.cache) paintInventory(entry.cache.items);
+    if (entry.promise) return entry.promise;
+    if (!options.force && entry.syncedAt && Date.now() - entry.syncedAt < 30000) return Promise.resolve(entry.cache?.items);
+    setInventorySync(entry.cache ? 'Saved copy · Updating…' : 'Loading inventory…', true);
+    const current = () => inventoryRead === entry && source === readSource() && revision === readDataRevision() && generation === readGeneration;
+    entry.promise = new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getInventory();
+    }).then(items => {
+      if (!current()) return;
+      if (!Array.isArray(items) || !items.every(item => item && typeof item.id === 'string' && typeof item.title === 'string')) throw new Error('The inventory response was invalid.');
+      entry.syncedAt = Date.now();
+      entry.cache = {items, syncedAt: entry.syncedAt, revision};
+      writeSnapshot(entry.key, entry.cache);
+      window.__meaInventoryDebugError = null;
+      paintInventory(items); window.meaReconcileCart?.();
+      setInventorySync('Updated ' + new Date(entry.syncedAt).toLocaleTimeString());
+      return items;
+    }).catch(error => {
+      if (!current()) return;
+      entry.syncedAt = 0;
+      window.__meaInventoryDebugError = error.message || 'Could not refresh inventory.';
+      if (entry.cache) paintInventory(entry.cache.items);
+      else { state.inventory = []; renderCatalog(); }
+      setInventorySync(entry.cache ? 'Showing saved copy · ' + new Date(entry.cache.syncedAt).toLocaleString() : 'Could not load inventory · Try Refresh');
+    }).finally(() => { if (current()) { entry.promise = null; const button = document.getElementById('catalog-refresh'); if (button) { button.disabled = false; button.setAttribute('aria-busy', 'false'); } } });
+    return entry.promise;
+  }
+
+  function refreshActiveReadData() {
+    if (document.hidden || !navigator.onLine) return;
+    if (state.view === 'catalog' || state.view === 'cart') loadInventory();
+    if (state.view === 'history') renderHistory();
+  }
+  function refreshAfterMutation() {
+    invalidateReadData();
+    refreshActiveReadData();
+  }
+  window.addEventListener('online', refreshActiveReadData);
+  document.addEventListener('visibilitychange', refreshActiveReadData);
 
   // Category chips let people jump straight to a section of the catalog
   // instead of scrolling or guessing a search term — built from whatever
@@ -1140,13 +1206,13 @@
     const container = document.getElementById('catalog-container');
     const debugMsg = window.__meaInventoryDebugError;
     const debugHtml = debugMsg
-      ? `<div style="grid-column:1/-1;background:rgba(255,107,107,0.08);border:1px solid rgba(255,107,107,0.3);border-radius:12px;padding:14px;font-size:11px;font-family:monospace;color:#ffb3b3;white-space:pre-wrap;word-break:break-word;margin-bottom:10px;"><img class="svg-icon icon-inline" src="icons/ui/warning.svg" alt="">Inventory fetch failed — showing demo items below.\n\n${escapeHtml(debugMsg)}</div>`
+      ? `<div class="inventory-refresh-error" role="status"><img class="svg-icon icon-inline" src="icons/ui/warning.svg" alt="">Could not refresh inventory. ${escapeHtml(debugMsg)}</div>`
       : '';
 
     const countEl = document.getElementById('catalog-result-count');
 
     if (!state.inventory.length) {
-      container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">Inventory is empty</div>';
+      container.innerHTML = debugHtml + '<div class="empty-state"><img class="svg-icon" src="icons/ui/archive-box.svg" alt="">' + (debugMsg ? 'No saved inventory available. Connect and tap Refresh.' : 'Inventory is empty') + '</div>';
       if (countEl) countEl.textContent = 'Tap an item to borrow or consume';
       return;
     }

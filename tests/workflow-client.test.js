@@ -21,6 +21,130 @@ function client() {
  return {context,run,data,element};
 }
 
+function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;}); return {promise,resolve,reject}; }
+const inventoryResponse = title => ({ok:true,items:title ? [{id:'a',title,qty:'8',category:'Tools',location:'Room',notes:''}] : []});
+function connect(c) { c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount()"); }
+
+test('startup and catalog share one inventory request and fresh navigation keeps rendered content',async()=>{
+ const c=client();connect(c);const response=deferred();let calls=0;
+ c.context.fetch=async()=>{calls++;return {text:async()=>JSON.stringify(await response.promise)};};
+ const first=c.context.loadInventory(),second=c.context.loadInventory();
+ await Promise.resolve();assert.equal(calls,1);
+ response.resolve(inventoryResponse('Ready item'));await Promise.all([first,second]);
+ assert.match(c.element('catalog-container').innerHTML,/Ready item/);
+ await c.context.loadInventory();assert.equal(calls,1);assert.doesNotMatch(c.element('catalog-container').innerHTML,/skeleton/);
+});
+
+test('saved inventory paints before a slow forced refresh and a successful empty catalog clears it',async()=>{
+ const c=client();connect(c);c.context.fetch=async()=>({text:async()=>JSON.stringify(inventoryResponse('Saved item'))});await c.context.loadInventory();
+ const reload=client();for(const [k,v] of c.data)reload.data.set(k,v);connect(reload);
+ const response=deferred();reload.context.fetch=async()=>({text:async()=>JSON.stringify(await response.promise)});
+ const loading=reload.context.loadInventory({force:true});assert.match(reload.element('catalog-container').innerHTML,/Saved item/);assert.doesNotMatch(reload.element('catalog-container').innerHTML,/skeleton/);
+ response.resolve(inventoryResponse(''));await loading;assert.equal(reload.run('state.inventory.length'),0);assert.doesNotMatch(reload.element('catalog-container').innerHTML,/Saved item/);
+});
+
+test('old inventory responses cannot overwrite another endpoint or a newer invalidation',async()=>{
+ const c=client();connect(c);const response=deferred();c.context.fetch=async()=>({text:async()=>JSON.stringify(await response.promise)});
+ const old=c.context.loadInventory();await Promise.resolve();c.data.set('mea_inventory_url','https://other.test');
+ c.context.fetch=async()=>({text:async()=>JSON.stringify(inventoryResponse('New endpoint'))});await c.context.loadInventory();response.resolve(inventoryResponse('Wrong endpoint'));await old;
+ assert.match(c.element('catalog-container').innerHTML,/New endpoint/);assert.doesNotMatch(c.element('catalog-container').innerHTML,/Wrong endpoint/);
+ const stale=deferred();c.context.fetch=async()=>({text:async()=>JSON.stringify(await stale.promise)});const pending=c.context.loadInventory({force:true});await Promise.resolve();
+ c.context.invalidateReadData();c.context.fetch=async()=>({text:async()=>JSON.stringify(inventoryResponse('After mutation'))});await c.context.loadInventory();stale.resolve(inventoryResponse('Before mutation'));await pending;
+ assert.match(c.element('catalog-container').innerHTML,/After mutation/);
+});
+
+test('inventory network failures retain saved content, allow retry, and never become fresh successes',async()=>{
+ const c=client();connect(c);c.context.fetch=async()=>({text:async()=>JSON.stringify(inventoryResponse('Saved item'))});await c.context.loadInventory();
+ c.context.fetch=async()=>{throw new TypeError('Offline');};await c.context.loadInventory({force:true});assert.match(c.element('catalog-container').innerHTML,/Saved item/);assert.match(c.element('catalog-sync').textContent,/saved copy/i);
+ c.context.fetch=async()=>({text:async()=>JSON.stringify(inventoryResponse('Recovered'))});await c.context.loadInventory();assert.match(c.element('catalog-container').innerHTML,/Recovered/);
+});
+
+test('history cache paints before revalidation and prefetch shares the navigation request',async()=>{
+ const c=client();connect(c);let calls=0;c.context.fetch=async()=>({json:async()=>({ok:true,records:[{recordId:'r',idNum:'100001',item:'Saved loan',caseType:'BORROWING',qty:1}],projects:['SUS']})});await c.context.renderHistory();
+ const slow=deferred();c.context.fetch=async()=>{calls++;return {json:async()=>await slow.promise};};
+ const preload=c.context.prefetchHistory({force:true}),render=c.context.renderHistory();await Promise.resolve();assert.equal(calls,1);assert.match(c.element('history-pending-list').innerHTML,/Saved loan/);
+ slow.resolve({ok:true,records:[],projects:['SUS']});await Promise.all([preload,render]);assert.doesNotMatch(c.element('history-pending-list').innerHTML,/Saved loan/);
+});
+
+test('switching away and back rejects old history and does not cache its response',async()=>{
+ const c=client();connect(c);const slow=deferred();c.context.fetch=async()=>({json:async()=>await slow.promise});const pending=c.context.renderHistory();await Promise.resolve();
+ c.run("state.lastId={idNumber:'100002'};meaSwitchAccount();state.lastId={idNumber:'100001'};meaSwitchAccount()");
+ slow.resolve({ok:true,records:[{recordId:'r',idNum:'100001',item:'Stale private loan',caseType:'BORROWING',qty:1}],projects:['SUS']});await pending;
+ c.context.navigator.onLine=false;await c.context.renderHistory();assert.doesNotMatch(c.element('history-pending-list').innerHTML,/Stale private loan/);
+});
+
+test('history authorization denial evicts saved data instead of restoring it offline',async()=>{
+ const c=client();connect(c);c.context.fetch=async()=>({json:async()=>({ok:true,records:[{recordId:'r',idNum:'100001',item:'Private loan',caseType:'BORROWING',qty:1}],projects:[]})});await c.context.renderHistory();
+ c.context.fetch=async()=>({json:async()=>({ok:false,error:'Denied',code:'UNAUTHORIZED',retryable:false})});await c.context.renderHistory({force:true});assert.match(c.element('history-pending-list').innerHTML,/Denied/);
+ c.context.navigator.onLine=false;await c.context.renderHistory();assert.doesNotMatch(c.element('history-pending-list').innerHTML,/Private loan/);assert.equal(c.context.meaHistoryRecords.length,0);
+});
+
+test('inventory expires after 30 seconds while history expires after 15 seconds',async()=>{
+ const c=client();connect(c);let time=100000,catalog=0,history=0;c.context.Date=class extends Date {static now(){return time;}};
+ c.context.fetch=async url=>url.includes('inventory')?(catalog++,{text:async()=>JSON.stringify(inventoryResponse('Item'))}):(history++,{json:async()=>({ok:true,records:[],projects:[]})});
+ await c.context.loadInventory();await c.context.renderHistory();time+=14999;await c.context.loadInventory();await c.context.renderHistory();assert.equal(catalog,1);assert.equal(history,1);
+ time++;await c.context.renderHistory();assert.equal(history,2);await c.context.loadInventory();assert.equal(catalog,1);
+ time+=15000;await c.context.loadInventory();assert.equal(catalog,2);
+});
+
+test('a revision changed in another tab prevents fresh in-memory history from being reused',async()=>{
+ const c=client();connect(c);let calls=0;c.context.fetch=async()=>({json:async()=>({ok:true,records:[{recordId:'r',idNum:'100001',item:++calls===1?'Before change':'After change',caseType:'BORROWING',qty:1}],projects:[]})});
+ await c.context.renderHistory();c.data.set('mea_read_revision','another-tab-mutation');await c.context.renderHistory();assert.match(c.element('history-pending-list').innerHTML,/After change/);
+});
+
+test('an old project response cannot change the selected project or overwrite its records',async()=>{
+ const c=client();connect(c);c.run("state.historyTab='project'");c.element('history-project-select').value='SUS';const slow=deferred();
+ c.context.fetch=async()=>({json:async()=>await slow.promise});const old=c.context.renderHistory();c.element('history-project-select').value='STEPS';
+ c.context.fetch=async()=>({json:async()=>({ok:true,projects:['SUS','STEPS'],records:[{recordId:'s',item:'Steps item',project:'STEPS',caseType:'CONSUMING',qty:1}]})});await c.context.renderHistory();
+ slow.resolve({ok:true,projects:['SUS'],records:[{recordId:'r',item:'Sus item',project:'SUS',caseType:'CONSUMING',qty:1}]});await old;
+ assert.equal(c.element('history-project-select').value,'STEPS');assert.match(c.element('history-total-list').innerHTML,/Steps item/);assert.doesNotMatch(c.element('history-total-list').innerHTML,/Sus item/);
+});
+
+test('confirmed checkout invalidates inventory and history even inside their freshness windows',async()=>{
+ const c=client();connect(c);let catalog=0,history=0;
+ c.context.fetch=async url=>url.includes('inventory')?{text:async()=>JSON.stringify(inventoryResponse(++catalog===1?'Before checkout':'After checkout'))}:url.includes('submitOrder')?{text:async()=>'{"ok":true,"logged":1}'}:{json:async()=>({ok:true,records:[],projects:[],revision:++history})};
+ await c.context.loadInventory();await c.context.renderHistory();c.run("state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'Item'},qty:1,action:'BORROWING'};");
+ await c.context.submitOrder();await c.context.loadInventory();await c.context.renderHistory();assert.equal(catalog,2);assert.equal(history,2);
+});
+
+test('an offline cold start never offers demo inventory and malformed storage does not prevent retry',async()=>{
+ const c=client();connect(c);c.data.set('mea_inventory_cache','{"items":[{"id":"wrong","title":"Legacy demo"}]}');c.context.navigator.onLine=false;
+ await c.context.loadInventory();assert.equal(c.run('state.inventory.length'),0);assert.doesNotMatch(c.element('catalog-container').innerHTML,/demo items|Legacy demo|Safety Vest/);
+ c.context.navigator.onLine=true;c.context.fetch=async()=>({text:async()=>JSON.stringify(inventoryResponse('Recovered'))});await c.context.loadInventory();assert.match(c.element('catalog-container').innerHTML,/Recovered/);
+});
+
+test('replaying multiple returns refreshes visible History once after the queue drains',async()=>{
+ const c=client();connect(c);let reads=0,writes=0;
+ c.context.fetch=async url=>({json:async()=>url.includes('returnItems')?(writes++,{ok:true}):(reads++,{ok:true,records:[],projects:[]})});
+ c.run("state.view='history';writeLocal(returnKey(),[{clientId:'return-100001',borrowId:'r',qty:1},{clientId:'return-100002',borrowId:'s',qty:1}])");
+ await c.context.renderHistory();await c.context.flushReturns();await new Promise(setImmediate);
+ assert.equal(writes,2);assert.equal(reads,2);assert.equal(c.run('pendingReturns().length'),0);
+});
+
+test('a return completed after account switch restarts the current account read instead of leaving skeletons',async()=>{
+ const c=client();connect(c);const returned=deferred(),oldHistory=deferred();let reads=0;
+ c.context.fetch=async url=>({json:async()=>url.includes('returnItems')?await returned.promise:++reads===1?await oldHistory.promise:{ok:true,records:[{recordId:'b',idNum:'100002',item:'Current account loan',caseType:'BORROWING',qty:1}],projects:[]}});
+ c.run("writeLocal(returnKey(),[{clientId:'return-100001',borrowId:'r',qty:1}])");const replay=c.context.flushReturns();await Promise.resolve();
+ c.run("state.lastId={idNumber:'100002'};meaSwitchAccount();state.view='history'");const pending=c.context.renderHistory();await new Promise(setImmediate);
+ returned.resolve({ok:true});await replay;await new Promise(setImmediate);oldHistory.resolve({ok:true,records:[],projects:[]});await pending;
+ assert.match(c.element('history-pending-list').innerHTML,/Current account loan/);assert.doesNotMatch(c.element('history-pending-list').innerHTML,/skeleton/);
+});
+
+test('History keeps its in-memory snapshot visible when device storage is full',async()=>{
+ const c=client();connect(c);c.context.localStorage.setItem=()=>{throw new Error('Quota exceeded');};
+ c.context.fetch=async()=>({json:async()=>({ok:true,records:[{recordId:'r',idNum:'100001',item:'Memory loan',caseType:'BORROWING',qty:1}],projects:[]})});await c.context.renderHistory();
+ const slow=deferred();c.context.fetch=async()=>({json:async()=>await slow.promise});const pending=c.context.renderHistory({force:true});
+ assert.match(c.element('history-pending-list').innerHTML,/Memory loan/);assert.doesNotMatch(c.element('history-pending-list').innerHTML,/skeleton/);
+ slow.resolve({ok:true,records:[],projects:[]});await pending;
+});
+
+test('Home prefetch reads only the selected server-authorized project after Personal History',async()=>{
+ const c=client();connect(c);c.element('history-project-select').value='SUS';const scopes=[];
+ c.context.fetch=async(_url,options)=>{const p=JSON.parse(options.body);scopes.push([p.scope,p.project]);return {json:async()=>({ok:true,records:[],projects:['SUS','STEPS']})};};
+ await c.context.prefetchHistory();assert.deepEqual(scopes,[['personal',''],['project','SUS']]);
+ c.context.invalidateReadData();c.element('history-project-select').value='Private Project';scopes.length=0;await c.context.prefetchHistory();assert.deepEqual(scopes,[['personal','']]);
+});
+
 test('old cached history does not reappear after the fresh transaction rollout',async()=>{
  const c=client();c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount()");
  const key=c.context.historyCacheKey();assert.match(key,/mea_history_cache_v4:/);

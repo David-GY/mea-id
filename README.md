@@ -106,6 +106,14 @@ The tests cover normal, missing, duplicate, conflicting, orphaned, printing, rea
 
 For a deployment smoke test, verify the sheet snapshot, state-tab conflict detection, activity added from a second browser/device, reconnect/visibility polling, cached offline display, and Admin/Dashboard/Tracker/ordinary-user access. Check both a narrow mobile viewport and a wide desktop viewport, then confirm the service worker cache version is updated and the app shell is served from the new deployment.
 
+## Faster Suscart navigation
+
+Inventory renders the last saved snapshot immediately and refreshes in the background. Navigation shares an in-flight request and reuses successful inventory reads for 30 seconds. Personal History prefetches after account restoration while Home is visible; History reuses reads for 15 seconds and can prefetch the selected server-authorized project. Both views have explicit refresh controls.
+
+History snapshots remain scoped to account, login mode, project, and inventory connection. Successful writes invalidate snapshots; queued writes refresh once after replay. Offline copies display their saved status and never replace server authorization or stock validation. The service worker continues to use network-first static assets and does not cache API requests.
+
+See [the loading plan and verification results](docs/2026-10-20-loading-performance-plan.md). Run the browser regression with `node tests/loading-performance.browser.js` when Playwright is available on `NODE_PATH`; it uses isolated fixtures with a simulated 1.2-second read delay.
+
 ## Existing limitations
 
 - Web NFC is supported only by Chrome on Android; manual ID entry works on other browsers.

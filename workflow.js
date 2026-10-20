@@ -47,6 +47,7 @@ window.meaRestoreFields = function() {
 window.meaSwitchAccount = function() {
   clearTimeout(draftTimer);
   accountEpoch++;
+  resetHistorySession();
   draftOwner = state.lastId?.idNumber || null;
   verifiedMember = null;
   cloudLoaded = false;
@@ -63,6 +64,9 @@ window.meaSwitchAccount = function() {
   document.getElementById('committee-input').value = '';
   document.getElementById('history-pending-list').replaceChildren();
   document.getElementById('history-total-list').replaceChildren();
+  const historyProject = document.getElementById('history-project-select');
+  historyProject.innerHTML = '<option value="">Project/Dept</option>';
+  historyProject.value = '';
   document.getElementById('cart-feedback').replaceChildren();
   window.meaHistoryRecords = [];
   state.historyShowDeleted=false;
@@ -71,6 +75,7 @@ window.meaSwitchAccount = function() {
   updateCartBadge();
   renderAccountControls();
   if (document.getElementById('workflow-dialog').open) closeWorkflow();
+  scheduleHistoryPrefetch();
 };
 function renderAccountControls() {
   const account = state.lastId;
@@ -270,6 +275,7 @@ async function submitOrder() {
             comment: `[${group.action}] - ${l.qty} ${fields.committee || fields.project}, ${state.lastId.name || owner}`}))});
         if (epoch !== accountEpoch) break;
         if (result?.success === false || result?.ok === false) throw new Error(result.error || 'Submission rejected.');
+        if (!result?.queued) refreshAfterMutation();
         group.lines.forEach(l => delete state.cart[MeaCart.key(l.item.id, l.action)]);
         outcomes.push(`${ACTION_LABEL[group.action]}: ${result?.queued ? 'Waiting to sync' : 'Submitted'}`);
       } catch (e) { outcomes.push(`${ACTION_LABEL[group.action]}: Failed — ${e.message}`); }
@@ -325,7 +331,7 @@ function openRecordChange(action,recordId) {
       if(!payload){payload={recordId,expectedRevision:rec.recordRevision || 0,clientId:uuid()};if(edit)payload.changes={qty:MeaCart.quantity(document.getElementById('sheet-quantity').value),project:document.getElementById('record-project').value,committee:document.getElementById('record-committee').value};}
       await inventoryRequest(edit?'recordEdit':action==='restore'?'recordRestore':'recordDelete',payload,true);
       if(epoch!==accountEpoch)return;
-      closeWorkflow();showToast(edit?'Record updated':action==='restore'?'Record restored':'Record deleted · restore it from Deleted records');renderHistory();
+      closeWorkflow();showToast(edit?'Record updated':action==='restore'?'Record restored':'Record deleted · restore it from Deleted records');refreshAfterMutation();
     }catch(e){document.getElementById('record-error').textContent=e.message;button.disabled=false;}
   };
 }
@@ -346,6 +352,7 @@ function renderReturnQueue() {
 async function flushReturns() {
   if (returnBusy || !draftOwner || !navigator.onLine) return;
   returnBusy = true;
+  let changed = false;
   const epoch = accountEpoch, key = returnKey();
   try {
     for (const entry of pendingReturns().filter(r => !r.failed)) {
@@ -354,14 +361,18 @@ async function flushReturns() {
         if ((entry.requiresGoogle || state.lastId?.verified) && !verifiedMember) throw new Error('Reconnect your school account to sync this return.');
         await inventoryRequest('returnItems', entry, !!verifiedMember);
         writeLocal(key, readLocal(key, []).filter(r => r.clientId !== entry.clientId));
-        if (epoch === accountEpoch && state.view === 'history') await renderHistory();
+        invalidateReadData(); changed = true;
       } catch (e) {
         const queue = readLocal(key, []), row = queue.find(r => r.clientId === entry.clientId);
         if (row && e.permanent) { row.failed = true; row.error = e.message; writeLocal(key, queue); }
         break;
       }
     }
-  } finally { returnBusy = false; if (epoch === accountEpoch) renderReturnQueue(); }
+  } finally {
+    returnBusy = false;
+    if (epoch === accountEpoch) renderReturnQueue();
+    if (changed) refreshActiveReadData();
+  }
 }
 async function loadSchoolAuth() {
   if (schoolAuth) return schoolAuth;
@@ -488,6 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('view-history').addEventListener('click', e => { const b = e.target.closest('[data-return-id]'); if (b) openReturnSheet(b.dataset.returnId); const a=e.target.closest('[data-record-action]');if(a)openRecordChange(a.dataset.recordAction,a.dataset.recordId); });
   document.getElementById('history-deleted-toggle').onclick=()=>{state.historyShowDeleted=!state.historyShowDeleted;document.getElementById('history-deleted-toggle').setAttribute('aria-pressed',String(state.historyShowDeleted));renderHistory();};
+  document.getElementById('history-refresh')?.addEventListener('click', () => renderHistory({force: true}));
   document.addEventListener('mea:viewchange', () => { updateCartBadge(); if (state.view === 'history') { renderReturnQueue(); flushReturns(); } });
   window.addEventListener('online', () => { flushReturns(); if (verifiedMember) loadCloudDraft().catch(() => {}); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && verifiedMember) loadCloudDraft().catch(() => {}); });
@@ -521,6 +533,7 @@ async function acceptGoogleAccount(data, user) {
     }
   }
   state.lastId = {...member, googleUid:user.uid, verified:true, found:true};
+  resetHistorySession();
   saveLogin(state.lastId);
   if (draftOwner !== nextOwner) window.meaSwitchAccount();
   verifiedMember = {...account, uid:user.uid, idNumber:nextOwner};
@@ -532,7 +545,9 @@ async function acceptGoogleAccount(data, user) {
   renderIdentity(); updateHomeCardStates(); renderAccountControls();
   document.getElementById('google-account-status').textContent=(member.accountKind==='GUEST' ? 'Guest · ' + member.guestCode : 'Verified member') + ' · school account connected';
   if (state.view==='login') showView('home');
+  scheduleHistoryPrefetch();
 }
+window.meaHistoryReady = () => !(state.lastId?.verified || state.lastId?.accountKind === 'GUEST') || !!verifiedMember;
 window.meaHistoryRequest = function(scope, project) {
   if ((state.lastId?.verified || state.lastId?.accountKind==='GUEST') && !verifiedMember) return Promise.reject(new Error('Reconnect your school account to refresh your history.'));
   return inventoryRequest('history', {idNumber:draftOwner,scope:project==='__ALL__'?'officer':scope,project},!!verifiedMember);

@@ -1399,3 +1399,9 @@ html { touch-action: manipulation; }
   /* Avoid mobile focus zoom, including controls with inline font sizes. */
   input, select, textarea { font-size: 16px !important; }
 }
+.catalog-sync-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+.catalog-sync-row [role="status"] { color: var(--text-dim); font-size: 12px; overflow-wrap: anywhere; }
+.catalog-sync-row .btn-secondary { width: auto; min-height: 44px; flex-shrink: 0; padding: 8px 14px; }
+.inventory-refresh-error { grid-column: 1 / -1; padding: 12px; border: 1px solid currentColor; border-radius: 12px; font-size: 13px; overflow-wrap: anywhere; }
+.history-refresh-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.history-refresh-row .btn-secondary { width: auto; min-height: 44px; padding: 8px 14px; }

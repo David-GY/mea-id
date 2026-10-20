@@ -2,13 +2,16 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(process.env.FIXTURE_ROOT || path.join(__dirname, '..'));
 const fixture = `<script>
 localStorage.setItem('mea_inventory_url','https://script.google.com/fixture/exec');
 localStorage.setItem('mea_cfg2',JSON.stringify({url:'https://script.google.com/tracker-fixture/exec'}));
 let records = [{recordId:'borrow-1',item:'Whiteboard Markers',qty:4,borrowedQty:4,returnedQty:1,outstandingQty:3,idNum:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',resolved:false,returnable:true,time:'2026-10-15T12:00:00Z'}];
+window.fixtureLoading={requests:[],delayMs:Number(sessionStorage.getItem('fixture-read-delay') || 0)};
 window.fetch = async (url, options={}) => {
  const action = new URL(url,location.href).searchParams.get('action');
+ window.fixtureLoading.requests.push({action,startedAt:performance.now()});
+ if(['inventory','history'].includes(action) && window.fixtureLoading.delayMs) await new Promise(resolve=>setTimeout(resolve,window.fixtureLoading.delayMs));
  const payload = options.body ? JSON.parse(options.body) : {};
  let data;
  if(action==='login') data={ok:true,found:true,idNumber:new URL(url).searchParams.get('id'),name:'Test Member',level:'NONE'};
