@@ -55,3 +55,10 @@ test('late subscribers cannot resurrect the initial session after local sign-out
  const f=fixture(),auth=await f.context.MeaSchoolAuth.load(f.config);await auth.signOut();let observed='pending';
  auth.onAuthStateChanged(user=>observed=user);f.flush();assert.equal(observed,null);assert.equal(auth.currentUser,null);
 });
+
+test('retrying session initialization reuses one client and preserves retryable error details',async()=>{
+ const f=fixture(),create=f.context.supabase.createClient;let clients=0,reads=0;
+ f.context.supabase.createClient=(...args)=>{clients++;const result=create(...args),read=result.auth.getSession;result.auth.getSession=async()=>++reads===1?{error:{message:'Timed out',code:'request_timeout',status:504}}:read();return result;};
+ await assert.rejects(f.context.MeaSchoolAuth.load(f.config),e=>e.code==='request_timeout'&&e.status===504);
+ const auth=await f.context.MeaSchoolAuth.load(f.config);assert.equal(auth.currentUser.uid,'uid-one');assert.equal(clients,1);
+});

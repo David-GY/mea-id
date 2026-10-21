@@ -26,7 +26,7 @@ These are code-grounded architectural comparisons, not comparative vendor benchm
 
 ## Verification
 
-`node --test tests/*.test.js`: 135 passing tests. Includes saved-role gating, coalescing, temporary retry, bounded retries, expired session error codes, stale responses after logout/account switches, protected checkout waiting and timeout without submission, cart conflict preservation, stale SDK initial-session notifications after logout, and SDK cache-first delivery.
+`node --test tests/*.test.js`: 136 passing tests. Includes saved-role gating, coalescing, temporary retry, bounded retries, expired session error codes, stale responses after logout/account switches, protected checkout waiting and timeout without submission, cart conflict preservation, stale SDK initial-session notifications after logout, one SDK client across network recovery, and SDK cache-first delivery.
 
 Isolated browser fixtures checked at CSS widths 325 and 1280. With the membership response held pending, inventory browsing and adding an item remained possible with no open sign-in modal. Token refresh retained one membership request. A failed check displayed Retry; retry succeeded without OAuth. Session expiry preserved the cart and showed Reconnect inline. Device/cloud differences offered Choose cart without opening a dialog until clicked. Screenshots and test output are retained in the task workspace `.local-deploy/quiet-session-*` and `.local-deploy/quiet-auth-all-tests.txt`.
 
@@ -42,3 +42,4 @@ No production test transaction, return, email, or forced user sign-out was perfo
 ## Release and rollback
 
 Frontend app-shell cache is `mea-app-v40`. No Apps Script deployment or Supabase configuration change is required. Rollback restores the prior frontend commit and uses a fresh service worker cache version to avoid mixed cached assets.
+

@@ -1,6 +1,7 @@
 /* Supabase Google OAuth adapter. Only a publishable/anon key belongs in app-config.js. */
 (function(root) {
   let loading;
+  let client;
   function callbackParams() {
     const query=new URLSearchParams(root.location.search || '');
     const hash=new URLSearchParams((root.location.hash || '').replace(/^#/,''));
@@ -29,7 +30,7 @@
         const s=document.createElement('script'); s.src='vendor/supabase-2.118.0.js';
         s.onload=resolve; s.onerror=()=>{s.remove();reject(new Error('Could not load school sign-in. Check your connection.'));}; document.head.append(s);
       });
-      const client=root.supabase.createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+      client ||= root.supabase.createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
       let user=null;
       function adapt(session) {
         if (!session?.user) return null;
