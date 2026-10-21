@@ -61,6 +61,19 @@ test('special item metadata survives loading and item details explain separate r
  c.context.openItemSheet('s');assert.match(c.element('workflow-body').innerHTML,/Add special request/);assert.match(c.element('workflow-body').innerHTML,/Reason for borrowing/);
 });
 
+test('masterfile access guidance applies only to special MEA ID requests',()=>{
+ const c=client();connect(c);
+ c.run("state.inventory=[{id:'ids',title:'MEA IDs',requiresManualVerification:true},{id:'radio',title:'Radio',requiresManualVerification:true},{id:'ordinary',title:'MEA IDs'}]");
+ c.context.openItemSheet('ids');
+ assert.match(c.element('workflow-body').innerHTML,/project\/initiative masterfile/);
+ assert.match(c.element('workflow-body').innerHTML,/grant the SUS team access/);
+ assert.match(c.element('workflow-body').innerHTML,/aria-describedby="special-masterfile-help"/);
+ for(const id of ['radio','ordinary']) {
+  c.context.openItemSheet(id);
+  assert.doesNotMatch(c.element('workflow-body').innerHTML,/masterfile/);
+ }
+});
+
 test('offline order replay processes only the active owner and moves permanent failures aside immediately',async()=>{
  const c=client();connect(c);
  c.data.set('mea_pending_orders',JSON.stringify([{clientId:'other-owner',payload:{idNumber:'100002'}},{clientId:'mine-fails',payload:{idNumber:'100001'}},{clientId:'mine-special',payload:{idNumber:'100001',requestOnly:true}}]));

@@ -164,12 +164,13 @@ function openItemSheet(itemId, selectedAction) {
   const lines = Object.values(state.cart).filter(l => l.item.id === itemId);
   let action = selectedAction || (lines.length === 1 ? lines[0].action : '');
   const line = action ? state.cart[MeaCart.key(itemId, action)] : null;
+  const needsMasterfile = MeaCart.requiresManualVerification(item) && /^mea\s+ids?$/i.test(item.title.trim());
   openWorkflow(`<h2 id="workflow-title">${esc(item.title)}</h2>
     <p class="sheet-availability">${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable, MeaCart.requiresManualVerification(item)).text)}</p>
     <dl class="sheet-facts">${item.itemCode ? `<div><dt>Item code</dt><dd>${esc(item.itemCode)}</dd></div>` : ''}<div><dt>Location</dt><dd>${esc(item.location || 'Location unassigned')}</dd></div></dl>
     ${MeaCart.requiresManualVerification(item) ? '<p class="manual-verification">Special Inventory · Manual verification required</p>' : ''}
     ${item.notes ? `<div class="sheet-notes">${esc(item.notes)}</div>` : ''}
-    ${MeaCart.requiresManualVerification(item) ? '<label for="special-reason">Reason for borrowing</label><textarea id="special-reason" maxlength="500" rows="3" placeholder="What will you use this item for?"></textarea>' : ''}
+    ${MeaCart.requiresManualVerification(item) ? `<label for="special-reason">Reason for borrowing</label>${needsMasterfile ? '<p id="special-masterfile-help" class="sheet-notes">Include a link to your project/initiative masterfile and grant the SUS team access to open it.</p>' : ''}<textarea id="special-reason" maxlength="500" rows="3" ${needsMasterfile ? 'aria-describedby="special-masterfile-help"' : ''} placeholder="${needsMasterfile ? 'What will you use the MEA IDs for? Paste your masterfile link here.' : 'What will you use this item for?'}"></textarea>` : ''}
     <fieldset><legend>What are you doing?</legend><div class="workflow-actions">${MeaCart.actions.map(a => `<label><input type="radio" name="item-action" value="${a}" ${a === action ? 'checked' : ''}> ${ACTION_LABEL[a]}</label>`).join('')}</div></fieldset>
     <div class="sheet-quantity-row"><label for="sheet-quantity">Quantity</label>${quantityControls(line?.qty || 1)}</div>
     <p id="sheet-warning" role="status"></p><p id="sheet-error" role="alert"></p>
