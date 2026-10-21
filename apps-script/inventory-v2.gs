@@ -301,7 +301,7 @@ function invReplay_(p, type) {
 function invRequestFingerprint_(p, type) {
   if(type === 'SPECIAL_REVIEW')return JSON.stringify([p.recordId,p.expectedRevision,p.status,invText_(p.note).slice(0,500)]);
   if (type.indexOf('RECORD_') === 0) return JSON.stringify([p.recordId,p.expectedRevision,p.changes || null]);
-  return JSON.stringify(type === 'RETURN' ? [p.borrowId, Number(p.qty)] : [p.caseType, invText_(p.project), invText_(p.committee), (p.items || []).map(function(l) { return [l.id, Number(l.qty), invText_(l.title), invText_(l.location)]; })]);
+  return JSON.stringify(type === 'RETURN' ? [p.borrowId, Number(p.qty)] : [p.caseType, invText_(p.project), invText_(p.committee), (p.items || []).map(function(l) { var parts=[l.id, Number(l.qty), invText_(l.title), invText_(l.location)]; if(type==='SPECIAL_REQUEST' && invText_(l.reason))parts.push(invText_(l.reason).slice(0,500)); return parts; })]);
 }
 function invAppendEvent_(event) {
   var json = JSON.stringify(event);
@@ -353,11 +353,11 @@ function invSubmit_(p, special) {
     if (item.requiresManualVerification && !special) throw invError_(item.title + ' requires manual verification. Contact SUS; submit these separately as a special request.', 'MANUAL_VERIFICATION_REQUIRED');
     if (special && !item.requiresManualVerification) throw invError_('Only Special Inventory items belong in a special request. Refresh your cart.');
     if (seen[item.id]) throw invError_('Duplicate item entry.'); seen[item.id] = true;
-    return {item: item, qty: qty};
+    return {item: item, qty: qty, reason: special ? invText_(line.reason).slice(0,500) : ''};
   }).map(function(entry) {
     var item = entry.item, qty = entry.qty;
     var recordId = 'REC-' + Utilities.getUuid();
-    return {recordId: recordId, itemId: item.id, item: item.title, location: item.location, qty: qty};
+    return {recordId: recordId, itemId: item.id, item: item.title, location: item.location, qty: qty, reason: entry.reason};
   });
   var references=invReferences_(special?'SR':p.caseType==='BORROWING'?'BR':'CO',lines.map(function(line){return line.recordId;}));
   lines.forEach(function(line,i){line.reference=references[i];});
@@ -373,7 +373,7 @@ function invHistory_() {
   invEvents_().forEach(function(e) {
     if (e.type === 'RETURN') { returns[e.borrowId] = (returns[e.borrowId] || 0) + e.qty; return; }
     if (e.type === 'SPECIAL_REQUEST') e.lines.forEach(function(line) {
-      records.push({requestOnly:true,requestStatus:'PENDING',requestedAction:e.caseType,recordId:line.recordId,reference:line.reference,itemId:line.itemId,item:line.item,qty:line.qty,caseType:'SPECIAL_REQUEST',idNum:e.idNumber,ownerKey:e.ownerKey,verified:!!e.verified,accountKind:e.accountKind,guestCode:e.guestCode,name:e.name || '',project:e.project,committee:e.committee,time:e.time,returnable:false});
+      records.push({requestOnly:true,reason:line.reason || '',requestStatus:'PENDING',requestedAction:e.caseType,recordId:line.recordId,reference:line.reference,itemId:line.itemId,item:line.item,qty:line.qty,caseType:'SPECIAL_REQUEST',idNum:e.idNumber,ownerKey:e.ownerKey,verified:!!e.verified,accountKind:e.accountKind,guestCode:e.guestCode,name:e.name || '',project:e.project,committee:e.committee,time:e.time,returnable:false});
     });
     if (e.type === 'ORDER') e.lines.forEach(function(line) {
       records.push({ownerKey: e.ownerKey || 'member:' + e.idNumber, verified: !!e.verified, accountKind: e.accountKind || 'MEMBER', guestCode: e.guestCode || '', reference: line.reference || invLookupReference_(e.caseType === 'BORROWING' ? 'BR' : 'CO', line.recordId), recordId: line.recordId, itemId: line.itemId, item: line.item, qty: line.qty, borrowedQty: e.caseType === 'BORROWING' ? line.qty : 0,
@@ -511,7 +511,7 @@ function invValidateDraft_(draft) {
     var l = draft.cart[k];
     if (!l || !l.item || !itemMap[l.item.id] || ['BORROWING', 'CONSUMING'].indexOf(l.action) < 0 || k !== JSON.stringify([l.item.id, l.action])) throw invError_('Refresh your cart before syncing.');
     var item = itemMap[l.item.id];
-    cart[k] = {item: {id: item.id, stableId: true, inventorySection:item.inventorySection, requiresManualVerification:item.requiresManualVerification, title: item.title, location: item.location, category: item.category, notes: item.notes, qtyDisplay: item.qty, qtyAvailable: /^\d+$/.test(item.qty) ? Number(item.qty) : null}, qty: invQty_(l.qty), action: l.action};
+    cart[k] = {item: {id: item.id, stableId: true, inventorySection:item.inventorySection, requiresManualVerification:item.requiresManualVerification, title: item.title, location: item.location, category: item.category, notes: item.notes, qtyDisplay: item.qty, qtyAvailable: /^\d+$/.test(item.qty) ? Number(item.qty) : null}, qty: invQty_(l.qty), action: l.action, reason: invText_(l.reason).slice(0,500)};
     if (l.clientId) cart[k].clientId = invText_(l.clientId);
   });
   return {cart: cart, project: invText_(draft.project).slice(0, 200), committee: invText_(draft.committee).slice(0, 200)};

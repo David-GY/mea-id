@@ -18,7 +18,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="inventory.css?v=35">
 <link rel="stylesheet" href="dashboard.css?v=1">
-<link rel="stylesheet" href="appearance.css?v=35">
+<link rel="stylesheet" href="appearance.css?v=38">
 <link rel="stylesheet" href="signin-loading.css">
 <script src="appearance.js"></script>
 </head>
@@ -194,14 +194,29 @@
       </div>
 
       <div class="history-head">
-        <div class="history-title">History</div><button type="button" class="btn-secondary" id="history-deleted-toggle" aria-pressed="false">Deleted records</button>
+        <div class="history-title">History</div><button type="button" class="btn-secondary" id="history-deleted-toggle" aria-pressed="false" aria-label="Deleted records" title="Deleted records"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg></button>
+        <button type="button" class="btn-secondary" id="history-refresh" aria-label="Refresh history" title="Refresh history"><svg aria-hidden="true"
+  xmlns="http://www.w3.org/2000/svg"
+  width="20"
+  height="20"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+  <path d="M21 3v5h-5" />
+</svg>
+</button>
         <select id="history-project-select" class="history-project-select" style="display:none;">
           <option value="">Project/Dept</option>
         </select>
       </div>
 
-      <div class="history-refresh-row"><button type="button" class="btn-secondary" id="history-refresh">Refresh history</button></div>
-      <div class="history-section-label">Special requests · manual verification</div>
+
+      <div class="history-section-label">Special requests</div>
       <div class="history-list" id="history-special-list"></div>
       <div class="history-section-label">Pending</div>
       <div class="history-list" id="history-pending-list">
@@ -420,13 +435,13 @@
 <script src="dashboard-rules.js?v=1"></script>
 <script src="dashboard-model.js?v=1"></script>
 <script src="app-config.js?v=15"></script>
-<script src="cart-model.js?v=37"></script>
+<script src="cart-model.js?v=38"></script>
 <link rel="stylesheet" href="empty-catalog-game.css">
 <script src="empty-catalog-game.js"></script>
-<script src="inventory.js?v=37"></script>
+<script src="inventory.js?v=38"></script>
 <script src="school-auth.js?v=24"></script>
 <script src="signin-loading.js"></script>
-<script src="workflow.js?v=37"></script>
+<script src="workflow.js?v=38"></script>
 <script src="dashboard.js?v=35"></script>
 <dialog id="workflow-dialog" aria-labelledby="workflow-title"><div class="workflow-sheet"><button type="button" class="sheet-close" aria-label="Close dialog">×</button><div id="workflow-body"></div></div></dialog>
 <button type="button" id="cart-shortcut" class="btn-primary" hidden>View cart</button>

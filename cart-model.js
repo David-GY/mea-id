@@ -59,7 +59,7 @@
     return /^\d+$/.test(text) ? {text: text + ' recorded', value: Number(text)} : {text: text && text !== '*' ? text + ' · exact quantity unknown' : 'Quantity unknown', value: null};
   }
   function sameDraft(a, b) {
-    const shape = d => ({project: d?.project || '', committee: d?.committee || '', lines: Object.values(d?.cart || {}).map(l => [String(l.item?.id), l.action, Number(l.qty)]).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))});
+    const shape = d => ({project: d?.project || '', committee: d?.committee || '', lines: Object.values(d?.cart || {}).map(l => [String(l.item?.id), l.action, Number(l.qty), String(l.reason || '')]).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))});
     return JSON.stringify(shape(a)) === JSON.stringify(shape(b));
   }
   return {sameDraft, actions, quantity, key, normalize, groups, checkoutResults, reconcile, outstanding, validateReturn, availability, requiresManualVerification};

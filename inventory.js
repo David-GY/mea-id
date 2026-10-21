@@ -729,9 +729,17 @@
     select.value = labels.find(label => historyProjectKey(label) === historyProjectKey(chosen)) || '';
   }
 
+  function specialVerificationLabel(itemId, status) {
+    // Special Inventory column E is exposed as category by the catalog API.
+    const item = state.inventory.find(item => item.id === itemId && item.requiresManualVerification);
+    const department = String(item?.category || '').trim();
+    return status === 'VERIFIED' ? (department ? `Verified by ${department}` : 'Verified')
+      : status === 'DECLINED' ? (department ? `Declined by ${department}` : 'Declined')
+      : (department ? `Awaiting ${department} verification` : 'Awaiting verification');
+  }
   function historyRowHtml(rec) {
     const when = rec.time ? new Date(rec.time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-    const caseLabel = rec.requestOnly ? ({PENDING:'Awaiting SUS verification',VERIFIED:'Verified by SUS',DECLINED:'Declined by SUS'}[rec.requestStatus] || 'Awaiting SUS verification') : rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
+    const caseLabel = rec.requestOnly ? specialVerificationLabel(rec.itemId, rec.requestStatus) : rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
     const canReturn = !rec.requestOnly && !rec.deleted && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false && (rec.canReturn === true || rec.canReturn === undefined && String(rec.idNum) === String(state.lastId?.idNumber));
     return `
       <div class="history-item">
@@ -740,13 +748,14 @@
           <div class="history-item-meta">${escapeHtml(rec.reference || '')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''} · ${escapeHtml(rec.project || '—')}${rec.committee ? ' · ' + escapeHtml(rec.committee) : ''}${state.historyTab === 'project' && rec.name ? ' · ' + escapeHtml(rec.name) : ''}</div>
         </div>
         <div class="history-item-side">
-          <div class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${caseLabel}</div>
+          <div ${rec.requestOnly ? `data-verification-item="${escapeHtml(rec.itemId || '')}" data-verification-status="${escapeHtml(rec.requestStatus || 'PENDING')}"` : ''} class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${escapeHtml(caseLabel)}</div>
           <div class="history-item-date">${when}</div>
           ${rec.caseType === 'BORROWING' ? `<div>${MeaCart.outstanding(rec)} remaining</div>` : ''}
-          ${rec.canEdit && !rec.requestOnly && !rec.deleted ? `<button type="button" class="btn-secondary" data-record-action="edit" data-record-id="${escapeHtml(rec.recordId)}">Edit record</button>` : ''}
+          <div class="history-record-actions">${rec.canEdit && !rec.requestOnly && !rec.deleted ? `<button type="button" class="btn-secondary" data-record-action="edit" data-record-id="${escapeHtml(rec.recordId)}">Edit</button>` : ''}
           ${rec.canDelete && !rec.requestOnly ? `<button type="button" class="btn-secondary" data-record-action="${rec.deleted?'restore':'delete'}" data-record-id="${escapeHtml(rec.recordId)}">${rec.deleted?'Restore':'Delete'}</button>` : ''}
-          ${rec.requestOnly ? `<div>${rec.requestedAction === 'CONSUMING' ? 'Consume' : 'Borrow'} requested · No email</div>${rec.reviewNote ? `<div>${escapeHtml(rec.reviewNote)}</div>` : ''}${rec.canReview ? `<button type="button" class="btn-secondary" data-special-review="${escapeHtml(rec.recordId)}">Review request</button>` : ''}` : ''}
-          ${canReturn ? `<button type="button" class="btn-secondary history-return" data-return-id="${escapeHtml(rec.recordId)}">Return items</button>` : ''}
+          ${canReturn ? `<button type="button" class="btn-secondary history-return" data-return-id="${escapeHtml(rec.recordId)}">Return</button>` : ''}
+          </div>${rec.requestOnly ? `${rec.reason ? `<div class="history-request-reason">${escapeHtml(rec.reason)}</div>` : ''}<div class="history-request-notes">${rec.requestStatus === 'VERIFIED' ? escapeHtml(rec.reviewNote || 'No notes added.') : rec.requestStatus === 'DECLINED' ? escapeHtml(rec.reviewNote || 'No notes added.') : 'Borrow notes will appear here once accepted.'}</div>${rec.canReview ? `<button type="button" class="btn-secondary" data-special-review="${escapeHtml(rec.recordId)}">Review request</button>` : ''}` : ''}
+
         </div>
       </div>`;
   }
@@ -1062,6 +1071,7 @@
   }
   function paintInventory(items) {
     state.inventory = items;
+    document.querySelectorAll('[data-verification-item]').forEach(label => { label.textContent = specialVerificationLabel(label.dataset.verificationItem, label.dataset.verificationStatus); });
     renderCategoryChips(); renderCatalog();
   }
   function loadInventory(options = {}) {

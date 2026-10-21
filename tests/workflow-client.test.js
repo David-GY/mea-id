@@ -58,7 +58,7 @@ test('special item metadata survives loading and item details explain separate r
  c.context.fetch=async()=>({text:async()=>JSON.stringify({ok:true,items:[{id:'s',title:'Radio',qty:'6',inventorySection:'Special Inventory',requiresManualVerification:true}]})});
  await c.context.loadInventory();assert.equal(c.run('state.inventory[0].requiresManualVerification'),true);
  assert.match(c.element('catalog-container').innerHTML,/Manual verification required/);
- c.context.openItemSheet('s');assert.match(c.element('workflow-body').innerHTML,/Add special request/);assert.match(c.element('workflow-body').innerHTML,/will not appear in your receipt email/);
+ c.context.openItemSheet('s');assert.match(c.element('workflow-body').innerHTML,/Add special request/);assert.match(c.element('workflow-body').innerHTML,/Reason for borrowing/);
 });
 
 test('offline order replay processes only the active owner and moves permanent failures aside immediately',async()=>{
@@ -96,7 +96,7 @@ test('restoring an older cloud or device cart retains fresh special inventory cl
 
 test('special requests stay outside normal transaction history and cannot expose return or edit controls',()=>{
  const c=client();connect(c);c.context.paintHistory({records:[{idNum:'100001',recordId:'s',item:'Radio',qty:2,caseType:'SPECIAL_REQUEST',requestOnly:true,requestStatus:'PENDING',requestedAction:'BORROWING',canReview:true}],projects:[],admin:true});
- assert.match(c.element('history-special-list').innerHTML,/Awaiting SUS verification/);assert.match(c.element('history-special-list').innerHTML,/Review request/);
+ assert.match(c.element('history-special-list').innerHTML,/Awaiting verification/);assert.match(c.element('history-special-list').innerHTML,/Review request/);
  assert.doesNotMatch(c.element('history-pending-list').innerHTML,/Radio/);assert.doesNotMatch(c.element('history-total-list').innerHTML,/Radio/);
  assert.doesNotMatch(c.element('history-special-list').innerHTML,/Return items|Edit record/);
  c.run("state.lastId={idNumber:'100002'};meaSwitchAccount()");assert.equal(c.element('history-special-list').innerHTML,'');
@@ -312,7 +312,7 @@ test('guest cannot silently fall back to ID-only submissions and history',async(
 test('project history works for ID-only members and shows owned return actions',async()=>{
  const c=client();c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount();state.historyTab='project'");c.element('history-project-select').value='SUS';
  c.context.fetch=async()=>({json:async()=>({ok:true,projects:['SUS','Old Dept'],records:[{recordId:'loan',item:'A',idNum:'100001',project:' sus  ',caseType:'BORROWING',qty:3,borrowedQty:3,returnedQty:1,returnable:true,canReturn:true,resolved:false}]})});
- await c.context.renderHistory();assert.match(c.element('history-pending-list').innerHTML,/Return items/);assert.match(c.element('history-project-select').innerHTML,/Old Dept/);
+ await c.context.renderHistory();assert.match(c.element('history-pending-list').innerHTML,/>Return<\/button>/);assert.match(c.element('history-project-select').innerHTML,/Old Dept/);
  c.context.openReturnSheet('loan');assert.equal(c.element('workflow-dialog').open,true);
 });
 test('authorization errors clear stale records and do not masquerade as offline history',async()=>{

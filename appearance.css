@@ -182,7 +182,7 @@ select option, select option:checked, select option:hover { background: var(--ca
 #history-deleted-toggle { background: var(--surface); color: var(--ink); border-color: var(--border-mid); width: auto; min-height: 44px; padding: 8px 12px; font-size: 12px; margin: 0; }
 #history-deleted-toggle[aria-pressed="true"] { background: var(--surface-2, var(--surface)); outline: 2px solid var(--accent, var(--ink)); }
 .history-item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 42%; }
-.history-item-side .btn-secondary { width: auto; min-height: 44px; padding: 8px 12px; margin: 0; font-size: 12px; }
+.history-item-side .btn-secondary { width: auto; min-height: 34px; padding: 5px 10px; margin: 0; font-size: 12px; }
 #workflow-body input:not([type="radio"]):not([type="checkbox"]):not(#sheet-quantity) { max-width: 100%; min-height: 44px; }
 
 /* Cream brand marks on the continuous Garden/Coffee mobile canvas. */
@@ -203,3 +203,40 @@ select option, select option:checked, select option:hover { background: var(--ca
 .account-options button:hover { background: var(--surface-hi); }
 
 .bottom-nav .account-menu summary, .bottom-nav-main .account-menu summary { color: var(--ink); }
+/* History keeps the item above a compact, wrapping action row on phones. */
+@media (max-width: 767px) {
+  #view-history .top-brand { padding-top: calc(16px + env(safe-area-inset-top)); }
+  #view-history .top-brand-mea { height: 34px; }
+  #view-history .top-brand-sus { height: 32px; }
+  #view-history .identity-block { padding-top: 16px; }
+  #view-history .identity-name { font-size: 22px; }
+  #view-history .identity-id { font-size: 12px; }
+  #view-history .history-head { gap: 8px; padding-top: 12px; }
+  #view-history .history-project-select { min-height: 44px; font-size: 16px; max-width: 100%; }
+  #view-history .history-item { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  #view-history .history-item-title { white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+  #view-history .history-item-meta { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+  #view-history .history-item-side { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; max-width: none; text-align: left; gap: 6px 8px; font-size: 12px; }
+  #view-history .history-item-date { margin: 0; }
+  #view-history .history-item-side .btn-secondary { flex: 1 0 auto; min-height: 34px; padding: 5px 8px; }
+  #view-history .history-item-side .history-return { border-color: var(--ink); }
+  #view-history .history-section-label { padding-top: 14px; }
+}
+
+
+#history-deleted-toggle { display: inline-flex; align-items: center; justify-content: center; width: 44px; padding: 8px; }
+
+.history-request-notes { flex-basis: 100%; font-size: 12px; line-height: 1.45; color: var(--text-dim); overflow-wrap: anywhere; }
+.history-head { justify-content: flex-start; }
+.history-title { margin-right: auto; }
+#history-refresh { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 8px; margin: 0; background: var(--surface); color: var(--ink); border-color: var(--border-mid); }
+#history-project-select { flex-basis: 100%; margin-left: auto; }
+.history-record-actions { display: flex; gap: 8px; width: 100%; }
+.history-record-actions:empty { display: none; }
+#view-history .history-record-actions .btn-secondary { flex: 1 1 0; width: 0; min-width: 0; min-height: 34px; padding: 5px 6px; margin: 0; white-space: nowrap; }
+#view-history .history-item-side:has(.history-request-notes) { row-gap: 3px; }
+.history-request-notes { margin: 0; }
+#workflow-body:has(#special-reason) .manual-verification { margin: 6px 0; }
+#workflow-body:has(#special-reason) .sheet-notes { margin-bottom: 12px; }
+#workflow-body #special-reason { display: block; margin: 6px 0 4px; min-height: 80px; }
+#workflow-body:has(#special-reason) fieldset { margin: 8px 0 12px; padding: 0; }

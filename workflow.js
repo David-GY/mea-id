@@ -167,12 +167,15 @@ function openItemSheet(itemId, selectedAction) {
   openWorkflow(`<h2 id="workflow-title">${esc(item.title)}</h2>
     <p class="sheet-availability">${esc(MeaCart.availability(item.qtyDisplay ?? item.qtyAvailable, MeaCart.requiresManualVerification(item)).text)}</p>
     <dl class="sheet-facts">${item.itemCode ? `<div><dt>Item code</dt><dd>${esc(item.itemCode)}</dd></div>` : ''}<div><dt>Location</dt><dd>${esc(item.location || 'Location unassigned')}</dd></div></dl>
+    ${MeaCart.requiresManualVerification(item) ? '<p class="manual-verification">Special Inventory · Manual verification required</p>' : ''}
     ${item.notes ? `<div class="sheet-notes">${esc(item.notes)}</div>` : ''}
-    ${MeaCart.requiresManualVerification(item) ? '<p class="manual-verification">Special Inventory · Manual verification required</p><p>This submits a separate request for SUS to verify. It is not a confirmed borrowing or consumption and will not appear in your receipt email. Track it under Special requests in History.</p>' : ''}
+    ${MeaCart.requiresManualVerification(item) ? '<label for="special-reason">Reason for borrowing</label><textarea id="special-reason" maxlength="500" rows="3" placeholder="What will you use this item for?"></textarea>' : ''}
     <fieldset><legend>What are you doing?</legend><div class="workflow-actions">${MeaCart.actions.map(a => `<label><input type="radio" name="item-action" value="${a}" ${a === action ? 'checked' : ''}> ${ACTION_LABEL[a]}</label>`).join('')}</div></fieldset>
     <div class="sheet-quantity-row"><label for="sheet-quantity">Quantity</label>${quantityControls(line?.qty || 1)}</div>
     <p id="sheet-warning" role="status"></p><p id="sheet-error" role="alert"></p>
     <button type="button" class="btn-primary" id="sheet-save">${line ? 'Update cart' : MeaCart.requiresManualVerification(item) ? 'Add special request' : 'Add to cart'}</button>`);
+  const reasonInput = document.getElementById('special-reason');
+  if (reasonInput) reasonInput.value = line?.reason || '';
   bindQuantity();
   const input = document.getElementById('sheet-quantity');
   const warning = () => { document.getElementById('sheet-warning').textContent = item.qtyAvailable != null && Number(input.value) > item.qtyAvailable ? 'This exceeds the last reported quantity. Confirm availability with SUS.' : ''; };
@@ -181,6 +184,7 @@ function openItemSheet(itemId, selectedAction) {
     action = radio.value;
     const existing = state.cart[MeaCart.key(itemId, action)];
     input.value = existing?.qty || 1;
+    if (reasonInput) reasonInput.value = existing?.reason || '';
     document.getElementById('sheet-save').textContent = existing ? 'Update cart' : MeaCart.requiresManualVerification(item) ? 'Add special request' : 'Add to cart';
     warning();
   });
@@ -189,7 +193,7 @@ function openItemSheet(itemId, selectedAction) {
       const qty = MeaCart.quantity(input.value);
       const key = MeaCart.key(itemId, action);
       invalidateAction(action);
-      state.cart[key] = {item, qty, action};
+      state.cart[key] = {item, qty, action, ...(reasonInput ? {reason: reasonInput.value.trim()} : {})};
       saveCart(); closeWorkflow(); updateCartBadge(); renderCatalog();
       showToast(`${item.title} × ${qty} · ${ACTION_LABEL[action]}`);
     } catch (e) { document.getElementById('sheet-error').textContent = e.message; }
@@ -284,7 +288,7 @@ async function submitOrder() {
       const clientId=group.lines[0].clientId || uuid();
       group.lines.forEach(line=>line.clientId=clientId);
       return {clientId,caseType:group.action,requestOnly:group.requestOnly,project:fields.project,committee:fields.committee,
-        items:group.lines.map(line=>({id:line.item.id,title:line.item.title,location:line.item.location || '',qty:line.qty}))};
+        items:group.lines.map(line=>({id:line.item.id,title:line.item.title,location:line.item.location || '',qty:line.qty,reason:line.reason || ''}))};
     });
     saveCart();
     const response=await submitCheckout({clientId:uuid(),idNumber:owner,groups:requests});
@@ -327,7 +331,7 @@ function openSpecialReview(recordId) {
   const rec = window.meaHistoryRecords?.find(r => r.recordId === recordId && r.requestOnly);
   if (!rec?.canReview || !verifiedMember || submitBusy || returnBusy) return;
   const epoch = accountEpoch, clientId = uuid();
-  openWorkflow(`<h2 id="workflow-title">Review special request</h2><p>${esc(rec.reference || '')} · ${esc(rec.item)} × ${rec.qty}</p><p>Verify availability, condition and permission with the requester. This records manual verification only and sends no receipt email.</p><label for="special-status">Decision</label><select id="special-status"><option value="VERIFIED">Verified with SUS</option><option value="DECLINED">Declined by SUS</option></select><label for="special-note">Verification notes</label><textarea id="special-note" maxlength="500"></textarea><p id="special-error" role="alert"></p><button type="button" class="btn-primary" id="special-confirm">Save verification</button>`);
+  openWorkflow(`<h2 id="workflow-title">Review special request</h2><p>${esc(rec.reference || '')} · ${esc(rec.item)} × ${rec.qty}</p>${rec.reason ? `<p><strong>Reason for borrowing</strong><br>${esc(rec.reason)}</p>` : ''}<label for="special-status">Decision</label><select id="special-status"><option value="VERIFIED">Verified</option><option value="DECLINED">Declined</option></select><label for="special-note">Verification notes</label><textarea id="special-note" maxlength="500"></textarea><p id="special-error" role="alert"></p><button type="button" class="btn-primary" id="special-confirm">Save verification</button>`);
   let attempt;
   document.getElementById('special-confirm').onclick = async () => {
     if (epoch !== accountEpoch || submitBusy) return;

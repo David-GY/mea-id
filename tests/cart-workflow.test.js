@@ -391,3 +391,17 @@ test('numeric sheet member IDs reconnect without permitting actual reassignment'
  assert.equal(f.request('googleMember',{idToken:'one'}).code,'ROSTER_MISMATCH');
 });
 
+
+
+test('special borrowing reasons persist in journal, history and cloud drafts with immutable retries',()=>{
+ const f=fixture();
+ f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-reason']);
+ const payload=f.order({items:[{id:'ITEM-reason',qty:1,reason:'For event coordination.'}]});
+ assert.equal(f.request('submitSpecialRequest',payload).ok,true);
+ assert.equal(f.request('history',{idNumber:'100001'}).records[0].reason,'For event coordination.');
+ assert.equal(f.request('submitSpecialRequest',{...payload,items:[{id:'ITEM-reason',qty:1,reason:'Changed reason'}]}).code,'CHANGED_REQUEST');
+ const key=cart.key('ITEM-reason','BORROWING');
+ const draft=f.context.invValidateDraft_({cart:{[key]:{item:{id:'ITEM-reason'},qty:1,action:'BORROWING',reason:'For event coordination.'}}});
+ assert.equal(draft.cart[key].reason,'For event coordination.');
+ assert.equal(f.mail(),0);
+});
