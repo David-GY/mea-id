@@ -5,25 +5,53 @@ const vm = require('node:vm');
 const {randomUUID} = require('node:crypto');
 const model = require('../cart-model');
 function client() {
- const elements = new Map(), data = new Map();
+ const elements = new Map(), data = new Map(), intervals=[];
  function element(id) {
   if (!elements.has(id)) elements.set(id, {value:'',textContent:'',innerHTML:'',hidden:false,open:false,style:{},dataset:{},options:[{value:'SUS'},{value:'Personal'}],
    classList:{add(){},remove(){},toggle(){}},replaceChildren(){this.innerHTML='';this.textContent='';},querySelectorAll(){return [];},querySelector(){return element('focus');},focus(){},addEventListener(){},setAttribute(){},before(){},append(){},showModal(){this.open=true;},close(){this.open=false;}});
   return elements.get(id);
  }
  const document={getElementById:element,activeElement:null,body:element('body'),querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},dispatchEvent(){},createElement:()=>element(randomUUID())};
- const context=vm.createContext({document,console,MeaCart:model,crypto:{randomUUID},navigator:{onLine:true,userAgent:'test'},setTimeout:()=>1,clearTimeout(){},setInterval(){},URLSearchParams,CustomEvent:class{},Event:class{},
+ const context=vm.createContext({document,console,MeaCart:model,crypto:{randomUUID},navigator:{onLine:true,userAgent:'test'},setTimeout:()=>1,clearTimeout(){},setInterval:fn=>intervals.push(fn),URLSearchParams,CustomEvent:class{},Event:class{},
   localStorage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)},addEventListener(){},matchMedia:()=>({matches:false}),fetch:async()=>({json:async()=>({ok:true}),text:async()=>'{"ok":true}'})});
  context.window=context;
  vm.runInContext(fs.readFileSync(require.resolve('../inventory.js'),'utf8'),context);
  vm.runInContext(fs.readFileSync(require.resolve('../workflow.js'),'utf8'),context);
  const run=code=>vm.runInContext(code,context);
- return {context,run,data,element};
+ return {context,run,data,element,intervals};
 }
 
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;}); return {promise,resolve,reject}; }
 const inventoryResponse = title => ({ok:true,items:title ? [{id:'a',title,qty:'8',category:'Tools',location:'Room',notes:''}] : []});
 function connect(c) { c.data.set('mea_inventory_url','https://example.test');c.run("state.lastId={idNumber:'100001'};meaSwitchAccount()"); }
+
+test('foreground checkout pauses background reads writes and queue replay and preserves ambiguous retry IDs',async()=>{
+ const c=client();connect(c);c.run("state.cart=MeaCart.normalize({a:{item:{id:'a',title:'A'},qty:1,action:'BORROWING'}});verifiedMember={uid:'one'};cloudLoaded=true;draftDirty=true;schoolAuth={currentUser:{getIdToken:async()=> 'one'}}");
+ const reply=deferred(),sent=[];c.context.fetch=async(url,options)=>{sent.push({url,body:JSON.parse(options.body)});return {json:async()=>await reply.promise};};
+ const first=c.context.submitOrder();for(let i=0;i<6;i++)await Promise.resolve();
+ await c.context.syncCloudDraft();await c.context.loadCloudDraft();await c.context.flushReturns();c.context.flushPendingOrders();assert.equal(sent.length,1);assert.match(sent[0].url,/checkout/);
+ const id=sent[0].body.groups[0].clientId;reply.reject(new TypeError('Response lost'));await first;assert.equal(c.run('Object.values(state.cart)[0].clientId'),id);
+ c.context.fetch=async(url,options)=>{const body=JSON.parse(options.body);sent.push({url,body});return {json:async()=>({ok:true,results:body.groups.map(group=>({clientId:group.clientId,ok:true}))})};};
+ await c.context.submitOrder();assert.equal(sent[1].body.groups[0].clientId,id);assert.equal(c.run('Object.keys(state.cart).length'),0);
+});
+
+test('late cloud draft read cannot replace a cart edited while the request was in flight',async()=>{
+ const c=client();connect(c);c.run("verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'one'}}");
+ const response=deferred();c.context.fetch=async()=>({json:async()=>await response.promise});const reading=c.context.loadCloudDraft();for(let i=0;i<5;i++)await Promise.resolve();
+ c.run("state.cart=MeaCart.normalize({a:{item:{id:'a'},qty:2,action:'BORROWING'}});saveCart()");
+ response.resolve({ok:true,revision:8,draft:{cart:{}}});await reading;assert.equal(c.run('Object.values(state.cart)[0].qty'),2);
+});
+
+test('offline batch replay removes successes, separates permanent failures and retains only retryable groups',async()=>{
+ const c=client();connect(c);
+ const groups=['a','b','c'].map((id,i)=>({clientId:'offline-group-'+id,caseType:i===1?'CONSUMING':'BORROWING',requestOnly:i===2,items:[{id,qty:1}]}));
+ c.data.set('mea_pending_orders',JSON.stringify([{clientId:'offline-batch-1',payload:{clientId:'offline-batch-1',idNumber:'100001',groups}}]));
+ let calls=0,sent;c.context.fetch=async(url,options)=>{calls++;sent=JSON.parse(options.body);return {text:async()=>JSON.stringify({ok:true,results:sent.groups.map((group,i)=>({clientId:group.clientId,ok:calls>1 || i===0,error:'Fixture failure',retryable:i!==1}))})};};
+ c.context.flushPendingOrders();for(let i=0;i<30;i++)await Promise.resolve();
+ const pending=JSON.parse(c.data.get('mea_pending_orders')),failed=JSON.parse(c.data.get('mea_failed_orders'));
+ assert.equal(pending[0].payload.groups.length,1);assert.equal(pending[0].payload.groups[0].clientId,'offline-group-c');assert.equal(failed[0].payload.groups[0].clientId,'offline-group-b');
+ c.intervals[0]();for(let i=0;i<30;i++)await Promise.resolve();assert.equal(sent.groups.length,1);assert.equal(sent.groups[0].clientId,'offline-group-c');assert.equal(JSON.parse(c.data.get('mea_pending_orders')).length,0);
+});
 
 test('special item metadata survives loading and item details explain separate requests',async()=>{
  const c=client();connect(c);
@@ -50,11 +78,11 @@ test('pending ID-only orders use a current verified token after school sign-in w
  c.context.flushPendingOrders();for(let i=0;i<20;i++)await Promise.resolve();assert.equal(sent.idToken,'current-token');assert.doesNotMatch(c.data.get('mea_pending_orders'),/current-token/);
 });
 
-test('mixed ordinary and special checkout uses separate endpoints and preserves failed requests',async()=>{
+test('mixed ordinary and special checkout uses one endpoint and preserves failed requests',async()=>{
  const c=client();connect(c);c.run("state.cart=MeaCart.normalize({a:{item:{id:'a',title:'Markers'},qty:1,action:'BORROWING'},s:{item:{id:'s',title:'Radio',requiresManualVerification:true},qty:2,action:'BORROWING'}});verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'one'}}");
- const calls=[];c.context.fetch=async(url,options)=>{calls.push({url,body:JSON.parse(options.body)});return {json:async()=>url.includes('submitSpecialRequest')?{ok:false,error:'Needs setup',retryable:false}:{ok:true}};};
- await c.context.submitOrder();assert.equal(calls.length,2);assert.match(calls[0].url,/submitOrder/);assert.match(calls[1].url,/submitSpecialRequest/);
- assert.equal(calls[0].body.items.length,1);assert.equal(calls[1].body.items[0].id,'s');assert.equal(c.run('Object.values(state.cart).length'),1);
+ const calls=[];c.context.fetch=async(url,options)=>{const body=JSON.parse(options.body);calls.push({url,body});return {json:async()=>({ok:true,results:body.groups.map(group=>({clientId:group.clientId,ok:!group.requestOnly,error:group.requestOnly?'Needs setup':undefined,retryable:false}))})};};
+ await c.context.submitOrder();assert.equal(calls.length,1);assert.match(calls[0].url,/checkout/);
+ assert.equal(calls[0].body.groups.length,2);assert.equal(calls[0].body.groups[1].items[0].id,'s');assert.equal(c.run('Object.values(state.cart).length'),1);
  assert.match(c.element('cart-feedback').textContent,/Special request.*Failed/);
 });
 
@@ -130,7 +158,7 @@ test('history authorization denial evicts saved data instead of restoring it off
 
 test('inventory expires after 30 seconds while history expires after 15 seconds',async()=>{
  const c=client();connect(c);let time=100000,catalog=0,history=0;c.context.Date=class extends Date {static now(){return time;}};
- c.context.fetch=async url=>url.includes('inventory')?(catalog++,{text:async()=>JSON.stringify(inventoryResponse('Item'))}):(history++,{json:async()=>({ok:true,records:[],projects:[]})});
+ c.context.fetch=async (url,options)=>url.includes('inventory')?(catalog++,{text:async()=>JSON.stringify(inventoryResponse('Item'))}):(history++,{json:async()=>({ok:true,records:[],projects:[]})});
  await c.context.loadInventory();await c.context.renderHistory();time+=14999;await c.context.loadInventory();await c.context.renderHistory();assert.equal(catalog,1);assert.equal(history,1);
  time++;await c.context.renderHistory();assert.equal(history,2);await c.context.loadInventory();assert.equal(catalog,1);
  time+=15000;await c.context.loadInventory();assert.equal(catalog,2);
@@ -151,7 +179,7 @@ test('an old project response cannot change the selected project or overwrite it
 
 test('confirmed checkout invalidates inventory and history even inside their freshness windows',async()=>{
  const c=client();connect(c);let catalog=0,history=0;
- c.context.fetch=async url=>url.includes('inventory')?{text:async()=>JSON.stringify(inventoryResponse(++catalog===1?'Before checkout':'After checkout'))}:url.includes('submitOrder')?{text:async()=>'{"ok":true,"logged":1}'}:{json:async()=>({ok:true,records:[],projects:[],revision:++history})};
+ c.context.fetch=async (url,options)=>url.includes('inventory')?{text:async()=>JSON.stringify(inventoryResponse(++catalog===1?'Before checkout':'After checkout'))}:url.includes('checkout')?{text:async()=>JSON.stringify({ok:true,results:JSON.parse(options.body).groups.map(group=>({clientId:group.clientId,ok:true}))})}:{json:async()=>({ok:true,records:[],projects:[],revision:++history})};
  await c.context.loadInventory();await c.context.renderHistory();c.run("state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'Item'},qty:1,action:'BORROWING'};");
  await c.context.submitOrder();await c.context.loadInventory();await c.context.renderHistory();assert.equal(catalog,2);assert.equal(history,2);
 });
@@ -214,7 +242,7 @@ test('drafts and checkout fields survive reload and stay separated on logout/acc
 test('mixed action checkout preserves rejected group and clears only submitted group',async()=>{
  const c=client();c.run("state.lastId={idNumber:'100001',name:'One'}; meaSwitchAccount(); for(const action of MeaCart.actions)state.cart[MeaCart.key('a',action)]={item:{id:'a',title:'A'},qty:1,action};");
  c.element('project-select').value='SUS';
- c.context.google={script:{run:{withSuccessHandler(ok){return {withFailureHandler(fail){return {submitOrder(p){ if(p.caseType==='CONSUMING')fail(new Error('Rejected'));else ok({success:true}); }};}};}}}};
+ c.context.google={script:{run:{withSuccessHandler(ok){return {withFailureHandler(fail){return {checkout(p){ok({ok:true,results:p.groups.map(group=>({clientId:group.clientId,ok:group.caseType!=='CONSUMING',error:'Rejected',retryable:false}))}); }};}};}}}};
  await c.context.submitOrder();
  assert.equal(c.run('Object.keys(state.cart).length'),1); assert.equal(c.run('Object.values(state.cart)[0].action'),'CONSUMING');
  assert.match(c.element('cart-feedback').textContent,/Borrow: Submitted.*Consume: Failed/);
@@ -269,7 +297,7 @@ test('cart action collision requires confirmation and cannot combine into anothe
 test('guest submits use current Google token without persisting it in an order queue',async()=>{
  const c=client();c.data.set('mea_inventory_url','https://example.test');
  c.run("state.lastId={idNumber:'guest:one',name:'Guest',accountKind:'GUEST',guestCode:'G-001',verified:true};meaSwitchAccount();verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'private-token'}};state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'A'},qty:1,action:'BORROWING'};");
- let sent;c.context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {json:async()=>({ok:true,logged:1})};};
+ let sent;c.context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {json:async()=>({ok:true,results:sent.groups.map(group=>({clientId:group.clientId,ok:true}))})};};
  await c.context.submitOrder();assert.equal(sent.idToken,'private-token');assert.equal(sent.idNumber,'guest:one');
  assert.equal(c.run('Object.keys(state.cart).length'),0);
  for(const value of c.data.values())assert.equal(value.includes('private-token'),false);

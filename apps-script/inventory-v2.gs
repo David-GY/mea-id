@@ -12,7 +12,30 @@ var MEA_INV = {
   catalogs: ['Inventory', 'Special Inventory'],
   journal: '_MEA_EVENTS', drafts: '_MEA_DRAFTS', references: '_MEA_REFERENCES', accounts: 'Accounts'
 };
-function invBook_() { return SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('INVENTORY_SPREADSHEET_ID') || MEA_INV.spreadsheet); }
+var invRuntime_ = null;
+function invOpenBook_(id) {
+  if (!invRuntime_) return SpreadsheetApp.openById(id);
+  if (!invRuntime_.books[id]) invRuntime_.books[id] = SpreadsheetApp.openById(id);
+  return invRuntime_.books[id];
+}
+function invTrackerTable_(name,sheet) {
+  if(!invRuntime_)return sheet.getDataRange().getDisplayValues();
+  if(!invRuntime_.trackerTables[name])invRuntime_.trackerTables[name]=sheet.getDataRange().getDisplayValues();
+  return invRuntime_.trackerTables[name];
+}
+function invBook_() { return invOpenBook_(PropertiesService.getScriptProperties().getProperty('INVENTORY_SPREADSHEET_ID') || MEA_INV.spreadsheet); }
+function invDrainReceipts_() {
+  if (!invRuntime_) return;
+  var started=Date.now();
+  invRuntime_.receipts.splice(0).forEach(function(event) {try {invReceipt_(event);} catch (_) {invRuntime_.timings.receiptFailures=(invRuntime_.timings.receiptFailures || 0)+1;}});
+  invRuntime_.timings.receiptMs=(invRuntime_.timings.receiptMs || 0)+Date.now()-started;
+}
+function invAppendRows_(sheet, rows) {
+  if (!rows.length) return;
+  var start=sheet.getLastRow()+1, needed=start+rows.length-1;
+  if (needed>sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),needed-sheet.getMaxRows());
+  sheet.getRange(start,1,rows.length,rows[0].length).setValues(rows);
+}
 function invJson_(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
 function invError_(message, code) { var e = new Error(message); e.code = code || 'INVALID'; return e; }
 function invText_(v) { return String(v == null ? '' : v).trim(); }
@@ -30,15 +53,21 @@ function invLookupReference_(type, id) {
   return invReferenceCache_[type + ':' + id] || '';
 }
 /** Call only inside the script lock. Canonical IDs never change. */
-function invReference_(type, id) {
-  var existing = invLookupReference_(type, id); if (existing) return existing;
-  var rows = invRows_(MEA_INV.references), max = 0;
-  rows.forEach(function(r) { if (r[0] === type) max = Math.max(max, Number(String(r[2]).slice(type.length + 1)) || 0); });
-  var code = type + '-' + String(max + 1).padStart(3, '0');
-  invSheet_(MEA_INV.references).appendRow([type, id, code]);
-  if (invReferenceCache_) invReferenceCache_[type + ':' + id] = code;
-  return code;
+function invReferences_(type, ids) {
+  if(!invRuntime_)invReferenceCache_=null;
+  invLookupReference_(type, ids[0] || '');
+  var max=0, pending=[], codes=[];
+  Object.keys(invReferenceCache_ || {}).forEach(function(key) {if(key.indexOf(type+':')===0)max=Math.max(max,Number(String(invReferenceCache_[key]).slice(type.length+1)) || 0);});
+  ids.forEach(function(id) {
+    var code=invLookupReference_(type,id);
+    if(!code) {code=type+'-'+String(++max).padStart(3,'0');pending.push([type,id,code]);}
+    codes.push(code);
+  });
+  invAppendRows_(invSheet_(MEA_INV.references),pending);
+  pending.forEach(function(row) {if(invReferenceCache_)invReferenceCache_[type+':'+row[1]]=row[2];});
+  return codes;
 }
+function invReference_(type, id) { return invReferences_(type,[id])[0]; }
 function invDisplayColumns_(s, headerRow, start, labels) {
   var needed = start + labels.length - 1;
   if (s.getMaxColumns() < needed) s.insertColumnsAfter(s.getMaxColumns(), needed - s.getMaxColumns());
@@ -63,20 +92,20 @@ function invSetupReferences_() {
   });
 }
 function invTrackerRoles_(id) {
-  var book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || MEA_INV.tracker);
+  var book = invOpenBook_(PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || MEA_INV.tracker);
   var main = book.getSheetByName('MAIN'); if (!main) throw invError_('Tracker roster unavailable.', 'ROSTER_UNAVAILABLE');
-  var rows = main.getDataRange().getDisplayValues(), header = rows[1] || [], matches = rows.slice(3).filter(function(r) { return invText_(r[1]) === id; });
+  var rows = invTrackerTable_('MAIN',main), header = rows[1] || [], matches = rows.slice(3).filter(function(r) { return invText_(r[1]) === id; });
   if (matches.length !== 1) throw invError_('Member roster link needs review.', 'ROSTER_MISMATCH');
   var projects = header.slice(8).filter(function(label, i) { var v = invText_(matches[0][i + 8]).toLowerCase(); return label && v && ['0','false','no','n'].indexOf(v) < 0; });
   var cbab = book.getSheetByName('CBAB');
   if (cbab) {
-    var extra = cbab.getDataRange().getDisplayValues(), index = (extra[0] || []).findIndex(function(h) { return /^id (num|number)$/i.test(invText_(h)); });
+    var extra = invTrackerTable_('CBAB',cbab), index = (extra[0] || []).findIndex(function(h) { return /^id (num|number)$/i.test(invText_(h)); });
     if (index < 0) throw invError_('CBAB roster headers changed.', 'ROSTER_MISMATCH');
     if (extra.slice(1).some(function(r) { return invText_(r[index]) === id; })) projects.push('CBAB');
   }
   var access = book.getSheetByName('ACCESS'), admin = false;
   if (access) {
-    var a = access.getDataRange().getDisplayValues();
+    var a = invTrackerTable_('ACCESS',access);
     if (!a[0] || a[0][0] !== 'ID Number' || a[0][2] !== 'Level') throw invError_('Access sheet headers changed.', 'ROSTER_MISMATCH');
     var entries = a.slice(1).filter(function(r) { return invText_(r[0]) === id; });
     if (entries.length > 1) throw invError_('Duplicate access records need review.', 'ROSTER_MISMATCH');
@@ -104,9 +133,9 @@ function invOwns_(actor, record) {
 function invClassify_(user) {
   var email = invText_(user.email).toLowerCase();
   if (!/^[^\s@]+@student\.ateneo\.edu$/.test(email)) throw invError_('Use your student.ateneo.edu Google account.', 'DOMAIN_NOT_ALLOWED');
-  var book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || MEA_INV.tracker);
+  var book = invOpenBook_(PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || MEA_INV.tracker);
   var sheet = book.getSheetByName('MAIN'); if (!sheet) throw invError_('Member roster unavailable.', 'ROSTER_UNAVAILABLE');
-  var rows = sheet.getDataRange().getDisplayValues();
+  var rows = invTrackerTable_('MAIN',sheet);
   if (!rows[1] || rows[1][0] !== 'Email' || rows[1][1] !== 'ID' || rows[1][2] !== 'Full Name') throw invError_('Member roster headers changed. Contact SUS.', 'ROSTER_MISMATCH');
   var matches = rows.slice(3).filter(function(r) { return invText_(r[0]).toLowerCase() === email; });
   if (matches.length > 1 || matches.length === 1 && !/^\d{6}$/.test(invText_(matches[0][1]))) throw invError_('School email has an ambiguous member record. Contact SUS.', 'ROSTER_MISMATCH');
@@ -166,23 +195,34 @@ function invHistoryResponse_(p) {
 }
 function invQty_(v) { var n = Number(v); if (['string','number'].indexOf(typeof v) < 0 || !Number.isSafeInteger(n) || n < 1 || n > 9999) throw invError_('Quantity must be a whole number from 1 to 9999.'); return n; }
 function invId_(v) { var id = invText_(v); if (!/^\d{6}$/.test(id)) throw invError_('A six-digit member ID is required.'); return id; }
-function invWithLock_(fn) { var lock = LockService.getScriptLock(); lock.waitLock(30000); try { return fn(); } finally { lock.releaseLock(); } }
+function invWithLock_(fn) {
+  var lock=LockService.getScriptLock(), started=Date.now(); lock.waitLock(30000);
+  var acquired=Date.now();
+  if(invRuntime_)invRuntime_.timings.lockWaitMs=(invRuntime_.timings.lockWaitMs || 0)+acquired-started;
+  try {return fn();} finally {lock.releaseLock();if(invRuntime_)invRuntime_.timings.lockHeldMs=(invRuntime_.timings.lockHeldMs || 0)+Date.now()-acquired;}
+}
 function invToken_(p) { var configured = PropertiesService.getScriptProperties().getProperty('ACCESS_TOKEN'); if (configured && p.token !== configured) throw invError_('Invalid access code.', 'UNAUTHORIZED'); }
 function doGet(e) { return invRoute_(e, false); }
 function doPost(e) { return invRoute_(e, true); }
 function invRoute_(e, post) {
+  var started=Date.now(); invRuntime_={books:{},trackerTables:{},catalog:null,events:null,receipts:[],images:null,timings:{}};invReferenceCache_=null;
   try {
     var p = Object.assign({}, e && e.parameter || {});
     if (post && e.postData && e.postData.contents) Object.assign(p, JSON.parse(e.postData.contents));
     var action = invText_(e && e.parameter && e.parameter.action || p.action);
-    if (action === 'inventory') return invJson_({ok: true, version: 2, items: invCatalog_()});
+    if (action === 'inventory') return invJson_({ok: true, version: 2, checkoutVersion:1, items: invCatalog_()});
     if (action === 'history' && !post) { invToken_(p); return invJson_(invHistoryResponse_(p)); }
     if (!post) throw invError_('This operation requires POST.');
     invToken_(p);
     var result;
+    if(action === 'checkout')invValidateCheckout_(p);
     if (action === 'history') return invJson_(invHistoryResponse_(p));
-    if (action === 'submitOrder' || action === 'submitSpecialRequest' || action === 'specialRequestReview' || action === 'returnItems' || ['recordDelete','recordRestore','recordEdit'].indexOf(action) >= 0) p.actor = p.idToken ? invResolveAccount_(p.idToken) : invUnverified_(p.idNumber);
-    if (action === 'submitOrder' || action === 'submitSpecialRequest') result = invWithLock_(function() { return invSubmit_(p, action === 'submitSpecialRequest'); });
+    var authStarted=Date.now();
+    if (action === 'checkout' || action === 'submitOrder' || action === 'submitSpecialRequest' || action === 'specialRequestReview' || action === 'returnItems' || ['recordDelete','recordRestore','recordEdit'].indexOf(action) >= 0) p.actor = p.idToken ? invResolveAccount_(p.idToken) : invUnverified_(p.idNumber);
+    invRuntime_.actor=p.actor;
+    invRuntime_.timings.authMs=Date.now()-authStarted;
+    if(action === 'checkout')result=invWithLock_(function(){return invCheckout_(p);});
+    else if (action === 'submitOrder' || action === 'submitSpecialRequest') result = invWithLock_(function() { return invSubmit_(p, action === 'submitSpecialRequest'); });
     else if (action === 'specialRequestReview') result = invWithLock_(function() { return invReviewSpecial_(p); });
     else if (action === 'returnItems') result = invWithLock_(function() { return invReturn_(p); });
     else if (['recordDelete','recordRestore','recordEdit'].indexOf(action) >= 0) result = invWithLock_(function() { return invRecordChange_(action, p); });
@@ -191,8 +231,10 @@ function invRoute_(e, post) {
       var identity = invResolveAccount_(p.idToken);
       result = invWithLock_(function() { return invDraft_(action, identity, p); });
     } else throw invError_('Unknown action.');
-    return invJson_(Object.assign({ok: true}, result));
+    invDrainReceipts_(); invRuntime_.timings.totalMs=Date.now()-started;
+    return invJson_(Object.assign({ok: true, timings:invRuntime_.timings}, result));
   } catch (e) { return invJson_({ok: false, error: e.message, code: e.code || 'SERVER_ERROR', retryable: !e.code}); }
+  finally {invDrainReceipts_();invRuntime_.timings.totalMs=Date.now()-started;console.log(JSON.stringify({checkoutPerformance:true,action:action || '',groups:Array.isArray(p && p.groups)?p.groups.length:undefined,timings:invRuntime_.timings}));invRuntime_=null;}
 }
 function invSheet_(name) { var sheet = invBook_().getSheetByName(name); if (!sheet) throw invError_('Run setupInventoryV2 first. Missing ' + name, 'SETUP_REQUIRED'); return sheet; }
 function invRows_(name) { var sheet = invSheet_(name); if (sheet.getLastRow() < 2) return []; return sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues(); }
@@ -226,6 +268,7 @@ function setupInventoryV2() {
   });
 }
 function invCatalog_() {
+  if(invRuntime_ && invRuntime_.catalog)return invRuntime_.catalog;
   var book = invBook_(), items = [], seen = {};
   MEA_INV.catalogs.forEach(function(name) {
     var s = book.getSheetByName(name); if (!s || s.getLastRow() < 5) return;
@@ -238,9 +281,10 @@ function invCatalog_() {
       items.push({id: id, itemCode: invLookupReference_('IT', id), inventorySection: name, requiresManualVerification: name === 'Special Inventory', title: row[1], qty: row[2], location: row[3], category: row[4], notes: row[5]});
     });
   });
+  if(invRuntime_)invRuntime_.catalog=items;
   return items;
 }
-function invEvents_() { return invRows_(MEA_INV.journal).map(function(row) { return JSON.parse(row[2]); }); }
+function invEvents_() { if(invRuntime_ && invRuntime_.events)return invRuntime_.events;var events=invRows_(MEA_INV.journal).map(function(row) { return JSON.parse(row[2]); });if(invRuntime_)invRuntime_.events=events;return events; }
 function invFindEvent_(clientId) {
   return invEvents_().find(function(e) { return e.clientId === clientId; });
 }
@@ -262,11 +306,37 @@ function invRequestFingerprint_(p, type) {
 function invAppendEvent_(event) {
   var json = JSON.stringify(event);
   if (json.length > 45000) throw invError_('Order is too large. Split it into smaller checkouts.');
+  var journalStarted=Date.now();
   invSheet_(MEA_INV.journal).appendRow([event.clientId, event.idNumber, json, new Date(event.time)]);
   SpreadsheetApp.flush();
-  try { invProjectEvent_(event); } catch (_) { /* journal success must not become a duplicate on retry */ }
-  try { invReceipt_(event); } catch (_) { /* receipt failure never rolls back the transaction */ }
+  if(invRuntime_)invRuntime_.timings.journalMs=(invRuntime_.timings.journalMs || 0)+Date.now()-journalStarted;
+  if(invRuntime_ && invRuntime_.events)invRuntime_.events.push(event);
+  var projectionStarted=Date.now();
+  try { invProjectEvent_(event); } catch (_) {if(invRuntime_)invRuntime_.timings.projectionFailures=(invRuntime_.timings.projectionFailures || 0)+1;}
+  if(invRuntime_)invRuntime_.timings.projectionMs=(invRuntime_.timings.projectionMs || 0)+Date.now()-projectionStarted;
+  if(invRuntime_)invRuntime_.receipts.push(event);else try {invReceipt_(event);}catch(_){}
   return event.result;
+}
+function invValidateCheckout_(p) {
+  if(!Array.isArray(p.groups) || !p.groups.length || p.groups.length>4)throw invError_('Choose between one and four checkout groups.');
+  var ids={}, kinds={}, total=0;
+  p.groups.forEach(function(group) {
+    if(!group || typeof group!=='object' || typeof group.requestOnly!=='boolean' || ['BORROWING','CONSUMING'].indexOf(group.caseType)<0)throw invError_('Invalid checkout group.');
+    var id=invClient_(group),kind=group.caseType+':'+group.requestOnly;
+    if(ids[id] || kinds[kind])throw invError_('Duplicate checkout group.');
+    ids[id]=true;kinds[kind]=true;
+    if(!Array.isArray(group.items))throw invError_('Invalid checkout items.');
+    total+=group.items.length;
+  });
+  if(total>200)throw invError_('Choose at most 200 cart entries.');
+}
+function invCheckout_(p) {
+  return {results:p.groups.map(function(group) {
+    try {
+      var request=Object.assign({},group,{actor:p.actor,idNumber:p.actor.member.idNumber});
+      return Object.assign({clientId:group.clientId,ok:true},invSubmit_(request,group.requestOnly));
+    } catch(error) {return {clientId:group.clientId,ok:false,error:error.message,code:error.code || 'SERVER_ERROR',retryable:!error.code};}
+  })};
 }
 function invSubmit_(p, special) {
   if (p.caseType !== 'BORROWING' && p.caseType !== 'CONSUMING') throw invError_('Choose Borrow or Consume. Returns start from History.');
@@ -287,8 +357,10 @@ function invSubmit_(p, special) {
   }).map(function(entry) {
     var item = entry.item, qty = entry.qty;
     var recordId = 'REC-' + Utilities.getUuid();
-    return {recordId: recordId, reference: invReference_(special ? 'SR' : p.caseType === 'BORROWING' ? 'BR' : 'CO', recordId), itemId: item.id, item: item.title, location: item.location, qty: qty};
+    return {recordId: recordId, itemId: item.id, item: item.title, location: item.location, qty: qty};
   });
+  var references=invReferences_(special?'SR':p.caseType==='BORROWING'?'BR':'CO',lines.map(function(line){return line.recordId;}));
+  lines.forEach(function(line,i){line.reference=references[i];});
   var member = actor.member;
   var event = {ownerKey: actor.ownerKey, verified: actor.verified, accountKind: actor.accountKind, guestCode: actor.guestCode || '', name: member.name, email: member.email, type: eventType, clientId: p.clientId, idNumber: owner, time: new Date().toISOString(), caseType: p.caseType,
     project: invText_(p.project).slice(0, 200), committee: invText_(p.committee).slice(0, 200), lines: lines,
@@ -386,10 +458,10 @@ function invSpecialSheet_() {
 }
 function invProjectSpecial_(e) {
   var sheet=invSpecialSheet_(), rows=sheet.getLastRow()>1?sheet.getRange(2,10,sheet.getLastRow()-1,1).getValues():[];
-  if(e.type==='SPECIAL_REQUEST') e.lines.forEach(function(line) {
+  if(e.type==='SPECIAL_REQUEST') {var additions=[];e.lines.forEach(function(line) {
     if(rows.some(function(r){return r[0]===line.recordId;}))return;
-    sheet.appendRow([new Date(e.time),invSafeCell_(line.item),line.qty,e.caseType,invSafeCell_(e.project),invSafeCell_(e.committee),invSafeCell_(e.guestCode || e.idNumber),invSafeCell_(e.name),'PENDING',line.recordId,e.clientId,line.reference,'','','']);
-  });
+    additions.push([new Date(e.time),invSafeCell_(line.item),line.qty,e.caseType,invSafeCell_(e.project),invSafeCell_(e.committee),invSafeCell_(e.guestCode || e.idNumber),invSafeCell_(e.name),'PENDING',line.recordId,e.clientId,line.reference,'','','']);
+  });invAppendRows_(sheet,additions);}
   else rows.forEach(function(r,i) {if(r[0]===e.recordId) {sheet.getRange(i+2,9).setValue(e.status);sheet.getRange(i+2,13,1,3).setValues([[invSafeCell_(e.name),new Date(e.time),invSafeCell_(e.note)]]);}});
 }
 function invProjectEvent_(e) {
@@ -399,11 +471,13 @@ function invProjectEvent_(e) {
   var sheet = invSheet_(name), existing = {};
   if (sheet.getLastRow() > 1) sheet.getRange(2, 10, sheet.getLastRow() - 1, 1).getValues().forEach(function(row) { existing[row[0]] = true; });
   var lines = e.type === 'RETURN' ? [{recordId: 'RETURN-' + e.clientId, item: e.item, qty: e.qty}] : e.lines;
+  var additions=[];
   lines.forEach(function(line) {
     if (existing[line.recordId]) return;
     var member = {name: e.name || '', email: e.email || ''};
-    sheet.appendRow([new Date(e.time), invSafeCell_(line.item), line.qty, invSafeCell_(e.project), invSafeCell_(e.committee), e.idNumber, invSafeCell_(member.name), invSafeCell_(member.email), false, line.recordId, e.borrowId || '', e.clientId, line.reference || e.reference || invReference_(name === 'Return' ? 'RT' : name === 'Borrow' ? 'BR' : 'CO', line.recordId), e.borrowReference || '']);
+    additions.push([new Date(e.time), invSafeCell_(line.item), line.qty, invSafeCell_(e.project), invSafeCell_(e.committee), e.idNumber, invSafeCell_(member.name), invSafeCell_(member.email), false, line.recordId, e.borrowId || '', e.clientId, line.reference || e.reference || invReference_(name === 'Return' ? 'RT' : name === 'Borrow' ? 'BR' : 'CO', line.recordId), e.borrowReference || '']);
   });
+  invAppendRows_(sheet,additions);
   if (e.type === 'RETURN') {
     var borrow = invSheet_('Borrow');
     var history = invHistory_().find(function(r) { return r.recordId === e.borrowId; });
@@ -456,9 +530,9 @@ function invDraft_(action, identity, p) {
 }
 
 function invMemberById_(id) {
-  var book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || MEA_INV.tracker);
+  var book = invOpenBook_(PropertiesService.getScriptProperties().getProperty('TRACKER_SPREADSHEET_ID') || MEA_INV.tracker);
   var sheet = book.getSheetByName('MAIN'); if (!sheet) return {name: '', email: ''};
-  var matches = sheet.getDataRange().getDisplayValues().filter(function(row) { return invText_(row[1]) === id; });
+  var matches = invTrackerTable_('MAIN',sheet).filter(function(row) { return invText_(row[1]) === id; });
   return matches.length === 1 ? {name: invText_(matches[0][2]), email: invText_(matches[0][0])} : {name: '', email: ''};
 }
 // Email branding: Drive files are embedded inline, so they do not need public access.
@@ -475,10 +549,12 @@ function invEmailEscape_(value) {
 }
 
 function invEmailImages_() {
-  return {
+  if(invRuntime_ && invRuntime_.images)return invRuntime_.images;
+  var images = {
     meaHeader: DriveApp.getFileById(MEA_INV_EMAIL.headerDriveFileId).getBlob(),
     meaFooter: DriveApp.getFileById(MEA_INV_EMAIL.footerDriveFileId).getBlob()
   };
+  if(invRuntime_)invRuntime_.images=images;return images;
 }
 
 function invEmailDate_(value) {
@@ -547,7 +623,7 @@ function invEmailPlainText_(event, action, lines, intro) {
 function invReceipt_(event) {
   if (event.type === 'SPECIAL_REQUEST' || event.type === 'SPECIAL_REVIEW') return;
   if (event.type.indexOf('RECORD_') === 0) return;
-  var member = event.verified ? {name: event.name, email: event.email} : invMemberById_(event.idNumber);
+  var member = event.verified ? {name:event.name,email:event.email} : invRuntime_ && invRuntime_.actor && invRuntime_.actor.member.idNumber===event.idNumber ? invRuntime_.actor.member : invMemberById_(event.idNumber);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email)) return;
   event.name = member.name || event.name || 'there';
   event.idNumber = event.idNumber || '';

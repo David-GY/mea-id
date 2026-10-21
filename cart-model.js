@@ -27,6 +27,14 @@
   function groups(cart) {
     return actions.flatMap(action => [false, true].map(requestOnly => ({action, requestOnly, lines: Object.values(cart).filter(l => l.action === action && requiresManualVerification(l.item) === requestOnly)}))).filter(g => g.lines.length);
   }
+  function checkoutResults(groups, results) {
+    if (!Array.isArray(results) || results.length !== groups.length) throw new Error('Checkout confirmation was incomplete. Your retry identifiers are preserved.');
+    return groups.map(group => {
+      const matches=results.filter(result=>result && result.clientId===group.clientId && typeof result.ok==='boolean');
+      if(matches.length!==1)throw new Error('Checkout confirmation was invalid. Try again safely.');
+      return matches[0];
+    });
+  }
   function reconcile(cart, inventory) {
     const items = new Map(inventory.map(i => [String(i.id), i]));
     return Object.fromEntries(Object.entries(cart).map(([k, line]) => {
@@ -54,5 +62,5 @@
     const shape = d => ({project: d?.project || '', committee: d?.committee || '', lines: Object.values(d?.cart || {}).map(l => [String(l.item?.id), l.action, Number(l.qty)]).sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)))});
     return JSON.stringify(shape(a)) === JSON.stringify(shape(b));
   }
-  return {sameDraft, actions, quantity, key, normalize, groups, reconcile, outstanding, validateReturn, availability, requiresManualVerification};
+  return {sameDraft, actions, quantity, key, normalize, groups, checkoutResults, reconcile, outstanding, validateReturn, availability, requiresManualVerification};
 });

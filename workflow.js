@@ -2,6 +2,7 @@
 let draftOwner = null;
 let draftRevision = 0;
 let draftDirty = false;
+let draftEditRevision = 0;
 let draftTimer;
 let cloudBusy = false;
 let cloudConflict = false;
@@ -40,11 +41,11 @@ function saveStatus(text) { document.getElementById('cart-save-status').textCont
 function invalidateAction(action) { Object.values(state.cart).filter(l => !action || l.action === action).forEach(l => delete l.clientId); }
 function saveCart() {
   if (!draftOwner) return;
-  draftDirty = true;
+  draftDirty = true; draftEditRevision++;
   const saved = writeLocal(draftKey(), {...draftSnapshot(), dirty: true});
   saveStatus(saved ? (verifiedMember ? 'Saved on this device · waiting to sync' : 'Saved on this device · connect your school account to sync across devices') : 'Not saved · device storage unavailable');
   clearTimeout(draftTimer);
-  if (verifiedMember && !cloudConflict) draftTimer = setTimeout(syncCloudDraft, 700);
+  if (verifiedMember && !cloudConflict && !submitBusy) draftTimer = setTimeout(syncCloudDraft, 700);
 }
 window.meaRestoreFields = function() {
   if (!draftOwner) return;
@@ -262,44 +263,53 @@ function bindCheckoutForm() {
   ['project-select', 'committee-input'].forEach(id => document.getElementById(id).addEventListener('change', () => { invalidateAction(); saveCart(); }));
   document.getElementById('committee-input').addEventListener('input', () => { invalidateAction(); saveCart(); });
 }
-function submitGroup(payload, requestOnly = false) {
-  if (verifiedMember) return inventoryRequest(requestOnly ? 'submitSpecialRequest' : 'submitOrder', payload, true);
+function submitCheckout(payload) {
+  if (verifiedMember) return inventoryRequest('checkout', payload, true);
   if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') return Promise.reject(new Error('Reconnect your school account before submitting. Your cart stays saved.'));
-  return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).submitOrder({...payload, requestOnly}));
+  return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).checkout(payload));
 }
+window.meaCheckoutBusy = () => submitBusy;
 async function submitOrder() {
   if (submitBusy) return;
   if (!draftOwner) return showView('login');
   if (!Object.keys(state.cart).length) return showToast('Your cart is empty.', true);
   if (Object.values(state.cart).some(l => l.unavailable)) return showToast('Remove unavailable items before submitting.', true);
-  const epoch = accountEpoch, owner = draftOwner, fields = draftSnapshot();
-  const groups = MeaCart.groups(state.cart);
-  const btn = document.getElementById('submit-order-btn');
-  submitBusy = true; btn.disabled = true; btn.textContent = 'Submitting…';
-  const outcomes = [];
+  const epoch=accountEpoch, owner=draftOwner, fields=draftSnapshot(), groups=MeaCart.groups(state.cart);
+  const btn=document.getElementById('submit-order-btn');
+  submitBusy=true;clearTimeout(draftTimer);btn.disabled=true;btn.textContent='Submitting…';
+  for(const id of ['project-select','committee-input'])document.getElementById(id).disabled=true;
+  const outcomes=[];
   try {
-    for (const group of groups) {
-      const label = (group.requestOnly ? 'Special request · ' : '') + ACTION_LABEL[group.action];
-      if (accountEpoch !== epoch) break;
-      // Keep the identifier on the draft until confirmed or durably queued.
-      const clientId = group.lines[0].clientId || uuid();
-      group.lines.forEach(l => l.clientId = clientId); saveCart();
-      try {
-        const result = await submitGroup({clientId, idNumber: owner, caseType: group.action, project: fields.project, committee: fields.committee,
-          items: group.lines.map(l => ({id: l.item.id, title: l.item.title, location: l.item.location || '', qty: l.qty,
-            comment: `[${group.action}] - ${l.qty} ${fields.committee || fields.project}, ${state.lastId.name || owner}`}))}, group.requestOnly);
-        if (epoch !== accountEpoch) break;
-        if (result?.success === false || result?.ok === false) throw new Error(result.error || 'Submission rejected.');
-        if (!result?.queued) refreshAfterMutation();
-        group.lines.forEach(l => delete state.cart[MeaCart.key(l.item.id, l.action)]);
-        outcomes.push(`${label}: ${result?.queued ? 'Waiting to sync' : group.requestOnly ? 'Awaiting SUS verification · no email' : 'Submitted'}`);
-      } catch (e) { outcomes.push(`${label}: Failed — ${e.message}`); }
+    const requests=groups.map(group=>{
+      const clientId=group.lines[0].clientId || uuid();
+      group.lines.forEach(line=>line.clientId=clientId);
+      return {clientId,caseType:group.action,requestOnly:group.requestOnly,project:fields.project,committee:fields.committee,
+        items:group.lines.map(line=>({id:line.item.id,title:line.item.title,location:line.item.location || '',qty:line.qty}))};
+    });
+    saveCart();
+    const response=await submitCheckout({clientId:uuid(),idNumber:owner,groups:requests});
+    if(epoch!==accountEpoch)return;
+    const results=response?.queued ? requests.map(group=>({clientId:group.clientId,ok:true,queued:true})) : MeaCart.checkoutResults(requests,response?.results);
+    let changed=false;
+    groups.forEach((group,index)=>{
+      const result=results[index], label=(group.requestOnly?'Special request · ':'')+ACTION_LABEL[group.action];
+      if(result.ok) {
+        group.lines.forEach(line=>delete state.cart[MeaCart.key(line.item.id,line.action)]);
+        changed ||= !result.queued;
+        outcomes.push(`${label}: ${result.queued?'Waiting to sync':group.requestOnly?'Awaiting SUS verification · no email':'Submitted'}`);
+      } else outcomes.push(`${label}: Failed — ${result.error || 'Request rejected.'}`);
+    });
+    if(changed)invalidateReadData();
+  } catch(error) {if(epoch===accountEpoch)outcomes.push('Failed — '+error.message);}
+  finally {
+    submitBusy=false;btn.disabled=false;btn.textContent='SUBMIT ORDER';
+    for(const id of ['project-select','committee-input'])document.getElementById(id).disabled=false;
+    if(epoch===accountEpoch) {
+      saveCart();updateCartBadge();showView('cart');
+      document.getElementById('cart-feedback').textContent=outcomes.join(' · ');
+      refreshActiveReadData();
     }
-    if (epoch === accountEpoch) {
-      saveCart(); updateCartBadge(); showView('cart');
-      document.getElementById('cart-feedback').textContent = outcomes.join(' · ');
-    }
-  } finally { submitBusy = false; btn.disabled = false; btn.textContent = 'SUBMIT ORDER'; }
+  }
 }
 async function inventoryRequest(action, payload = {}, token = false) {
   const url = getInventoryScriptUrl();
@@ -385,13 +395,13 @@ function renderReturnQueue() {
   });
 }
 async function flushReturns() {
-  if (returnBusy || !draftOwner || !navigator.onLine) return;
+  if (submitBusy || returnBusy || !draftOwner || !navigator.onLine) return;
   returnBusy = true;
   let changed = false;
   const epoch = accountEpoch, key = returnKey();
   try {
     for (const entry of pendingReturns().filter(r => !r.failed)) {
-      if (epoch !== accountEpoch) break;
+      if (submitBusy || epoch !== accountEpoch) break;
       try {
         if ((entry.requiresGoogle || state.lastId?.verified) && !verifiedMember) throw new Error('Reconnect your school account to sync this return.');
         await inventoryRequest('returnItems', entry, !!verifiedMember);
@@ -457,9 +467,11 @@ function resolveDraftConflict(data) {
 }
 async function loadCloudDraft() {
   const epoch = accountEpoch;
+  if(submitBusy)return;
+  const edits=draftEditRevision;
   const wasLoaded = cloudLoaded;
   const data = await inventoryRequest('cartRead', {}, true);
-  if (epoch !== accountEpoch || !verifiedMember) return;
+  if (epoch !== accountEpoch || !verifiedMember || submitBusy || edits!==draftEditRevision) return;
   cloudLoaded = true;
   if (cloudBusy || cloudConflict) return;
   const local = draftSnapshot();
@@ -470,7 +482,7 @@ async function loadCloudDraft() {
   } else applyCloudDraft(data);
 }
 async function syncCloudDraft() {
-  if (!verifiedMember || !cloudLoaded || !draftDirty || cloudBusy || cloudConflict || !navigator.onLine) return;
+  if (submitBusy || !verifiedMember || !cloudLoaded || !draftDirty || cloudBusy || cloudConflict || !navigator.onLine) return;
   cloudBusy = true; const epoch = accountEpoch, snapshot = JSON.stringify(draftSnapshot());
   try {
     const data = await inventoryRequest('cartWrite', {expectedRevision: draftRevision, draft: JSON.parse(snapshot)}, true);
@@ -481,7 +493,7 @@ async function syncCloudDraft() {
     if (epoch !== accountEpoch) return;
     saveStatus('Saved on this device · waiting to sync');
     if (e.code === 'CONFLICT') { try { const latest = await inventoryRequest('cartRead', {}, true); if (epoch === accountEpoch && verifiedMember) resolveDraftConflict(latest); } catch (_) {} }
-  } finally { cloudBusy = false; if (epoch === accountEpoch && draftDirty && !cloudConflict && navigator.onLine) { clearTimeout(draftTimer); draftTimer = setTimeout(syncCloudDraft, 10000); } }
+  } finally { cloudBusy = false; if (epoch === accountEpoch && !submitBusy && draftDirty && !cloudConflict && navigator.onLine) { clearTimeout(draftTimer); draftTimer = setTimeout(syncCloudDraft, 10000); } }
 }
 window.meaInstallHelp = function() {
   const embedded = /FBAN|FBAV|Instagram|Line\/|Messenger/i.test(navigator.userAgent);
@@ -548,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', () => { if (!document.hidden && verifiedMember) loadCloudDraft().catch(() => {}); });
   setInterval(() => { flushReturns(); if (verifiedMember && draftDirty) { if (cloudLoaded) syncCloudDraft(); else loadCloudDraft().catch(() => {}); } }, 20000);
   window.addEventListener('storage', e => {
-    if (e.key === draftKey()) { const saved = readLocal(draftKey(), {}); state.cart = MeaCart.normalize(saved.cart); draftDirty = !!saved.dirty; window.meaRestoreFields(); updateCartBadge(); if (state.view === 'cart') renderCart(); }
+    if (!submitBusy && e.key === draftKey()) { const saved = readLocal(draftKey(), {}); state.cart = MeaCart.normalize(saved.cart); draftDirty = !!saved.dirty; window.meaRestoreFields(); updateCartBadge(); if (state.view === 'cart') renderCart(); }
   });
 });
 

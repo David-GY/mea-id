@@ -52,3 +52,12 @@ Rollback to the previous frontend commit and backend Version 9 together. Retain 
 Special Inventory metadata is read from its sheet tab. Checkout uses `submitSpecialRequest` separately from `submitOrder`; both accept Borrow/Consume intent but only ordinary orders send receipt emails. Special requests have SR references, their own History section and a separate Special Requests sheet, created automatically on the first request. Verified ACCESS Admin users can mark requests verified or declined with notes. Verification records manual SUS handling only; it does not create a Borrow/Consume transaction or an email. Coordinate any special-item return with SUS. Existing committed special-item orders retain their ordinary returns.
 
 Deploy inventory Apps Script first, preserving the existing deployment settings and branded receipt templates. No setupInventoryV2 call or legacy migration is required. Frontend cache release is mea-app-v36, with caches scoped by application URL. See docs/2026-10-20-app-audit.md for repaired defects, test evidence and remaining limitations.
+
+
+## October 21, 2026: faster checkout
+
+New clients use one checkout POST with independently idempotent Borrow/Consume and Special Inventory groups. ID-only offline checkout stores the full batch durably; replay removes confirmed groups, retains retryable groups and separates permanent failures. Existing queued single-order payloads and older submitOrder/submitSpecialRequest routes remain supported. Verified members and guests use a current school token; tokens are never stored in pending-order payloads.
+
+The backend reuses workbook handles, roster/catalog/journal/reference snapshots only inside one HTTP invocation. Authorization is fresh for each invocation. Projection rows and references are written in batches. Receipt generation executes synchronously after releasing transaction locks; image blobs are reused for the ordinary receipts. Special requests still never email. Stage timing logs contain operation names/counts and elapsed milliseconds, not account identities or item names.
+
+Deploy the updated backend first, retaining the existing URL and access settings. Inventory GET reports checkoutVersion:1. Then publish frontend cache mea-app-v37. No sheet setup, event migration, trigger installation or secret changes are required. Roll back the frontend first, then Apps Script Version 14 if necessary, retaining all journal data. See docs/2026-10-21-checkout-performance.md.

@@ -129,7 +129,7 @@
       try {
         // text/plain avoids a CORS preflight against Apps Script, which
         // doesn't support OPTIONS requests.
-        res = await fetch(url + '?action=' + (payload.requestOnly ? 'submitSpecialRequest' : 'submitOrder'), {
+        res = await fetch(url + '?action=' + (Array.isArray(payload.groups) ? 'checkout' : payload.requestOnly ? 'submitSpecialRequest' : 'submitOrder'), {
           method: 'POST',
           signal: meaRequestSignal(),
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -149,12 +149,13 @@
         error.permanent = !!(json && json.retryable === false);
         throw error;
       }
+      if(Array.isArray(payload.groups))MeaCart.checkoutResults(payload.groups,json.results);
       return json;
     }
 
     let isFlushingOrders = false;
     async function flushPendingOrders() {
-      if (isFlushingOrders || !navigator.onLine) return;
+      if (isFlushingOrders || window.meaCheckoutBusy?.() || !navigator.onLine) return;
       const pending = getPendingOrders();
       if (!pending.length) return;
 
@@ -163,12 +164,30 @@
       isFlushingOrders = true;
       let changed = false;
       try {
-        while (navigator.onLine && state.lastId?.idNumber === owner) {
+        while (!window.meaCheckoutBusy?.() && navigator.onLine && state.lastId?.idNumber === owner) {
           const item = getPendingOrders().find(entry => entry.payload.idNumber === owner);
           if (!item) break;
           try {
             const identity = await window.meaPendingOrderIdentity(owner);
-            await trySubmitOrderToSheet({...item.payload, ...identity}, item.clientId);
+            const response=await trySubmitOrderToSheet({...item.payload, ...identity}, item.clientId);
+            if(Array.isArray(item.payload.groups)) {
+              const results=MeaCart.checkoutResults(item.payload.groups,response.results), retry=[];
+              item.payload.groups.forEach((group,index)=>{
+                const result=results[index];
+                if(result.ok)return;
+                if(result.retryable!==false)retry.push(group);
+                else {
+                  saveFailedOrders([...getFailedOrders().filter(row=>row.clientId!==group.clientId),{clientId:group.clientId,payload:{...item.payload,clientId:group.clientId,groups:[group]},attempts:0,error:result.error}]);
+                }
+              });
+              if(retry.length) {
+                const attempts=(item.attempts || 0)+1, remaining=getPendingOrders().filter(row=>row.clientId!==item.clientId);
+                const next={...item,attempts,payload:{...item.payload,groups:retry}};
+                if(attempts>=MAX_ORDER_ATTEMPTS)saveFailedOrders([...getFailedOrders(),next]);
+                else remaining.push(next);
+                savePendingOrders(remaining);invalidateReadData();changed=true;break;
+              }
+            }
             savePendingOrders(getPendingOrders().filter(entry => entry.clientId !== item.clientId));
             invalidateReadData(); changed = true;
           } catch(err) {
@@ -221,6 +240,7 @@
     ];
 
     const localMethods = {
+      checkout: payload => localMethods.submitOrder(payload),
       getInventory: () => fetchLiveInventory(),
       getProjectOptions: () => PROJECT_OPTIONS.slice(),
       lookupIdNumber: (idNumber) => ({
@@ -256,7 +276,7 @@
         // will retry automatically.
         try {
           const json = await trySubmitOrderToSheet(payload, clientId);
-          return { success: true, queued: false, orderId: 'ORD-' + Date.now(), logged: json.logged };
+          return {...json, success:true,queued:false};
         } catch(err) {
           if (err.permanent) throw err;
           enqueuePendingOrder(payload, clientId);

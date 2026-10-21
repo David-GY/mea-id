@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const cart = require('../cart-model');
 const source = fs.readFileSync(require.resolve('../apps-script/inventory-v2.gs'), 'utf8');
-function fixture() {
-  let serial = 0, held = false, mail = 0;
+function fixture(script = source) {
+  let serial = 0, held = false, mail = 0; const stats={auth:0,opens:0,reads:{},writes:{},locks:0,images:0,logs:[]};
   const properties = {INVENTORY_SPREADSHEET_ID: 'test', TRACKER_SPREADSHEET_ID: 'roster', SUPABASE_PUBLISHABLE_KEY: 'test-key'};
   const books = {};
   class Sheet {
@@ -13,15 +13,16 @@ function fixture() {
     getLastRow() { return this.rows.length; }
     getLastColumn() { return Math.max(1, ...this.rows.map(r => r.length)); }
     getMaxColumns() { return this.width; }
+    getMaxRows(){return 1000;} insertRowsAfter(){}
     insertColumnsAfter(_, n) { this.width += n; }
     hideSheet() {} hideColumns() {} showColumns() {}
-    appendRow(row) { this.rows.push([...row]); }
+    appendRow(row) {stats.writes[this.name]=(stats.writes[this.name] || 0)+1; this.rows.push([...row]); }
     getDataRange() { return this.getRange(1, 1, this.rows.length, this.getLastColumn()); }
     getRange(r, c, n = 1, m = 1) {
-      const read = () => Array.from({length:n}, (_,i) => Array.from({length:m}, (_,j) => this.rows[r+i-1]?.[c+j-1] ?? ''));
+      const read = () => {stats.reads[this.name]=(stats.reads[this.name] || 0)+1;return Array.from({length:n}, (_,i) => Array.from({length:m}, (_,j) => this.rows[r+i-1]?.[c+j-1] ?? ''));};
       return {clearDataValidations() {}, clearContent: () => this.getRange(r,c,n,m).setValues(Array.from({length:n},()=>Array(m).fill(''))), getValues: read, getDisplayValues: () => read().map(row => row.map(String)), getValue: () => read()[0][0],
         setValue: value => this.getRange(r,c).setValues([[value]]),
-        setValues: values => { values.forEach((row,i) => row.forEach((v,j) => { this.rows[r+i-1] ||= []; this.rows[r+i-1][c+j-1] = v; })); }};
+        setValues: values => { if(this.failWrites)throw new Error('Transient sheet failure');stats.writes[this.name]=(stats.writes[this.name] || 0)+1;values.forEach((row,i) => row.forEach((v,j) => { this.rows[r+i-1] ||= []; this.rows[r+i-1][c+j-1] = v; })); }};
     }
   }
   const catalogHeader = [[],[],[],['','Type','Quantity','Location','Category','Notes']];
@@ -32,28 +33,62 @@ function fixture() {
     Consume: new Sheet([['Time','Item','Qty','Project','Committee','ID Num','Name','Email']]),
     Return: new Sheet([['Time','Item','Qty','Project','Committee','ID Num','Name','Email']])
   };
-  const book = {getSheetByName: name => tabs[name], insertSheet: name => tabs[name] = new Sheet()};
+  Object.keys(tabs).forEach(name=>tabs[name].name=name);
+  const book = {getSheetByName: name => tabs[name], insertSheet: name => {const sheet=tabs[name]=new Sheet();sheet.name=name;return sheet;}};
   const roster = new Sheet([[],['Email','ID','Full Name','','','','','','SUS'],['SET'], ['one@student.ateneo.edu','100001','One','','','','','',true], ['two@student.ateneo.edu','100002','Two','','','','','',false]]);
   const trackerTabs={MAIN:roster,ACCESS:new Sheet([['ID Number','Name','Level']])};
   books.test = book; books.roster = {getSheetByName: name => trackerTabs[name]};
-  const context = vm.createContext({console, Date, JSON, Number, Object, Array, String,
+  const context = vm.createContext({console:{log:x=>stats.logs.push(x)}, Date, JSON, Number, Object, Array, String,
     PropertiesService: {getScriptProperties: () => ({getProperty: key => properties[key]})},
-    SpreadsheetApp: {openById: id => books[id], flush: () => {}},
+    SpreadsheetApp: {openById: id => {stats.opens++;return books[id];}, flush: () => {}},
     Utilities: {getUuid: () => 'uuid-' + (++serial),formatDate: date => date.toISOString()},
     Session:{getScriptTimeZone:()=> 'Asia/Manila'},
-    DriveApp:{getFileById:()=>({getBlob:()=> 'fixture-image'})},
-    LockService: {getScriptLock: () => ({waitLock: () => { assert.equal(held,false); held = true; }, releaseLock: () => { held = false; }})},
-    GmailApp: {sendEmail: () => { mail++; }},
+    DriveApp:{getFileById:()=>{stats.images++;return {getBlob:()=> 'fixture-image'};}},
+    LockService: {getScriptLock: () => ({waitLock: () => { assert.equal(held,false); stats.locks++;held = true; }, releaseLock: () => { held = false; }})},
+    GmailApp: {sendEmail: () => {assert.equal(held,false); mail++; }},
     ContentService: {MimeType:{JSON:'json'}, createTextOutput: text => ({setMimeType: () => JSON.parse(text)})},
-    UrlFetchApp: {fetch: (_, options) => { const token = options.headers.Authorization.slice(7), email = token === 'two' ? 'two@student.ateneo.edu' : 'one@student.ateneo.edu'; return {getResponseCode: () => token === 'invalid' ? 400 : 200, getContentText: () => JSON.stringify({id:token, email, email_confirmed_at: token !== 'unverified' ? '2026-10-16' : null, identities:[{provider:'google',identity_data:{email,email_verified:true,full_name:'Test Member'}}]})}; }}
+    UrlFetchApp: {fetch: (_, options) => { stats.auth++;const token = options.headers.Authorization.slice(7), email = token === 'two' ? 'two@student.ateneo.edu' : 'one@student.ateneo.edu'; return {getResponseCode: () => token === 'invalid' ? 400 : 200, getContentText: () => JSON.stringify({id:token, email, email_confirmed_at: token !== 'unverified' ? '2026-10-16' : null, identities:[{provider:'google',identity_data:{email,email_verified:true,full_name:'Test Member'}}]})}; }}
   });
-  vm.runInContext(source, context);
+  vm.runInContext(script, context);
   context.setupInventoryV2();
   const request = (action,p={}) => context.doPost({parameter:{action},postData:{contents:JSON.stringify(p)}});
   const item = () => context.invCatalog_()[0];
   const order = (overrides={}) => ({clientId:'client-1000001',idNumber:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',items:[{id:item().id,title:item().title,location:item().location,qty:3}],...overrides});
-  return {context,tabs,request,item,order,roster,trackerTabs,properties,mail:()=>mail};
+  return {context,tabs,request,item,order,roster,trackerTabs,properties,stats,mail:()=>mail};
 }
+test('one mixed checkout shares identity and reads, preserves separate records and sends receipts outside locks', () => {
+  const f=fixture();f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-special']);
+  const regular=f.item().id;
+  const groups=['BORROWING','CONSUMING'].flatMap(caseType=>[false,true].map(requestOnly=>({clientId:'checkout-'+caseType+'-'+requestOnly,caseType,requestOnly,project:'SUS',committee:'Ops',items:[{id:requestOnly?'ITEM-special':regular,qty:1}]})));
+  const before={opens:f.stats.opens,auth:f.stats.auth,catalog:f.stats.reads.Inventory || 0,events:f.stats.reads._MEA_EVENTS || 0,locks:f.stats.locks,images:f.stats.images};
+  const result=f.request('checkout',{idToken:'one',idNumber:'forged',groups});
+  assert.equal(result.ok,true);assert.equal(result.results.length,4);assert.ok(result.results.every(r=>r.ok));
+  assert.equal(f.stats.auth-before.auth,1);assert.equal(f.stats.opens-before.opens,2);assert.equal(f.stats.reads.Inventory-before.catalog,1);
+  assert.equal((f.stats.reads._MEA_EVENTS || 0)-before.events,0); // empty journal requires no data-range read
+  assert.equal(f.stats.locks-before.locks,2);assert.equal(f.stats.images-before.images,2);assert.equal(f.mail(),2);
+  assert.equal(f.tabs._MEA_EVENTS.rows.length,5);assert.equal(f.tabs['Special Requests'].rows.length,3);
+  assert.ok(result.timings.totalMs>=0);assert.ok(result.timings.authMs>=0);assert.ok(f.stats.logs.every(s=>!s.includes('student.ateneo.edu')));
+  assert.equal(f.request('checkout',{idToken:'one',groups}).results.filter(r=>r.ok).length,4);assert.equal(f.mail(),2);assert.equal(f.tabs._MEA_EVENTS.rows.length,5);
+});
+
+test('batch checkout reports partial failure and rejects changed retry data and duplicate groups', () => {
+  const f=fixture(), regular=f.item().id;
+  const groups=[{clientId:'batch-borrow-001',caseType:'BORROWING',requestOnly:false,items:[{id:regular,qty:1}]},{clientId:'batch-consume-01',caseType:'CONSUMING',requestOnly:false,items:[{id:'removed',qty:1}]}];
+  const first=f.request('checkout',{idNumber:'100001',groups});assert.equal(first.ok,true);assert.equal(first.results[0].ok,true);assert.equal(first.results[1].retryable,false);
+  groups[1].items[0].id=regular;assert.ok(f.request('checkout',{idNumber:'100001',groups}).results.every(r=>r.ok));assert.equal(f.tabs._MEA_EVENTS.rows.length,3);
+  groups[0].items[0].qty=2;assert.equal(f.request('checkout',{idNumber:'100001',groups}).results[0].code,'CHANGED_REQUEST');
+  assert.equal(f.request('checkout',{idNumber:'100001',groups:[groups[0],groups[0]]}).ok,false);
+  assert.equal(f.request('checkout',{idNumber:'100001',groups:[]}).ok,false);
+});
+
+test('verified guest batch ownership ignores forged member IDs and validates each request afresh', () => {
+  const f=fixture(), groups=[{...f.order(),requestOnly:false}];f.roster.rows=f.roster.rows.filter(r=>r[1]!=='100001');
+  const first=f.request('checkout',{idToken:'guest-one',idNumber:'100002',groups});assert.equal(first.results[0].ok,true);
+  const event=JSON.parse(f.tabs._MEA_EVENTS.rows[1][2]);assert.equal(event.idNumber,'guest:guest-one');assert.equal(event.verified,true);
+  assert.equal(f.request('checkout',{idToken:'invalid',groups}).code,'UNAUTHORIZED');
+  assert.equal(f.request('checkout',{idNumber:'100002',groups}).results[0].ok,false);
+});
+
 test('special inventory exposes manual handling and rejects new orders without side effects', () => {
   for (const caseType of ['BORROWING', 'CONSUMING']) {
     const f = fixture();
@@ -194,10 +229,10 @@ test('partial and full returns reject over-return, other owners, consumed items,
 });
 
 test('projection failures do not lose journal records; repair does not duplicate rows', () => {
-  const f=fixture(), append=f.tabs.Borrow.appendRow.bind(f.tabs.Borrow);
-  f.tabs.Borrow.appendRow=()=>{throw new Error('Transient sheet failure');};
+  const f=fixture();
+  f.tabs.Borrow.failWrites=true;
   assert.equal(f.request('submitOrder',f.order()).ok,true); assert.equal(f.context.invHistory_().length,1);
-  f.tabs.Borrow.appendRow=append; f.context.repairInventoryProjections(); f.context.repairInventoryProjections();
+  f.tabs.Borrow.failWrites=false; f.context.repairInventoryProjections(); f.context.repairInventoryProjections();
   assert.equal(f.tabs.Borrow.rows.length,3);
 });
 test('cloud drafts require verified school identity and enforce revision and account isolation', () => {
