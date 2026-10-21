@@ -7,6 +7,21 @@ const fixture = `<script>
 localStorage.setItem('mea_inventory_url','https://script.google.com/fixture/exec');
 localStorage.setItem('mea_cfg2',JSON.stringify({url:'https://script.google.com/tracker-fixture/exec'}));
 let records = [{recordId:'borrow-1',item:'Whiteboard Markers',qty:4,borrowedQty:4,returnedQty:1,outstandingQty:3,idNum:'100001',caseType:'BORROWING',project:'SUS',committee:'Operations',resolved:false,returnable:true,time:'2026-10-15T12:00:00Z'}];
+const authScenario=new URLSearchParams(location.search).get('fixture-auth');
+let authRelease, authCalls=0, authListener, authFailure=authScenario==='retry', sessionEnded=false;
+const authGate=authScenario ? new Promise(resolve=>authRelease=resolve) : Promise.resolve();
+if(authScenario) {
+ localStorage.removeItem('mea_google_signed_out');
+ localStorage.setItem('mea_login_v1',JSON.stringify({idNumber:'100001',name:'Test Member',level:'ADMIN',accountKind:'MEMBER',verified:true,googleUid:'test-uid'}));
+ document.addEventListener('DOMContentLoaded',()=>{
+  const controls=document.createElement('aside');controls.id='fixture-auth-controls';controls.style.cssText='padding:16px;clear:both';
+  controls.innerHTML='<p>Isolated session test · <output id="fixture-auth-calls">0</output> account checks</p><button id="fixture-auth-release">Finish verification</button> <button id="fixture-auth-expire">End school session</button> <button id="fixture-auth-refresh">Refresh token</button>';
+  document.body.append(controls);
+  document.getElementById('fixture-auth-release').onclick=()=>authRelease();
+  document.getElementById('fixture-auth-expire').onclick=()=>{sessionEnded=true;authListener?.('SIGNED_OUT',null);};
+  document.getElementById('fixture-auth-refresh').onclick=()=>authListener?.('TOKEN_REFRESHED',{user:{id:'test-uid'},access_token:'fixture'});
+ });
+}
 window.fixtureLoading={requests:[],delayMs:Number(sessionStorage.getItem('fixture-read-delay') || 0)};
 window.fetch = async (url, options={}) => {
  const action = new URL(url,location.href).searchParams.get('action');
@@ -28,7 +43,7 @@ window.fetch = async (url, options={}) => {
  else if(action==='history') data={ok:true,records,projects:['SUS'],admin:true};
  else if(action==='submitOrder') data=payload.caseType==='CONSUMING' && sessionStorage.getItem('fixture-fail-consume') ? {ok:false,retryable:false,error:'Fixture: consume rejected'} : {ok:true,logged:payload.items.length};
  else if(action==='returnItems') { const r=records.find(r=>r.recordId===payload.borrowId); r.returnedQty+=payload.qty; r.resolved=r.returnedQty>=r.borrowedQty; data={ok:true}; }
- else if(action==='googleMember') {records.forEach(r=>{r.canReturn=true;r.canDelete=true;r.canEdit=true;});data={ok:true,member:{idNumber:'100001',name:'Test Member',level:'ADMIN',verified:true},account:{uid:'test-uid',admin:true,officer:true,projects:['SUS']}};}
+ else if(action==='googleMember') {authCalls++;if(authScenario){document.getElementById('fixture-auth-calls').textContent=authCalls;await authGate;if(authFailure){authFailure=false;throw new TypeError('Fixture: connection interrupted');}}records.forEach(r=>{r.canReturn=true;r.canDelete=true;r.canEdit=true;});data={ok:true,member:{idNumber:'100001',name:'Test Member',level:'ADMIN',verified:true},account:{uid:'test-uid',admin:true,officer:true,projects:['SUS']}};}
  else if(['recordDelete','recordRestore','recordEdit'].includes(action)){const r=records.find(r=>r.recordId===payload.recordId);if(action==='recordEdit')Object.assign(r,payload.changes);else r.deleted=action==='recordDelete';r.recordRevision=(r.recordRevision||0)+1;data={ok:true};}
  else if(action==='cartRead') data={ok:true,revision:1,draft:{cart:{},project:'SUS',committee:'Cloud draft'}};
  else if(action==='cartWrite') data={ok:true,revision:2};
@@ -36,7 +51,7 @@ window.fetch = async (url, options={}) => {
  return {ok:true,json:async()=>data,text:async()=>JSON.stringify(data)};
 };
 window.MEA_CONFIG={supabase:{url:'https://gxffeavbefmmycmvccsm.supabase.co',publishableKey:'fixture'}};
-window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:{user:{id:'test-uid'},access_token:'fixture'}}}),signInWithOAuth:async()=>({}),signInWithOtp:async()=>({}),verifyOtp:async()=>({data:{session:{user:{id:'test-uid'},access_token:'fixture'}}}),signOut:async()=>({}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}})};
+window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:sessionEnded?null:{user:{id:'test-uid'},access_token:'fixture'}}}),signInWithOAuth:async()=>({}),signInWithOtp:async()=>({}),verifyOtp:async()=>({data:{session:{user:{id:'test-uid'},access_token:'fixture'}}}),signOut:async()=>({}),onAuthStateChange:cb=>{authListener=cb;return {data:{subscription:{unsubscribe(){}}}};}}})};
 
 </script>`;
 http.createServer((req,res)=>{

@@ -10,3 +10,7 @@
 .signin-loading-spinner { width: 28px; height: 28px; border: 3px solid #ffffff30; border-top-color: #4dc4c4; border-radius: 50%; animation: signin-spin .8s linear infinite; }
 @keyframes signin-spin { to { transform: rotate(360deg); } }
 @media(prefers-reduced-motion: reduce) { .signin-loading-spinner { animation: none; border-top-color: white; } }
+.school-session-status { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--page); color: var(--ink); border-bottom: 1px solid currentColor; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.school-session-status[hidden] { display: none; }
+.school-session-status span { flex: 1; min-width: 0; }
+.school-session-status .btn-secondary { width: auto; flex: 0 0 auto; min-height: 44px; margin: 0; padding: 8px 12px; font-size: 14px; }

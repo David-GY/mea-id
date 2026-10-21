@@ -13,6 +13,11 @@ let verifiedMember = null;
 let submitBusy = false;
 let returnBusy = false;
 let cloudLoaded = false;
+let schoolRestoreJob = null;
+let schoolRetryTimer = null;
+let schoolRetryAttempt = 0;
+let schoolNeedsReconnect = false;
+let schoolSessionStart = null;
 let dialogTrigger;
 let activeItemId = null;
 let undoRemoval = null;
@@ -56,6 +61,12 @@ window.meaRestoreFields = function() {
 };
 window.meaSwitchAccount = function() {
   clearTimeout(draftTimer);
+  clearTimeout(schoolRetryTimer);
+  schoolRetryTimer = null;
+  schoolRestoreJob = null;
+  schoolRetryAttempt = 0;
+  schoolNeedsReconnect = false;
+  window.meaSignInLoading?.status('');
   accountEpoch++;
   window.meaDashboard?.reset();
   resetHistorySession();
@@ -87,6 +98,7 @@ window.meaSwitchAccount = function() {
   saveStatus('Saved on this device · connect your school account to sync across devices');
   updateCartBadge();
   renderAccountControls();
+  updateHomeCardStates();
   if (document.getElementById('workflow-dialog').open) closeWorkflow();
   scheduleHistoryPrefetch();
 };
@@ -268,7 +280,9 @@ function bindCheckoutForm() {
   ['project-select', 'committee-input'].forEach(id => document.getElementById(id).addEventListener('change', () => { invalidateAction(); saveCart(); }));
   document.getElementById('committee-input').addEventListener('input', () => { invalidateAction(); saveCart(); });
 }
-function submitCheckout(payload) {
+async function submitCheckout(payload) {
+  if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') await requireSchoolConnection();
+  if (submitBusy) document.getElementById('submit-order-btn').textContent = 'Submitting…';
   if (verifiedMember) return inventoryRequest('checkout', payload, true);
   if (state.lastId?.verified || state.lastId?.accountKind === 'GUEST') return Promise.reject(new Error('Reconnect your school account before submitting. Your cart stays saved.'));
   return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).checkout(payload));
@@ -281,7 +295,7 @@ async function submitOrder() {
   if (Object.values(state.cart).some(l => l.unavailable)) return showToast('Remove unavailable items before submitting.', true);
   const epoch=accountEpoch, owner=draftOwner, fields=draftSnapshot(), groups=MeaCart.groups(state.cart);
   const btn=document.getElementById('submit-order-btn');
-  submitBusy=true;clearTimeout(draftTimer);btn.disabled=true;btn.textContent='Submitting…';
+  submitBusy=true;clearTimeout(draftTimer);btn.disabled=true;btn.textContent=state.lastId?.verified && !verifiedMember ? 'Checking account…' : 'Submitting…';
   for(const id of ['project-select','committee-input'])document.getElementById(id).disabled=true;
   const outcomes=[];
   try {
@@ -464,13 +478,22 @@ function applyCloudDraft(data) {
   writeLocal(draftKey(), {...draft, cart: state.cart, dirty: false}); window.meaRestoreFields(); updateCartBadge();
   if (state.view === 'cart') renderCart(); saveStatus('Synced across devices');
 }
-function resolveDraftConflict(data) {
+function resolveDraftConflict(data, open = false) {
   cloudConflict = true;
+  const epoch = accountEpoch;
+  if (!open) {
+    window.meaSignInLoading?.status('Your saved carts differ. This device’s cart stays unchanged.', 'Choose cart', () => {
+      if (epoch === accountEpoch && cloudConflict) resolveDraftConflict(data, true);
+    });
+    return;
+  }
   openWorkflow(`<h2 id="workflow-title">Choose your cart</h2><p>Your device has ${Object.keys(state.cart).length} entries. The saved cloud cart has ${Object.keys(data.draft?.cart || {}).length} entries.</p><p>Choose which version to keep. Nothing is overwritten until you choose.</p><button type="button" class="btn-primary" id="use-cloud">Use saved cloud cart</button><button type="button" class="btn-secondary" id="use-local">Keep this device’s cart</button>`);
-  document.getElementById('use-cloud').onclick = () => { applyCloudDraft(data); closeWorkflow(); };
-  document.getElementById('use-local').onclick = () => { draftRevision = data.revision; cloudConflict = false; draftDirty = true; closeWorkflow(); syncCloudDraft(); };
+  document.getElementById('use-cloud').onclick = () => { if(epoch!==accountEpoch)return;applyCloudDraft(data);window.meaSignInLoading?.status('');closeWorkflow(); };
+  document.getElementById('use-local').onclick = () => { if(epoch!==accountEpoch)return;draftRevision = data.revision; cloudConflict = false; draftDirty = true;window.meaSignInLoading?.status('');closeWorkflow();syncCloudDraft(); };
 }
 async function loadCloudDraft() {
+  // Background restoration must not replace an item editor or another open sheet.
+  if (document.getElementById('workflow-dialog').open) return;
   const epoch = accountEpoch;
   if(submitBusy)return;
   const edits=draftEditRevision;
@@ -505,7 +528,6 @@ window.meaInstallHelp = function() {
   openWorkflow(`<h2 id="workflow-title">Install MEA App</h2><p>Keep MEA on your home screen for quick access.</p>${embedded ? '<p class="workflow-warning">Open this page in Safari on Apple devices or Chrome on Android using this browser’s menu.</p>' : ''}${isIOS() ? '<ol class="install-guide"><li><img src="icons/ui/share.svg" alt="" width="24" height="24"> Open the Share menu in Safari.</li><li><img src="icons/ui/plus.svg" alt="" width="24" height="24"> Choose Add to Home Screen.</li><li>Enable Open as Web App if shown, then tap Add.</li></ol>' : '<ol class="install-guide"><li>Open your browser’s menu.</li><li>Choose Install app or Add to Home screen.</li><li>Confirm installation.</li></ol>'}<button type="button" class="btn-secondary" id="install-help-done">Done</button>`);
   document.getElementById('install-help-done').onclick = closeWorkflow;
 };
-let schoolRestoreUid=null;
 function showSchoolAuthFailure(error) {
   const message=error.message || 'Could not connect your school account. Try again.';
   document.getElementById('google-login-status').textContent=message;
@@ -515,29 +537,121 @@ function showSchoolAuthFailure(error) {
   document.getElementById('school-auth-error').textContent=message;
   document.getElementById('school-auth-retry').onclick=connectGoogle;
 }
-async function restoreSchoolAccount(user) {
+function schoolConnectionStatus(message, label = '', action) {
+  document.getElementById('google-account-status').textContent = message;
+  window.meaSignInLoading?.status(message, label, action);
+}
+function schoolConnectionFailure(error, returning) {
+  const expired = ['UNAUTHORIZED', 'session_expired', 'session_not_found', 'refresh_token_not_found', 'refresh_token_already_used'].includes(error.code) || error.status === 401;
+  const needsReview = ['ROSTER_MISMATCH', 'SETUP_REQUIRED', 'FORBIDDEN'].includes(error.code);
+  schoolNeedsReconnect = expired;
+  if (!returning) {
+    showSchoolAuthFailure(error);
+    if (!expired && !needsReview) {
+      document.getElementById('school-auth-retry').textContent = 'Retry connection';
+      document.getElementById('school-auth-retry').onclick = () => {closeWorkflow();retrySchoolConnection();};
+    }
+  }
+  else schoolConnectionStatus(expired ? 'Your school session ended. Your cart is saved.' : needsReview ? error.message : 'Connection paused. You can keep browsing; your cart is saved.', expired ? 'Reconnect' : 'Retry', expired ? connectGoogle : retrySchoolConnection);
+  if (returning && !expired && !needsReview) scheduleSchoolRetry();
+}
+function scheduleSchoolRetry() {
+  if (schoolRetryTimer !== null || schoolRetryAttempt >= 3 || !navigator.onLine || document.hidden) return;
+  const epoch = accountEpoch;
+  schoolRetryTimer = setTimeout(() => {
+    schoolRetryTimer = null;
+    if (epoch === accountEpoch) return retrySchoolConnection();
+  }, [5000, 15000, 30000][schoolRetryAttempt++]);
+}
+function startSchoolSession() {
+  if (schoolSessionStart) return schoolSessionStart;
+  const epoch = accountEpoch;
+  schoolSessionStart = loadSchoolAuth().then(auth => {
+    // Signing out while the SDK loads must not restore the old identity.
+    auth.onAuthStateChanged(restoreSchoolAccount);
+    if (epoch === accountEpoch) return restoreSchoolAccount(auth.currentUser);
+  }).catch(error => {
+    schoolSessionStart = null;
+    if (epoch === accountEpoch) schoolConnectionFailure(error, !!state.lastId?.verified);
+  });
+  return schoolSessionStart;
+}
+function retrySchoolConnection() {
+  clearTimeout(schoolRetryTimer);schoolRetryTimer = null;
+  if (schoolNeedsReconnect || readLocal('mea_google_signed_out', false)) return Promise.resolve(false);
+  if (!schoolAuth) return startSchoolSession();
+  return restoreSchoolAccount(schoolAuth.currentUser);
+}
+async function requireSchoolConnection() {
+  const epoch = accountEpoch;
+  if (!verifiedMember) {
+    let timer;
+    try {
+      await Promise.race([schoolRestoreJob?.promise || schoolSessionStart, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Your account is still being checked. Try submitting again shortly; your cart stays saved.')), 10000);
+      })]);
+    } finally {clearTimeout(timer);}
+  }
+  if (epoch !== accountEpoch) throw new Error('Account changed. Your cart stays saved.');
+  if (!verifiedMember) throw new Error(schoolNeedsReconnect || !schoolAuth ? 'Reconnect your school account before submitting. Your cart stays saved.' : 'Account verification is still pending. Retry the connection above; your cart stays saved.');
+}
+window.meaSchoolAccessReady = () => !state.lastId?.verified || !!verifiedMember;
+window.meaSchoolConnectionMessage = () => schoolNeedsReconnect ? 'Reconnect your school account to refresh your history.' : 'Checking your school account. History will appear when connected.';
+function restoreSchoolAccount(user) {
   if (readLocal('mea_google_signed_out',false)) return;
-  if (!user) {verifiedMember=null;cloudLoaded=false;return;}
-  if (verifiedMember?.uid===user.uid || schoolRestoreUid===user.uid) return;
-  schoolRestoreUid=user.uid;
+  if (!user) {
+    if (verifiedMember || schoolRestoreJob) window.meaSwitchAccount();
+    if (state.lastId?.verified) {
+      schoolNeedsReconnect = true;
+      schoolConnectionStatus('Your school session ended. Your cart is saved.', 'Reconnect', connectGoogle);
+    }
+    return;
+  }
+  if (verifiedMember?.uid===user.uid) return Promise.resolve(true);
+  if (schoolRestoreJob?.uid===user.uid && schoolRestoreJob.epoch===accountEpoch) return schoolRestoreJob.promise;
+  if (state.lastId?.verified && state.lastId.googleUid && state.lastId.googleUid !== user.uid) {
+    if (verifiedMember || schoolRestoreJob) window.meaSwitchAccount();
+    schoolNeedsReconnect = true;
+    schoolConnectionStatus('The school account changed. Use the account menu to switch; your cart is saved.', 'Switch account', () => changeAccount('google'));
+    return Promise.resolve(false);
+  }
+  if (verifiedMember || schoolRestoreJob) window.meaSwitchAccount();
+  clearTimeout(schoolRetryTimer);schoolRetryTimer = null;
+  schoolNeedsReconnect = false;
   const epoch=accountEpoch;
-  document.getElementById('google-account-status').textContent='Checking your school account and MEA permissions…';
-  window.meaSignInLoading?.show();
-  try {
-    let data;
-    try {data=await inventoryRequest('googleMember',{},true);}
-    finally {window.meaSignInLoading?.hide();}
-    if(epoch!==accountEpoch)return;
-    await acceptGoogleAccount(data,user);
-    closeWorkflow();
-  } catch(error) {if(epoch===accountEpoch)showSchoolAuthFailure(error);return;}
-  finally {schoolRestoreUid=null;}
-  try {await loadCloudDraft();} catch(_) {saveStatus('School account connected · cart waiting to sync');}
+  const returning = !!state.lastId?.verified && state.lastId.googleUid === user.uid;
+  schoolConnectionStatus('Checking school access. You can keep browsing.');
+  if (!returning) window.meaSignInLoading?.show();
+  const job = {uid:user.uid,epoch};
+  schoolRestoreJob = job;
+  job.promise = (async () => {
+    try {
+      const data = await inventoryRequest('googleMember',{},true);
+      if (epoch !== accountEpoch) return false;
+      await acceptGoogleAccount(data,user);
+      if (verifiedMember?.uid !== user.uid) return false;
+      schoolRetryAttempt = 0;
+      window.meaSignInLoading?.status('');
+      if (state.view === 'history') renderHistory();
+      return true;
+    } catch(error) {
+      if (epoch === accountEpoch) schoolConnectionFailure(error, returning);
+      return false;
+    } finally {
+      if (!returning) window.meaSignInLoading?.hide();
+      if (schoolRestoreJob === job) schoolRestoreJob = null;
+    }
+  })();
+  // Draft sync has its own request and must not extend the verification gate.
+  job.promise.then(ready => {
+    if (ready && verifiedMember?.uid === user.uid) loadCloudDraft().catch(() => {if(verifiedMember?.uid===user.uid)saveStatus('School account connected · cart waiting to sync');});
+  });
+  return job.promise;
 }
 document.addEventListener('DOMContentLoaded', () => {
   window.meaSwitchAccount();
   if (window.MEA_CONFIG?.supabase?.publishableKey && (!readLocal('mea_google_signed_out', false) || MeaSchoolAuth.callbackPresent?.())) {
-    loadSchoolAuth().then(auth => auth.onAuthStateChanged(restoreSchoolAccount)).catch(showSchoolAuthFailure);
+    startSchoolSession();
   }
   document.getElementById('workflow-dialog').querySelector('.sheet-close').onclick = closeWorkflow;
   document.getElementById('workflow-dialog').addEventListener('cancel', e => { e.preventDefault(); closeWorkflow(); });
@@ -561,9 +675,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('history-deleted-toggle').onclick=()=>{state.historyShowDeleted=!state.historyShowDeleted;document.getElementById('history-deleted-toggle').setAttribute('aria-pressed',String(state.historyShowDeleted));renderHistory();};
   document.getElementById('history-refresh')?.addEventListener('click', () => renderHistory({force: true}));
   document.addEventListener('mea:viewchange', () => { updateCartBadge(); if (state.view === 'history') { renderReturnQueue(); flushReturns(); } });
-  window.addEventListener('online', () => { flushReturns(); if (verifiedMember) loadCloudDraft().catch(() => {}); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && verifiedMember) loadCloudDraft().catch(() => {}); });
-  setInterval(() => { flushReturns(); if (verifiedMember && draftDirty) { if (cloudLoaded) syncCloudDraft(); else loadCloudDraft().catch(() => {}); } }, 20000);
+  window.addEventListener('online', () => { schoolRetryAttempt=0;if (!verifiedMember) retrySchoolConnection();flushReturns(); if (verifiedMember) loadCloudDraft().catch(() => {}); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) return;if (!verifiedMember && !schoolRetryTimer) retrySchoolConnection();else if (verifiedMember) loadCloudDraft().catch(() => {}); });
+  setInterval(() => { flushReturns(); if (verifiedMember && (draftDirty || !cloudLoaded)) { if (cloudLoaded) syncCloudDraft(); else loadCloudDraft().catch(() => {}); } }, 20000);
   window.addEventListener('storage', e => {
     if (!submitBusy && e.key === draftKey()) { const saved = readLocal(draftKey(), {}); state.cart = MeaCart.normalize(saved.cart); draftDirty = !!saved.dirty; window.meaRestoreFields(); updateCartBadge(); if (state.view === 'cart') renderCart(); }
   });

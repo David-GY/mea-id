@@ -4,7 +4,7 @@
 // NFC scanning and Google Sheets requests always go live, never cached.
 
 const CACHE_PREFIX = 'mea-app:' + self.registration.scope + ':';
-const CACHE_NAME = CACHE_PREFIX + 'mea-app-v39';
+const CACHE_NAME = CACHE_PREFIX + 'mea-app-v40';
 const APP_SHELL = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ const APP_SHELL = [
   './cart-model.js',
   './workflow.js',
   './school-auth.js',
+  './vendor/supabase-2.118.0.js',
   './signin-loading.css',
   './signin-loading.js',
   './app-config.js',
@@ -79,6 +80,12 @@ self.addEventListener('fetch', (event) => {
   const isShell = APP_SHELL.some(path => new URL(path, self.registration.scope).href === shellPath);
   if (privateQuery || !isShell) return;
   const cacheKey = shellPath;
+
+  // This SDK URL includes its immutable version; avoid a network wait on reopen.
+  if (url.pathname === new URL('./vendor/supabase-2.118.0.js', self.registration.scope).pathname) {
+    event.respondWith(caches.open(CACHE_NAME).then(async cache => (await cache.match(cacheKey)) || fetch(event.request)));
+    return;
+  }
 
   // Network-first: always try to fetch the latest version. Only fall back
   // to the cached copy if the network request fails (e.g. offline). This is

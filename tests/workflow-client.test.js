@@ -5,20 +5,20 @@ const vm = require('node:vm');
 const {randomUUID} = require('node:crypto');
 const model = require('../cart-model');
 function client() {
- const elements = new Map(), data = new Map(), intervals=[];
+ const elements = new Map(), data = new Map(), intervals=[], timers=new Map();let timerId=0;
  function element(id) {
   if (!elements.has(id)) elements.set(id, {value:'',textContent:'',innerHTML:'',hidden:false,open:false,style:{},dataset:{},options:[{value:'SUS'},{value:'Personal'}],
    classList:{add(){},remove(){},toggle(){}},replaceChildren(){this.innerHTML='';this.textContent='';},querySelectorAll(){return [];},querySelector(){return element('focus');},focus(){},addEventListener(){},setAttribute(){},before(){},append(){},showModal(){this.open=true;},close(){this.open=false;}});
   return elements.get(id);
  }
  const document={getElementById:element,activeElement:null,body:element('body'),querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},dispatchEvent(){},createElement:()=>element(randomUUID())};
- const context=vm.createContext({document,console,MeaCart:model,crypto:{randomUUID},navigator:{onLine:true,userAgent:'test'},setTimeout:()=>1,clearTimeout(){},setInterval:fn=>intervals.push(fn),URLSearchParams,CustomEvent:class{},Event:class{},
+ const context=vm.createContext({document,console,MeaCart:model,crypto:{randomUUID},navigator:{onLine:true,userAgent:'test'},setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id),setInterval:fn=>intervals.push(fn),URLSearchParams,CustomEvent:class{},Event:class{},
   localStorage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)},addEventListener(){},matchMedia:()=>({matches:false}),fetch:async()=>({json:async()=>({ok:true}),text:async()=>'{"ok":true}'})});
  context.window=context;
  vm.runInContext(fs.readFileSync(require.resolve('../inventory.js'),'utf8'),context);
  vm.runInContext(fs.readFileSync(require.resolve('../workflow.js'),'utf8'),context);
  const run=code=>vm.runInContext(code,context);
- return {context,run,data,element,intervals};
+ return {context,run,data,element,intervals,timers};
 }
 
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;}); return {promise,resolve,reject}; }
@@ -271,11 +271,12 @@ test('offline submission keeps fixed retry ID and refuses to clear draft if queu
  await d.context.submitOrder();assert.equal(d.run('Object.keys(state.cart).length'),1);assert.match(d.element('cart-feedback').textContent,/Failed/);
 });
 test('cloud conflict never overwrites local draft without a choice',async()=>{
- const c=client();c.run("state.lastId={idNumber:'100001'}; meaSwitchAccount();verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'token'}};state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a'},qty:2,action:'BORROWING'};draftDirty=true;");
+ const c=client();let choose;c.context.meaSignInLoading={status:(_,label,action)=>{if(label==='Choose cart')choose=action;}};c.run("state.lastId={idNumber:'100001'}; meaSwitchAccount();verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'token'}};state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a'},qty:2,action:'BORROWING'};draftDirty=true;");
  c.data.set('mea_inventory_url','https://example.test');
  c.context.fetch=async()=>({json:async()=>({ok:true,revision:4,draft:{cart:{},project:'SUS',committee:'Cloud'}})});
  await c.context.loadCloudDraft();
- assert.equal(c.run('Object.values(state.cart)[0].qty'),2);assert.equal(c.run('cloudConflict'),true);assert.equal(c.element('workflow-dialog').open,true);
+ assert.equal(c.run('Object.values(state.cart)[0].qty'),2);assert.equal(c.run('cloudConflict'),true);assert.equal(c.element('workflow-dialog').open,false);
+ choose();assert.equal(c.element('workflow-dialog').open,true);
  c.element('use-cloud').onclick();assert.equal(c.run('Object.keys(state.cart).length'),0);assert.equal(c.element('committee-input').value,'Cloud');
 });
 test('late cloud response cannot load previous account cart into a newly selected member',async()=>{
@@ -421,5 +422,103 @@ test('confirmed action merges keep the destination position before or after the 
   assert.equal(c.run('Object.values(state.cart).map(l=>l.item.id).join()'),expected);
   assert.equal(c.run("state.cart[MeaCart.key('a','BORROWING')].qty"),4);
   assert.equal(Object.values(JSON.parse(c.data.get('mea_cart_v3:100001')).cart).map(l=>l.item.id).join(),expected);
+ }
+});
+
+test('returning school sessions verify once without blocking browsing or closing a dialog',async()=>{
+ const c=client(),check=deferred();let calls=0,shown=0;
+ c.context.pendingCheck=()=>{calls++;return check.promise;};c.context.meaSignInLoading={show(){shown++;},hide(){},status(){}};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one',level:'ADMIN'};meaSwitchAccount();inventoryRequest=pendingCheck");
+ c.element('workflow-dialog').open=true;
+ const a=c.context.restoreSchoolAccount({uid:'one'}), b=c.context.restoreSchoolAccount({uid:'one'});
+ assert.equal(calls,1);assert.equal(shown,0);assert.equal(c.run('canOpenDashboard(state.lastId)'),false);
+ check.resolve({member:{idNumber:'100001',level:'ADMIN'},account:{uid:'one',admin:true}});c.run('loadCloudDraft=async()=>{}');await Promise.all([a,b]);
+ assert.equal(c.element('workflow-dialog').open,true);assert.equal(c.run('canOpenDashboard(state.lastId)'),true);
+ await c.context.restoreSchoolAccount({uid:'one'});assert.equal(calls,1);
+});
+
+test('temporary verification failures retry quietly and preserve edits without starting Google',async()=>{
+ const c=client();let calls=0,redirects=0;const messages=[];
+ c.context.meaSignInLoading={show(){assert.fail('Returning user must not block');},hide(){},status:(...s)=>messages.push(s)};
+ c.context.check=async()=>{calls++;if(calls===1)throw new TypeError('Failed to fetch');return {member:{idNumber:'100001'},account:{uid:'one'}};};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();inventoryRequest=check;loadCloudDraft=async()=>{};schoolAuth={currentUser:{uid:'one'}};state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a'},qty:2,action:'BORROWING'};saveCart()");
+ c.context.connectGoogle=()=>redirects++;
+ await c.context.restoreSchoolAccount({uid:'one'});
+ assert.equal(c.element('workflow-dialog').open,false);assert.equal(c.run('verifiedMember'),null);assert.equal(c.run('Object.values(state.cart)[0].qty'),2);
+ const retry=[...c.timers.values()].find(t=>t.ms===5000);assert.ok(retry);await retry.fn();
+ assert.equal(calls,2);assert.equal(c.run('verifiedMember.uid'),'one');assert.equal(redirects,0);assert.ok(messages.some(s=>s[1]==='Retry'));
+});
+
+test('a session ending during verification invalidates the result and cannot restore access',async()=>{
+ const c=client(),check=deferred();c.context.pendingCheck=()=>check.promise;
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one',level:'ADMIN'};meaSwitchAccount();inventoryRequest=pendingCheck;loadCloudDraft=async()=>{}");
+ const pending=c.context.restoreSchoolAccount({uid:'one'});await c.context.restoreSchoolAccount(null);
+ check.resolve({member:{idNumber:'100001',level:'ADMIN'},account:{uid:'one',admin:true}});await pending;
+ assert.equal(c.run('verifiedMember'),null);assert.equal(c.run('canOpenTracker(state.lastId)'),false);
+ assert.equal(c.run('state.lastId.googleUid'),'one');
+});
+
+test('checkout waits for in-flight verification and sends only one authenticated checkout',async()=>{
+ const c=client(),check=deferred();const actions=[];c.data.set('mea_inventory_url','https://example.test');
+ c.context.fetch=async(url,opts)=>{const action=new URL(url).searchParams.get('action');actions.push(action);return action==='googleMember'?{json:()=>check.promise}:{json:async()=>({ok:true,results:JSON.parse(opts.body).groups.map(g=>({clientId:g.clientId,ok:true}))})};};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();schoolAuth={currentUser:{uid:'one',getIdToken:async()=> 'token'}};loadCloudDraft=async()=>{};state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a',title:'A'},qty:1,action:'BORROWING'}");
+ const restoration=c.context.restoreSchoolAccount({uid:'one'});const checkout=c.context.submitOrder();
+ for(let i=0;i<10;i++)await Promise.resolve();assert.deepEqual(actions,['googleMember']);
+ check.resolve({ok:true,member:{idNumber:'100001'},account:{uid:'one'}});await Promise.all([restoration,checkout]);
+ assert.deepEqual(actions.filter(a=>a!=='inventory'),['googleMember','checkout']);assert.equal(c.run('Object.keys(state.cart).length'),0);
+});
+
+test('another school UID cannot silently replace the saved account or its cart',async()=>{
+ const c=client();let requests=0;c.context.check=async()=>{requests++;return {};};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();inventoryRequest=check;state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a'},qty:3,action:'BORROWING'}");
+ await c.context.restoreSchoolAccount({uid:'two'});
+ assert.equal(requests,0);assert.equal(c.run('verifiedMember'),null);assert.equal(c.run('state.lastId.googleUid'),'one');assert.equal(c.run('Object.values(state.cart)[0].qty'),3);
+});
+
+test('expired school sessions offer reconnect without an automatic OAuth redirect or retry loop',async()=>{
+ const c=client();let calls=0;const statuses=[];c.context.meaSignInLoading={show(){},hide(){},status:(...s)=>statuses.push(s)};
+ c.context.check=async()=>{calls++;throw Object.assign(new Error('Verify school account'),{code:'UNAUTHORIZED'});};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();inventoryRequest=check");await c.context.restoreSchoolAccount({uid:'one'});
+ assert.equal(calls,1);assert.equal(c.element('workflow-dialog').open,false);assert.ok(statuses.some(s=>s[1]==='Reconnect'));assert.equal(c.run('schoolRetryTimer'),null);
+});
+
+test('network recovery stops automatic retries after three attempts and logout clears the timer',async()=>{
+ const c=client();c.context.check=async()=>{throw new TypeError('Offline');};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();schoolAuth={currentUser:{uid:'one'},signOut:async()=>{}};inventoryRequest=check");
+ await c.context.restoreSchoolAccount({uid:'one'});
+ for(const delay of [5000,15000,30000]){
+   const timer=[...c.timers.entries()].find(([,t])=>t.ms===delay);assert.ok(timer);c.timers.delete(timer[0]);await timer[1].fn();
+ }
+ assert.equal(c.run('schoolRetryTimer'),null);assert.equal(c.run('schoolRetryAttempt'),3);
+ c.run('schoolRetryAttempt=0;scheduleSchoolRetry()');assert.notEqual(c.run('schoolRetryTimer'),null);
+ c.run('meaBeforeLogout();state.lastId=null;meaSwitchAccount()');assert.equal(c.run('schoolRetryTimer'),null);
+});
+
+test('protected checkout cannot follow an account switch while verification is pending',async()=>{
+ const c=client(),check=deferred();c.context.check=()=>check.promise;
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();inventoryRequest=check");
+ const restoring=c.context.restoreSchoolAccount({uid:'one'}), submitting=c.context.submitCheckout({groups:[]});
+ c.run("state.lastId={idNumber:'100002'};meaSwitchAccount()");
+ check.resolve({member:{idNumber:'100001'},account:{uid:'one'}});await restoring;
+ await assert.rejects(submitting,/Account changed/);assert.equal(c.run('state.lastId.idNumber'),'100002');
+});
+
+
+test('checkout stops waiting after ten seconds without sending or losing a draft',async()=>{
+ const c=client(),check=deferred();let submissions=0;
+ c.context.check=()=>check.promise;c.context.fetch=async()=>{submissions++;return {json:async()=>({ok:true})};};
+ c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount();inventoryRequest=check;state.cart[MeaCart.key('a','BORROWING')]={item:{id:'a'},qty:2,action:'BORROWING'}");
+ const restoring=c.context.restoreSchoolAccount({uid:'one'}), checkout=c.context.submitOrder();
+ for(let i=0;i<4;i++)await Promise.resolve();const timer=[...c.timers.values()].find(t=>t.ms===10000);assert.ok(timer);timer.fn();await checkout;
+ assert.equal(submissions,0);assert.equal(c.run('Object.values(state.cart)[0].qty'),2);assert.equal(c.element('submit-order-btn').disabled,false);
+ check.resolve({member:{idNumber:'100001'},account:{uid:'one'}});c.run('loadCloudDraft=async()=>{}');await restoring;assert.equal(submissions,0);
+});
+
+test('Supabase session-ending error codes offer reconnect even when HTTP status is 400',()=>{
+ for(const code of ['session_expired','session_not_found','refresh_token_not_found','refresh_token_already_used']) {
+   const c=client();let label;c.context.meaSignInLoading={status:(_,value)=>label=value};
+   c.run("state.lastId={idNumber:'100001',verified:true,googleUid:'one'};meaSwitchAccount()");
+   c.context.schoolConnectionFailure({code,status:400,message:'Session unavailable'},true);
+   assert.equal(label,'Reconnect');assert.equal(c.run('schoolRetryTimer'),null);assert.equal(c.run('schoolNeedsReconnect'),true);
  }
 });

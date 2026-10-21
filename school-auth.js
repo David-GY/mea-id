@@ -26,7 +26,7 @@
           : 'Google sign-in was cancelled or rejected. Try again with your student.ateneo.edu account.');
       }
       if (!root.supabase?.createClient) await new Promise((resolve,reject) => {
-        const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js';
+        const s=document.createElement('script'); s.src='vendor/supabase-2.118.0.js';
         s.onload=resolve; s.onerror=()=>{s.remove();reject(new Error('Could not load school sign-in. Check your connection.'));}; document.head.append(s);
       });
       const client=root.supabase.createClient(config.url,config.publishableKey,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
@@ -53,14 +53,14 @@
       },async signOut(){const {error}=await client.auth.signOut({scope:'local'}); if(error)throw error;user=null;},onAuthStateChanged(callback){
         // Supabase warns against awaited auth calls inside its synchronous callback.
         let active=true, version=0;
-        const publish=session=>{user=adapt(session);const current=++version;setTimeout(()=>{if(active && current===version)callback(user);},0);};
-        const {data}=client.auth.onAuthStateChange((_event,session)=>publish(session));
+        const publish=()=>{const current=++version;setTimeout(()=>{if(active && current===version)callback(user);},0);};
+        const {data}=client.auth.onAuthStateChange((_event,session)=>{user=adapt(session);publish();});
         // The initial SDK event may precede this subscription while the script loads.
-        publish(initial.data.session);
+        publish();
         return ()=>{active=false;data.subscription.unsubscribe();};
       }};
       const initial=await client.auth.getSession();
-      if(initial.error) {if(callback.code)clearCallback();throw new Error(callback.code ? 'Could not finish Google sign-in. Start again in this same browser.' : initial.error.message);}
+      if(initial.error) {if(callback.code)clearCallback();throw Object.assign(new Error(callback.code ? 'Could not finish Google sign-in. Start again in this same browser.' : initial.error.message),{code:initial.error.code,status:initial.error.status});}
       user=adapt(initial.data.session);
       if(callback.code) {clearCallback();if(!user)throw new Error('Google returned without a session. Try signing in again in this same browser.');}
       return api;

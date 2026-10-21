@@ -341,11 +341,13 @@
      ========================================================= */
   function canOpenTracker(loginResult) {
     if (!loginResult || loginResult.accountKind === 'GUEST') return false;
+    if (loginResult.verified && window.meaSchoolAccessReady?.() === false) return false;
     const level = String(loginResult.level || '').trim().toUpperCase();
     return level === 'ADMIN' || level === 'TRACKER';
   }
   function canOpenDashboard(loginResult) {
     if (!loginResult || loginResult.accountKind === 'GUEST') return false;
+    if (loginResult.verified && window.meaSchoolAccessReady?.() === false) return false;
     const level = String(loginResult.level || '').trim().toUpperCase();
     return level === 'ADMIN' || level === 'DASHBOARD';
   }
@@ -679,7 +681,7 @@
 
   function fetchHistoryRecords(options = {}, context = historyContext()) {
     const url = getInventoryScriptUrl();
-    if (!url || !state.lastId || window.meaHistoryReady?.() === false) return Promise.resolve({records: [], error: !url ? 'No Inventory Script URL configured yet.' : 'Reconnect your school account to refresh your history.'});
+    if (!url || !state.lastId || window.meaHistoryReady?.() === false) return Promise.resolve({records: [], error: !url ? 'No Inventory Script URL configured yet.' : (window.meaSchoolConnectionMessage?.() || 'Reconnect your school account to refresh your history.')});
     const memory = historyFresh.get(context.key);
     const cache = memory?.revision === context.revision ? memory : getCachedHistory(context);
     if (!navigator.onLine) return Promise.resolve({...cache, records: cache?.records || [], offline: true});

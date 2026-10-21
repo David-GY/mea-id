@@ -50,3 +50,8 @@ test('unsubscribing cancels queued initial session notifications',async()=>{
  const f=fixture(),auth=await f.context.MeaSchoolAuth.load(f.config);let called=false;
  const stop=auth.onAuthStateChanged(()=>called=true);stop();f.flush();assert.equal(called,false);
 });
+
+test('late subscribers cannot resurrect the initial session after local sign-out',async()=>{
+ const f=fixture(),auth=await f.context.MeaSchoolAuth.load(f.config);await auth.signOut();let observed='pending';
+ auth.onAuthStateChanged(user=>observed=user);f.flush();assert.equal(observed,null);assert.equal(auth.currentUser,null);
+});

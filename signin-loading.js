@@ -1,5 +1,11 @@
 /* Account verification feedback; the local preview can also show a static sample. */
 (() => {
+  const status = document.createElement('div');
+  status.className = 'school-session-status';
+  status.hidden = true;
+  status.innerHTML = '<span role="status" aria-live="polite" aria-atomic="true"></span><button type="button" class="btn-secondary" hidden></button>';
+  document.getElementById('app').prepend(status);
+  const message = status.querySelector('span'), retry = status.querySelector('button');
   const screen = document.createElement('dialog');
   screen.className = 'signin-loading-screen';
   screen.setAttribute('aria-labelledby', 'signin-loading-title');
@@ -17,6 +23,13 @@
   const close = screen.querySelector('button');
   close.addEventListener('click', () => { sample = false; screen.close(); });
   window.meaSignInLoading = {
+    status(text, label = '', action) {
+      message.textContent = text;
+      status.hidden = !text;
+      retry.hidden = !label;
+      retry.textContent = label;
+      retry.onclick = action || null;
+    },
     show() { pending++; if (!screen.open) screen.showModal(); },
     hide() { pending = Math.max(0, pending - 1); if (!pending && !sample) screen.close(); },
     sample() { sample = true; close.hidden = false; if (!screen.open) screen.showModal(); }

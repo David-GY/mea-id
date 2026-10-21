@@ -28,3 +28,10 @@ test('service worker upgrades preserve unrelated same-origin app caches',async()
   const f=fixture();let done;f.handlers.activate({waitUntil:p=>done=p});await done;
   assert.ok(f.deleted.includes('mea-app-v34'));assert.ok(f.deleted.includes('mea-app:'+f.scope+':old'));assert.ok(!f.deleted.includes('other-app'));
 });
+
+test('the pinned same-origin auth SDK is available from cache without a network wait',async()=>{
+ const f=fixture();let response;
+ f.context.fetch=()=>{assert.fail('The cached SDK must not wait on the network');};
+ f.handlers.fetch({request:{url:f.scope+'vendor/supabase-2.118.0.js',method:'GET'},respondWith:p=>response=p,waitUntil(){}});
+ assert.equal(await response,'saved-shell');assert.deepEqual(f.reads,[f.scope+'vendor/supabase-2.118.0.js']);
+});
