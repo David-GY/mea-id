@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const cart = require('../cart-model');
 const source = fs.readFileSync(require.resolve('../apps-script/inventory-v2.gs'), 'utf8');
 function fixture(script = source) {
-  let serial = 0, held = false, mail = 0; const stats={auth:0,opens:0,reads:{},writes:{},locks:0,images:0,logs:[]};
+  let serial = 0, held = false, mail = 0; const stats={emails:[],auth:0,opens:0,reads:{},writes:{},locks:0,images:0,logs:[]};
   const properties = {INVENTORY_SPREADSHEET_ID: 'test', TRACKER_SPREADSHEET_ID: 'roster', SUPABASE_PUBLISHABLE_KEY: 'test-key'};
   const books = {};
   class Sheet {
@@ -45,9 +45,9 @@ function fixture(script = source) {
     Session:{getScriptTimeZone:()=> 'Asia/Manila'},
     DriveApp:{getFileById:()=>{stats.images++;return {getBlob:()=> 'fixture-image'};}},
     LockService: {getScriptLock: () => ({waitLock: () => { assert.equal(held,false); stats.locks++;held = true; }, releaseLock: () => { held = false; }})},
-    GmailApp: {sendEmail: () => {assert.equal(held,false); mail++; }},
+    GmailApp: {sendEmail: (...args) => {assert.equal(held,false); stats.emails.push(args); mail++; }},
     ContentService: {MimeType:{JSON:'json'}, createTextOutput: text => ({setMimeType: () => JSON.parse(text)})},
-    UrlFetchApp: {fetch: (_, options) => { stats.auth++;const token = options.headers.Authorization.slice(7), email = token === 'two' ? 'two@student.ateneo.edu' : 'one@student.ateneo.edu'; return {getResponseCode: () => token === 'invalid' ? 400 : 200, getContentText: () => JSON.stringify({id:token, email, email_confirmed_at: token !== 'unverified' ? '2026-10-16' : null, identities:[{provider:'google',identity_data:{email,email_verified:true,full_name:'Test Member'}}]})}; }}
+    UrlFetchApp: {fetch: (_, options) => { if(!options) {stats.images++;return {getBlob:()=> 'fixture-logo'};} stats.auth++;const token = options.headers.Authorization.slice(7), email = token === 'two' ? 'two@student.ateneo.edu' : 'one@student.ateneo.edu'; return {getResponseCode: () => token === 'invalid' ? 400 : 200, getContentText: () => JSON.stringify({id:token, email, email_confirmed_at: token !== 'unverified' ? '2026-10-16' : null, identities:[{provider:'google',identity_data:{email,email_verified:true,full_name:'Test Member'}}]})}; }}
   });
   vm.runInContext(script, context);
   context.setupInventoryV2();
@@ -153,7 +153,7 @@ test('only verified admins review special requests with revision checks and immu
   assert.equal(f.request('specialRequestReview',{...review,idToken:'one'}).ok,true);
   assert.equal(f.request('specialRequestReview',{...review,idToken:'one'}).ok,true);
   assert.equal(f.request('specialRequestReview',{...review,idToken:'one',status:'DECLINED'}).code,'CHANGED_REQUEST');
-  assert.equal(f.tabs['Special Requests'].rows[1][8],'VERIFIED');assert.equal(f.mail(),0);
+  assert.equal(f.tabs['Special Requests'].rows[1][8],'VERIFIED');assert.equal(f.mail(),1);
   assert.equal(f.request('history',{idToken:'one',scope:'officer'}).records[0].requestStatus,'VERIFIED');
 });
 
@@ -404,4 +404,75 @@ test('special borrowing reasons persist in journal, history and cloud drafts wit
  const draft=f.context.invValidateDraft_({cart:{[key]:{item:{id:'ITEM-reason'},qty:1,action:'BORROWING',reason:'For event coordination.'}}});
  assert.equal(draft.cart[key].reason,'For event coordination.');
  assert.equal(f.mail(),0);
+});
+
+test('verified special loans use normal partial returns and resolve only after full return',()=>{
+ const f=fixture();f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-resolution']);
+ const loan=f.request('submitSpecialRequest',f.order({items:[{id:'ITEM-resolution',qty:3}]}));
+ const id=loan.recordIds[0];
+ assert.equal(f.request('history',{idNumber:'100001'}).records[0].resolved,false);
+ f.trackerTabs.ACCESS.rows.push(['100001','One','Admin']);
+ assert.equal(f.request('specialRequestReview',{idToken:'one',recordId:id,expectedRevision:0,status:'VERIFIED',clientId:'accept-resolution'}).ok,true);
+ let r=f.request('history',{idNumber:'100001'}).records[0];assert.equal(r.canReturn,true);assert.equal(r.outstandingQty,3);
+ assert.equal(f.request('returnItems',{idNumber:'100002',borrowId:id,qty:1,clientId:'unauthorized-special'}).ok,false);
+ const partial={idNumber:'100001',borrowId:id,qty:1,clientId:'partial-special'};
+ assert.equal(f.request('returnItems',partial).remaining,2);assert.equal(f.request('returnItems',partial).remaining,2);
+ r=f.request('history',{idNumber:'100001'}).records[0];assert.equal(r.resolved,false);assert.equal(r.returnedQty,1);
+ assert.equal(f.request('returnItems',{...partial,qty:3,clientId:'excess-special'}).ok,false);
+ assert.equal(f.request('returnItems',{...partial,qty:2,clientId:'finish-special'}).remaining,0);
+ r=f.request('history',{idNumber:'100001'}).records[0];assert.equal(r.resolved,true);assert.equal(r.canReturn,false);
+});
+
+test('declined and verified consuming special requests resolve without allowing returns',()=>{
+ for(const [status,action] of [['DECLINED','BORROWING'],['VERIFIED','CONSUMING']]) {
+  const f=fixture();f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-close']);
+  const loan=f.request('submitSpecialRequest',f.order({caseType:action,items:[{id:'ITEM-close',qty:1}]}));
+  f.trackerTabs.ACCESS.rows.push(['100001','One','Admin']);
+  assert.equal(f.request('specialRequestReview',{idToken:'one',recordId:loan.recordIds[0],expectedRevision:0,status,clientId:'close-special'}).ok,true);
+  const r=f.request('history',{idNumber:'100001'}).records[0];assert.equal(r.resolved,true);assert.equal(r.canReturn,false);
+  assert.equal(f.request('returnItems',{idNumber:'100001',borrowId:r.recordId,qty:1,clientId:'closed-return'}).ok,false);
+ }
+});
+
+test('accepting a special request emails the requester with escaped verifier notes exactly once',()=>{
+ const f=fixture();f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-email']);
+ const loan=f.request('submitSpecialRequest',f.order({items:[{id:'ITEM-email',qty:2}]}));
+ assert.equal(f.mail(),0);
+ f.trackerTabs.ACCESS.rows.push(['100002','Two','Admin']);
+ const review={idToken:'two',recordId:loan.recordIds[0],expectedRevision:0,status:'VERIFIED',note:'Collect at 3 PM.\nReturn by Friday. <script>alert(1)</script>',clientId:'email-accept'};
+ const result=f.request('specialRequestReview',review);assert.equal(result.ok,true);assert.equal(result.emailStatus,'SENT');
+ assert.equal(f.mail(),1);const [to,subject,plain,options]=f.stats.emails[0];
+ assert.equal(to,'one@student.ateneo.edu');assert.match(subject,/Special request accepted/);
+ assert.match(plain,/Collect at 3 PM\.\nReturn by Friday/);assert.match(plain,/Verified by: Two/);
+ assert.match(options.htmlBody,/&lt;script&gt;/);assert.doesNotMatch(options.htmlBody,/<script>/);
+ assert.match(options.htmlBody,/Radio/);assert.match(options.htmlBody,/SR-/);
+ assert.equal(f.request('specialRequestReview',review).ok,true);assert.equal(f.mail(),1);
+});
+test('declining sends no email and email failure does not undo acceptance',()=>{
+ for(const status of ['DECLINED','VERIFIED']) {
+  const f=fixture();f.tabs['Special Inventory'].rows.push(['','Radio','6','Cabinet','FIN','','ITEM-fail-email']);
+  const loan=f.request('submitSpecialRequest',f.order({items:[{id:'ITEM-fail-email',qty:1}]}));
+  f.trackerTabs.ACCESS.rows.push(['100002','Two','Admin']);f.context.GmailApp.sendEmail=()=>{throw Error('Mail quota');};
+  const r=f.request('specialRequestReview',{idToken:'two',recordId:loan.recordIds[0],expectedRevision:0,status,note:'Collect tomorrow.',clientId:'email-status'});
+  assert.equal(r.ok,true);if(status==='VERIFIED')assert.equal(r.emailStatus,'FAILED');
+  assert.equal(f.context.invHistory_().find(r=>r.recordId===loan.recordIds[0]).requestStatus,status);
+ }
+});
+
+test('normal borrow consume and return emails use the shared transparent-logo receipt format',()=>{
+ const f=fixture();
+ const loan=f.request('submitOrder',f.order());
+ assert.equal(loan.ok,true);
+ assert.equal(f.request('submitOrder',f.order({clientId:'format-consume',caseType:'CONSUMING'})).ok,true);
+ assert.equal(f.request('returnItems',{idNumber:'100001',borrowId:loan.recordIds[0],qty:1,clientId:'format-return'}).ok,true);
+ assert.equal(f.stats.emails.length,3);
+ for(const [index,action] of ['Borrow','Consume','Return'].entries()) {
+  const [to,subject,plain,options]=f.stats.emails[index];
+  assert.equal(to,'one@student.ateneo.edu');assert.equal(subject,'MEA Inventory Receipt — '+action);
+  assert.match(options.htmlBody,/cid:meaHeader/);assert.match(options.htmlBody,/width="160"/);
+  assert.equal(options.inlineImages.meaHeader,'fixture-logo');
+  assert.match(options.htmlBody,new RegExp('MEA INVENTORY '+action.toUpperCase()+' RECEIPT'));
+  assert.match(options.htmlBody,/Project\/Dept: SUS/);assert.match(options.htmlBody,/cid:meaFooter/);
+  assert.doesNotMatch(plain,/Verifier notes/);
+ }
 });

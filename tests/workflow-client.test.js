@@ -522,3 +522,22 @@ test('Supabase session-ending error codes offer reconnect even when HTTP status 
    assert.equal(label,'Reconnect');assert.equal(c.run('schoolRetryTimer'),null);assert.equal(c.run('schoolNeedsReconnect'),true);
  }
 });
+
+test('special loans expose normal returns and completed special requests share the resolved pile',()=>{
+ const c=client();connect(c);
+ const base={idNum:'100001',item:'Radio',qty:2,requestOnly:true,requestedAction:'BORROWING'};
+ c.context.paintHistory({records:[{...base,recordId:'active-special',caseType:'BORROWING',requestStatus:'VERIFIED',borrowedQty:2,returnedQty:0,outstandingQty:2,resolved:false,returnable:true,canReturn:true},{...base,item:'Returned radio',recordId:'done',caseType:'BORROWING',requestStatus:'VERIFIED',resolved:true},{...base,item:'Declined radio',recordId:'declined',caseType:'SPECIAL_REQUEST',requestStatus:'DECLINED',resolved:true}],projects:[]});
+ assert.match(c.element('history-pending-list').innerHTML,/data-return-id="active-special"/);
+ assert.match(c.element('history-total-list').innerHTML,/Returned radio/);assert.match(c.element('history-total-list').innerHTML,/Declined radio/);
+ assert.doesNotMatch(c.element('history-special-list').innerHTML,/Returned radio|Declined radio|active-special/);
+});
+
+test('special acceptance submits verifier notes and warns if the saved decision email fails',async()=>{
+ const c=client();connect(c);c.run("verifiedMember={uid:'one'};schoolAuth={currentUser:{getIdToken:async()=> 'token'}};");
+ c.context.meaHistoryRecords=[{recordId:'accept',requestOnly:true,canReview:true,item:'Radio',qty:2,recordRevision:3}];
+ let sent;c.context.fetch=async(url,options)=>{const action=new URL(url).searchParams.get('action');if(action==='specialRequestReview'){sent=JSON.parse(options.body);return {json:async()=>({ok:true,emailStatus:'FAILED'})};}return {json:async()=>({ok:true,records:[],projects:[]}),text:async()=>JSON.stringify({ok:true,items:[]})};};
+ c.context.openSpecialReview('accept');c.element('special-status').value='VERIFIED';c.element('special-note').value='Collect tomorrow.';
+ await c.element('special-confirm').onclick();
+ assert.equal(sent.note,'Collect tomorrow.');assert.equal(sent.status,'VERIFIED');assert.equal(sent.expectedRevision,3);
+ assert.equal(c.element('workflow-dialog').open,false);assert.match(c.element('toast').textContent,/accepted, but the email could not be sent/);
+});

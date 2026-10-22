@@ -741,8 +741,8 @@
   }
   function historyRowHtml(rec) {
     const when = rec.time ? new Date(rec.time).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
-    const caseLabel = rec.requestOnly ? specialVerificationLabel(rec.itemId, rec.requestStatus) : rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
-    const canReturn = !rec.requestOnly && !rec.deleted && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false && (rec.canReturn === true || rec.canReturn === undefined && String(rec.idNum) === String(state.lastId?.idNumber));
+    const caseLabel = rec.requestOnly ? (rec.caseType === 'BORROWING' && rec.resolved ? 'Returned' : specialVerificationLabel(rec.itemId, rec.requestStatus)) : rec.deleted ? 'Deleted (restorable)' : rec.caseType === 'CONSUMING' ? 'Consumed' : (rec.resolved ? 'Returned' : (Number(rec.returnedQty) > 0 ? 'Partially returned' : 'Borrowed'));
+    const canReturn = !rec.deleted && rec.caseType === 'BORROWING' && !rec.resolved && rec.recordId && rec.returnable !== false && (rec.canReturn === true || rec.canReturn === undefined && String(rec.idNum) === String(state.lastId?.idNumber));
     return `
       <div class="history-item">
         <div class="history-item-main">
@@ -750,7 +750,7 @@
           <div class="history-item-meta">${escapeHtml(rec.reference || '')}${rec.accountKind === 'GUEST' ? ' · Guest' : ''} · ${escapeHtml(rec.project || '—')}${rec.committee ? ' · ' + escapeHtml(rec.committee) : ''}${state.historyTab === 'project' && rec.name ? ' · ' + escapeHtml(rec.name) : ''}</div>
         </div>
         <div class="history-item-side">
-          <div ${rec.requestOnly ? `data-verification-item="${escapeHtml(rec.itemId || '')}" data-verification-status="${escapeHtml(rec.requestStatus || 'PENDING')}"` : ''} class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${escapeHtml(caseLabel)}</div>
+          <div ${rec.requestOnly ? `data-verification-item="${escapeHtml(rec.itemId || '')}" data-verification-status="${escapeHtml(rec.requestStatus || 'PENDING')}" data-verification-returned="${rec.caseType === 'BORROWING' && rec.resolved ? 'true' : 'false'}"` : ''} class="history-item-case ${rec.resolved ? 'resolved' : 'pending'}">${escapeHtml(caseLabel)}</div>
           <div class="history-item-date">${when}</div>
           ${rec.caseType === 'BORROWING' ? `<div>${MeaCart.outstanding(rec)} remaining</div>` : ''}
           <div class="history-record-actions">${rec.canEdit && !rec.requestOnly && !rec.deleted ? `<button type="button" class="btn-secondary" data-record-action="edit" data-record-id="${escapeHtml(rec.recordId)}">Edit</button>` : ''}
@@ -814,8 +814,8 @@
     window.meaHistoryRecords = records;
     scoped=scoped.filter(r=>!!r.deleted===!!state.historyShowDeleted);
     const pending = scoped.filter(r => r.caseType === 'BORROWING' && !r.resolved);
-    const total = scoped.filter(r => !r.requestOnly && (r.caseType !== 'BORROWING' || r.resolved));
-    const special = scoped.filter(r => r.requestOnly);
+    const total = scoped.filter(r => r.requestOnly ? r.resolved : (r.caseType !== 'BORROWING' || r.resolved));
+    const special = scoped.filter(r => r.requestOnly && r.requestStatus === 'PENDING');
 
     const offlineNote = offline
       ? `<div class="history-offline-note"><img class="svg-icon icon-inline" src="icons/ui/wifi.svg" alt="">${error ? 'Could not refresh' : "You're offline"} — showing ${syncedAt ? 'last synced (' + new Date(syncedAt).toLocaleString() + ')' : 'no saved'} data.</div>`
@@ -1073,7 +1073,7 @@
   }
   function paintInventory(items) {
     state.inventory = items;
-    document.querySelectorAll('[data-verification-item]').forEach(label => { label.textContent = specialVerificationLabel(label.dataset.verificationItem, label.dataset.verificationStatus); });
+    document.querySelectorAll('[data-verification-item]').forEach(label => { label.textContent = label.dataset.verificationReturned === 'true' ? 'Returned' : specialVerificationLabel(label.dataset.verificationItem, label.dataset.verificationStatus); });
     renderCategoryChips(); renderCatalog();
   }
   function loadInventory(options = {}) {

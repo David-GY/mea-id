@@ -4,7 +4,7 @@
 // NFC scanning and Google Sheets requests always go live, never cached.
 
 const CACHE_PREFIX = 'mea-app:' + self.registration.scope + ':';
-const CACHE_NAME = CACHE_PREFIX + 'mea-app-v40';
+const CACHE_NAME = CACHE_PREFIX + 'mea-app-v42';
 const APP_SHELL = [
   './',
   './index.html',

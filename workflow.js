@@ -246,7 +246,7 @@ function renderCart() {
   container.innerHTML = entries.length ? entries.map(([key, l], index) => `<article class="cart-entry" data-cart-index="${index}">
     <div class="cart-entry-main"><h3>${esc(l.item.title)}</h3><p>${l.qty} ${l.qty === 1 ? 'unit' : 'units'} · ${esc(l.item.location || 'Location unassigned')}</p>
     <div class="cart-action-toggle" role="group" aria-label="Action for ${esc(l.item.title)}">${MeaCart.actions.map(action => `<button type="button" data-cart-action="${action}" aria-pressed="${action === l.action}" ${l.unavailable || submitBusy ? 'disabled' : ''}>${ACTION_LABEL[action]}</button>`).join('')}</div>
-    ${MeaCart.requiresManualVerification(l.item) ? '<p class="workflow-warning">Special request · Awaiting SUS verification after submission. No receipt email.</p>' : ''}
+    ${MeaCart.requiresManualVerification(l.item) ? '<p class="workflow-warning">Special request · Awaiting SUS verification after submission. An email with verifier notes will be sent once accepted.</p>' : ''}
     ${l.unavailable ? '<p class="workflow-error">No longer in the catalog. Remove this entry to continue.</p>' : ''}
     ${l.changed ? '<p class="workflow-warning">Quantity changed since you selected this item. Review before submitting.</p>' : ''}</div>
     <div class="cart-entry-actions"><button type="button" class="btn-secondary" data-edit ${l.unavailable ? 'disabled' : ''}>Edit</button><button type="button" class="btn-secondary" data-remove>Remove</button></div></article>`).join('') : '<div class="empty-state"><img class="svg-icon" src="icons/ui/shopping-basket.svg" alt=""><strong>Your cart is empty</strong><p>Choose items to borrow or consume.</p></div>';
@@ -273,7 +273,7 @@ function renderCart() {
 function renderCheckout() {
   window.meaRestoreFields();
   document.getElementById('checkout-id-display').textContent = (state.lastId?.accountKind === 'GUEST' ? 'Guest · ' + state.lastId.guestCode : state.lastId?.idNumber) || 'Enter your ID first';
-  document.getElementById('checkout-summary-body').innerHTML = MeaCart.groups(state.cart).map(g => `<tr class="checkout-group"><th colspan="2">${g.requestOnly ? 'Special request · ' : ''}${ACTION_LABEL[g.action]}${g.requestOnly ? ' · manual verification, no email' : ''}</th></tr>${g.lines.map(l => `<tr><td>${esc(l.item.title)}${l.unavailable ? ' · unavailable' : ''}</td><td>${l.qty}</td></tr>`).join('')}`).join('') || '<tr><td colspan="2">No items selected</td></tr>';
+  document.getElementById('checkout-summary-body').innerHTML = MeaCart.groups(state.cart).map(g => `<tr class="checkout-group"><th colspan="2">${g.requestOnly ? 'Special request · ' : ''}${ACTION_LABEL[g.action]}${g.requestOnly ? ' · email after acceptance' : ''}</th></tr>${g.lines.map(l => `<tr><td>${esc(l.item.title)}${l.unavailable ? ' · unavailable' : ''}</td><td>${l.qty}</td></tr>`).join('')}`).join('') || '<tr><td colspan="2">No items selected</td></tr>';
 }
 function bindCheckoutForm() {
   document.getElementById('submit-order-btn').onclick = submitOrder;
@@ -315,7 +315,7 @@ async function submitOrder() {
       if(result.ok) {
         group.lines.forEach(line=>delete state.cart[MeaCart.key(line.item.id,line.action)]);
         changed ||= !result.queued;
-        outcomes.push(`${label}: ${result.queued?'Waiting to sync':group.requestOnly?'Awaiting SUS verification · no email':'Submitted'}`);
+        outcomes.push(`${label}: ${result.queued?'Waiting to sync':group.requestOnly?'Awaiting SUS verification · email after acceptance':'Submitted'}`);
       } else outcomes.push(`${label}: Failed — ${result.error || 'Request rejected.'}`);
     });
     if(changed)invalidateReadData();
@@ -346,7 +346,7 @@ function openSpecialReview(recordId) {
   const rec = window.meaHistoryRecords?.find(r => r.recordId === recordId && r.requestOnly);
   if (!rec?.canReview || !verifiedMember || submitBusy || returnBusy) return;
   const epoch = accountEpoch, clientId = uuid();
-  openWorkflow(`<h2 id="workflow-title">Review special request</h2><p>${esc(rec.reference || '')} · ${esc(rec.item)} × ${rec.qty}</p>${rec.reason ? `<p><strong>Reason for borrowing</strong><br>${esc(rec.reason)}</p>` : ''}<label for="special-status">Decision</label><select id="special-status"><option value="VERIFIED">Verified</option><option value="DECLINED">Declined</option></select><label for="special-note">Verification notes</label><textarea id="special-note" maxlength="500"></textarea><p id="special-error" role="alert"></p><button type="button" class="btn-primary" id="special-confirm">Save verification</button>`);
+  openWorkflow(`<h2 id="workflow-title">Review special request</h2><p>${esc(rec.reference || '')} · ${esc(rec.item)} × ${rec.qty}</p>${rec.reason ? `<p><strong>Reason for borrowing</strong><br>${esc(rec.reason)}</p>` : ''}<label for="special-status">Decision</label><select id="special-status"><option value="VERIFIED">Accept</option><option value="DECLINED">Declined</option></select><label for="special-note">Notes to requester</label><textarea id="special-note" maxlength="500" rows="4"></textarea><p class="sheet-notes">Accepting sends the requester an email with these notes. They also appear in History.</p><p id="special-error" role="alert"></p><button type="button" class="btn-primary" id="special-confirm">Save decision</button>`);
   let attempt;
   document.getElementById('special-confirm').onclick = async () => {
     if (epoch !== accountEpoch || submitBusy) return;
@@ -355,9 +355,9 @@ function openSpecialReview(recordId) {
     const button = document.getElementById('special-confirm');
     submitBusy = true; button.disabled = true;
     try {
-      await inventoryRequest('specialRequestReview', attempt, true);
+      const result = await inventoryRequest('specialRequestReview', attempt, true);
       if (epoch !== accountEpoch) return;
-      closeWorkflow(); refreshAfterMutation(); await renderHistory({force:true}); showToast('Special request updated. No email sent.');
+      closeWorkflow(); refreshAfterMutation(); await renderHistory({force:true}); showToast(attempt.status === 'DECLINED' ? 'Special request declined.' : result.emailStatus === 'FAILED' ? 'Request accepted, but the email could not be sent. Contact the requester.' : result.emailStatus === 'SENT' ? 'Request accepted · email with your notes sent.' : 'Special request accepted.', result.emailStatus === 'FAILED');
     } catch(e) { if(epoch === accountEpoch) document.getElementById('special-error').textContent=e.message; }
     finally {submitBusy=false;button.disabled=false;}
   };

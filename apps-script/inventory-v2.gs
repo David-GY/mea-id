@@ -27,7 +27,7 @@ function invBook_() { return invOpenBook_(PropertiesService.getScriptProperties(
 function invDrainReceipts_() {
   if (!invRuntime_) return;
   var started=Date.now();
-  invRuntime_.receipts.splice(0).forEach(function(event) {try {invReceipt_(event);} catch (_) {invRuntime_.timings.receiptFailures=(invRuntime_.timings.receiptFailures || 0)+1;}});
+  invRuntime_.receipts.splice(0).forEach(function(event) {try {invReceipt_(event);} catch (_) {if(event.type==='SPECIAL_REVIEW' && event.status==='VERIFIED')event.result.emailStatus='FAILED';invRuntime_.timings.receiptFailures=(invRuntime_.timings.receiptFailures || 0)+1;}});
   invRuntime_.timings.receiptMs=(invRuntime_.timings.receiptMs || 0)+Date.now()-started;
 }
 function invAppendRows_(sheet, rows) {
@@ -393,11 +393,16 @@ function invHistory_() {
   records.forEach(function(r) {
     r.ownerKey = r.ownerKey || 'member:' + r.idNum;
     r.reference = r.reference || invLookupReference_(r.caseType === 'BORROWING' ? 'BR' : 'CO', r.recordId);
+    if (r.requestOnly) {
+      r.caseType = r.requestStatus === 'VERIFIED' ? r.requestedAction : 'SPECIAL_REQUEST';
+      r.returnable = r.caseType === 'BORROWING';
+      r.borrowedQty = r.returnable ? r.qty : 0;
+    }
     if (r.caseType === 'BORROWING') {
       r.returnedQty = Number(r.returnedQty || 0) + Number(returns[r.recordId] || 0);
       r.outstandingQty = Math.max(0, Number(r.borrowedQty) - r.returnedQty);
       r.resolved = r.outstandingQty === 0;
-    } else r.resolved = true;
+    } else r.resolved = !r.requestOnly || r.requestStatus !== 'PENDING';
   });
   return records.sort(function(a, b) { return String(b.time).localeCompare(String(a.time)); });
 }
@@ -535,9 +540,9 @@ function invMemberById_(id) {
   var matches = invTrackerTable_('MAIN',sheet).filter(function(row) { return invText_(row[1]) === id; });
   return matches.length === 1 ? {name: invText_(matches[0][2]), email: invText_(matches[0][0])} : {name: '', email: ''};
 }
-// Email branding: Drive files are embedded inline, so they do not need public access.
+// Email branding: the transparent app logo and Drive footer are embedded inline.
 var MEA_INV_EMAIL = {
-  headerDriveFileId: '1rBtaTkUU392AuzCD6GmWgCN7eaDnpo7F',
+  headerLogoUrl: 'https://david-gy.github.io/mea-id/brand/mea-logo-lightgray.png',
   footerDriveFileId: '1KbalbvA4piUn6cjzF-AMVTE1ZzAW05uR',
   accent: '#004445'
 };
@@ -551,7 +556,7 @@ function invEmailEscape_(value) {
 function invEmailImages_() {
   if(invRuntime_ && invRuntime_.images)return invRuntime_.images;
   var images = {
-    meaHeader: DriveApp.getFileById(MEA_INV_EMAIL.headerDriveFileId).getBlob(),
+    meaHeader: UrlFetchApp.fetch(MEA_INV_EMAIL.headerLogoUrl).getBlob(),
     meaFooter: DriveApp.getFileById(MEA_INV_EMAIL.footerDriveFileId).getBlob()
   };
   if(invRuntime_)invRuntime_.images=images;return images;
@@ -586,6 +591,7 @@ function invEmailReceiptBox_(event, action, lines) {
   }
   rows += '<p style="margin:0 0 6px;">Committee: ' + invEmailEscape_(event.committee) + '</p>' +
     '<p style="margin:0;">Date: ' + invEmailDate_(event.time) + '</p>';
+  if (event.acceptance) rows += '<div style="height:1px;background:#dce9e7;margin:14px 0;"></div><p style="margin:0 0 6px;"><strong>Verified by: ' + invEmailEscape_(event.verifier) + '</strong></p><p style="margin:0 0 6px;"><strong>Verifier notes</strong></p><p style="margin:0;">' + invEmailEscape_(event.note || 'No notes added.').replace(/\r?\n/g, '<br>') + '</p>';
   return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 20px;border-collapse:separate;border-spacing:0;">' +
     '<tr><td style="background:#f0f7f6;border-left:4px solid ' + MEA_INV_EMAIL.accent + ';border-radius:0 9px 9px 0;padding:16px 20px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#333;">' + rows + '</td></tr></table>';
 }
@@ -597,7 +603,7 @@ function invEmailBaseHtml_(event, action, lines, intro) {
     '<body style="margin:0;padding:0;background:#f4f7f7;color:#333;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.65;">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f7f7;padding:24px 10px;"><tr><td align="center">' +
     '<table role="presentation" width="660" cellpadding="0" cellspacing="0" style="width:100%;max-width:660px;background:#fff;border-radius:12px;overflow:hidden;border-collapse:separate;border-spacing:0;">' +
-    '<tr><td><img src="cid:meaHeader" alt="MEA" width="660" style="display:block;width:100%;max-width:660px;height:auto;border:0;"></td></tr>' +
+    '<tr><td style="padding:24px 40px;background:#004445;"><img src="cid:meaHeader" alt="MEA" width="160" style="display:block;width:160px;max-width:100%;height:auto;border:0;"></td></tr>' +
     '<tr><td style="padding:30px 40px 28px;">' +
     '<p style="margin:0;color:' + MEA_INV_EMAIL.accent + ';font-size:15px;line-height:1.5;">' + invEmailEscape_(name) + '</p>' +
     '<p style="margin:2px 0 22px;color:#999;font-size:13px;line-height:1.5;">' + invEmailEscape_(id) + '</p>' +
@@ -617,11 +623,25 @@ function invEmailPlainText_(event, action, lines, intro) {
     lines.map(function(line) { return (line.reference || event.reference || '') + ' ' + line.item + ' × ' + line.qty; }).join('\n') +
     '\n\nProject/Dept: ' + event.project + '\nAccount: ' + account;
   if (event.type === 'RETURN') text += '\nOriginal borrow: ' + (event.borrowReference || '') + '\nRemaining quantity: ' + (event.result && event.result.remaining != null ? event.result.remaining : '');
+  if (event.acceptance) text += '\n\nVerified by: ' + event.verifier + '\nVerifier notes:\n' + (event.note || 'No notes added.');
   return text + '\nCommittee: ' + event.committee + '\nDate: ' + invEmailDate_(event.time) + '\n\nIf anything looks wrong, contact the SUS team.\n— MEA Inventory';
 }
 
+function invSpecialAcceptanceReceipt_(review) {
+  var request = invEvents_().find(function(e) { return e.type === 'SPECIAL_REQUEST' && e.lines.some(function(l) { return l.recordId === review.recordId; }); });
+  if (!request || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.email || '')) throw invError_('Requester email is unavailable.');
+  var line = request.lines.find(function(l) { return l.recordId === review.recordId; });
+  var receipt = Object.assign({}, request, {time:review.time, acceptance:true, verifier:review.name, note:review.note});
+  var intro = 'Your special request has been accepted. Please follow the verifier’s notes below.';
+  GmailApp.sendEmail(request.email, 'MEA Inventory — Special request accepted · ' + line.reference,
+    invEmailPlainText_(receipt, 'Special request accepted', [line], intro), {
+      name:'MEA Inventory', htmlBody:invEmailBaseHtml_(receipt, 'Special request accepted', [line], intro), inlineImages:invEmailImages_()
+    });
+  review.result.emailStatus = 'SENT';
+}
 function invReceipt_(event) {
-  if (event.type === 'SPECIAL_REQUEST' || event.type === 'SPECIAL_REVIEW') return;
+  if (event.type === 'SPECIAL_REQUEST') return;
+  if (event.type === 'SPECIAL_REVIEW') { if(event.status === 'VERIFIED')invSpecialAcceptanceReceipt_(event); return; }
   if (event.type.indexOf('RECORD_') === 0) return;
   var member = event.verified ? {name:event.name,email:event.email} : invRuntime_ && invRuntime_.actor && invRuntime_.actor.member.idNumber===event.idNumber ? invRuntime_.actor.member : invMemberById_(event.idNumber);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email)) return;
